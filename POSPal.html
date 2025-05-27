@@ -13,20 +13,11 @@
             height: 6px;
         }
         ::-webkit-scrollbar-thumb {
-            background-color: #6b7280; /* gray-500 */
+            background-color: #6b7280;
             border-radius: 3px;
         }
         ::-webkit-scrollbar-track {
             background: transparent;
-        }
-
-        /* Animation for order items */
-        .order-item-added {
-            animation: fadeInSlideUp 0.3s ease-out;
-        }
-        @keyframes fadeInSlideUp {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
         }
 
         .product-card h3 {
@@ -35,35 +26,38 @@
             -webkit-line-clamp: 2;
             overflow: hidden;
             text-overflow: ellipsis;
-            min-height: 2.5em; /* Adjust if font size changes */
+            min-height: 2.5em; /* Roughly 2 lines for text-sm */
         }
         .category-tab.active {
-            background-color: #1f2937; /* gray-800 (near black) */
+            background-color: #1f2937;
             color: white;
         }
         .category-tab:not(.active) {
-            background-color: #f3f4f6; /* gray-100 */
-            color: #1f2937; /* gray-800 */
+            background-color: #f3f4f6;
+            color: #1f2937;
         }
          .category-tab:not(.active):hover {
-            background-color: #e5e7eb; /* gray-200 */
+            background-color: #e5e7eb;
          }
 
-        .options-badge {
-            font-size: 0.65em;
+        .options-badge, .steak-badge {
+            /* Base styling, specific sizing/padding will be on the element itself if icons */
             font-weight: 500;
-            background-color: #4b5563; /* gray-600 */
             color: white;
-            padding: 2px 5px;
-            border-radius: 3px;
-            /* margin-left: 8px; */ /* Removed to allow better placement if needed */
+            border-radius: 3px; /* Default, can be overridden by .rounded */
             white-space: nowrap;
-            /* align-self: center; */ /* Let parent control alignment */
         }
+        .options-badge {
+             background-color: #4b5563; /* Default gray for options */
+        }
+        .steak-badge {
+            background-color: #c2410c; /* Default orange for steak */
+        }
+
         .option-pill {
             display: inline-flex;
             align-items: center;
-            background-color: #4b5563; /* gray-600 */
+            background-color: #4b5563;
             color: white;
             padding: 0.4rem 0.8rem;
             border-radius: 16px;
@@ -82,67 +76,85 @@
             font-weight: bold;
         }
          .option-pill .remove-option-btn:hover {
-            color: #d1d5db; /* gray-300 for hover on dark pill */
+            color: #d1d5db;
         }
 
         .order-item.selected-for-numpad {
-            background-color: #e5e7eb; /* gray-200 */
-            border-left: 3px solid #374151; /* gray-700 */
+            background-color: #e5e7eb;
+            border-left: 3px solid #374151;
         }
 
-        /* Input focus style for black/white theme */
         input:focus, select:focus, textarea:focus {
-            border-color: #111827; /* gray-900 */
-            box-shadow: 0 0 0 2px #9ca3af; /* gray-400 */
+            border-color: #111827;
+            box-shadow: 0 0 0 2px #9ca3af;
             outline: none;
         }
         .management-form input:focus, .management-form select:focus, .management-form textarea:focus {
-             border-color: #111827; /* gray-900 */
-            box-shadow: 0 0 0 2px #9ca3af; /* gray-400 */
+             border-color: #111827;
+            box-shadow: 0 0 0 2px #9ca3af;
         }
 
-        /* Ensure text is visible on dark backgrounds for buttons etc. */
         .btn-primary {
-            background-color: #111827; /* near black */
+            background-color: #111827;
             color: white;
         }
         .btn-primary:hover {
-            background-color: #1f2937; /* slightly lighter black */
+            background-color: #1f2937;
         }
         .btn-primary:disabled {
-            background-color: #6b7280; /* gray-500 */
+            background-color: #6b7280;
             cursor: not-allowed;
         }
         .btn-secondary {
-            background-color: #e5e7eb; /* light gray */
-            color: #1f2937; /* dark gray text */
-            border: 1px solid #d1d5db; /* medium gray border */
+            background-color: #e5e7eb;
+            color: #1f2937;
+            border: 1px solid #d1d5db;
         }
         .btn-secondary:hover {
             background-color: #d1d5db;
         }
         .btn-danger {
-            background-color: #ef4444; /* red-500 for delete/danger */
+            background-color: #ef4444;
             color: white;
         }
         .btn-danger:hover {
-            background-color: #dc2626; /* red-600 */
+            background-color: #dc2626;
         }
         .btn-warning {
-             background-color: #f59e0b; /* amber-500 */
+             background-color: #f59e0b;
              color: white;
         }
         .btn-warning:hover {
-            background-color: #d97706; /* amber-600 */
+            background-color: #d97706;
         }
         .btn-success {
-            background-color: #16a34a; /* green-600 */
+            background-color: #16a34a;
             color: white;
         }
         .btn-success:hover {
-            background-color: #15803d; /* green-700 */
+            background-color: #15803d;
         }
 
+        /* Fixed management tabs */
+        .management-tab-container {
+            position: relative;
+            z-index: 10;
+        }
+        .management-content {
+            position: relative;
+            z-index: 1;
+        }
+        .steak-options-grid {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        }
+        /* Style for selected option in modal */
+        .option-selectable.selected {
+            border-color: #111827 !important; /* Ensure this overrides default border */
+            background-color: #f3f4f6; /* gray-100 */
+        }
+        .option-selectable.selected input {
+             /* Ensure input is visible if custom background is applied */
+        }
     </style>
 </head>
 <body class="bg-white text-gray-800 font-sans">
@@ -150,7 +162,7 @@
     <div id="main-content" class="pb-28"> <header class="bg-black text-white shadow-md sticky top-0 z-40">
             <div class="container mx-auto px-4 py-3 flex justify-between items-center">
                 <div class="flex items-center">
-                    <i class="fas fa-utensils text-2xl text-gray-300 mr-3"></i> 
+                    <i class="fas fa-utensils text-2xl text-gray-300 mr-3"></i>
                     <h1 class="text-xl font-bold text-gray-100">Kyr Stefanos</h1>
                 </div>
                 <div class="text-sm text-gray-300 flex flex-col items-end">
@@ -215,7 +227,7 @@
             </div>
             <button onclick="confirmNumpadInput()" class="mt-2 w-full py-2 bg-black text-white rounded-md font-semibold hover:bg-gray-800 active:bg-gray-700">Done</button>
         </div>
-        
+
         <div class="p-3 border-t border-gray-300 bg-gray-100 space-y-3">
             <div>
                 <label for="universalOrderCommentInput" class="block text-xs font-medium text-gray-700 mb-1">Order Notes:</label>
@@ -261,49 +273,77 @@
                 <button onclick="toggleManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
             </div>
 
-            <div class="p-4 border-b border-gray-300">
+            <div class="p-4 border-b border-gray-300 management-tab-container">
                 <div class="flex space-x-1 rounded-md bg-gray-200 p-1">
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Manage Categories</button>
                 </div>
             </div>
 
-            <div class="flex-grow overflow-y-auto p-4 management-form-container">
+            <div class="flex-grow overflow-y-auto p-4 management-content">
                 <div id="itemsManagement">
                     <form id="itemManagementForm" class="space-y-4 management-form">
-                        <div>
-                            <label for="itemName" class="block text-sm font-medium text-gray-700">Item Name</label>
-                            <input type="text" id="itemName" name="itemName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                        <input type="hidden" id="itemId" name="itemId"> 
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div>
+                                <label for="itemName" class="block text-sm font-medium text-gray-700">Item Name</label>
+                                <input type="text" id="itemName" name="itemName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                            </div>
+                            <div>
+                                <label for="itemPrice" class="block text-sm font-medium text-gray-700">Base Price (€)</label>
+                                <input type="number" step="0.01" id="itemPrice" name="itemPrice" inputmode="decimal" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                            </div>
                         </div>
-                        <div>
-                            <label for="itemPrice" class="block text-sm font-medium text-gray-700">Price (€)</label>
-                            <input type="number" step="0.01" id="itemPrice" name="itemPrice" inputmode="decimal" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
-                        </div>
+
                         <div>
                             <label for="itemCategory" class="block text-sm font-medium text-gray-700">Category</label>
                             <select id="itemCategory" name="itemCategory" class="mt-1 block w-full px-3 py-2 border border-gray-400 bg-white rounded-md shadow-sm sm:text-sm" required>
-                                </select>
+                            </select>
                         </div>
-                        <div class="flex items-center">
-                            <input type="checkbox" id="itemHasOptionsModal" name="itemHasOptionsModal" onchange="toggleItemOptionsUIInModal()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
-                            <label for="itemHasOptionsModal" class="ml-2 block text-sm text-gray-800">Item has options/variants</label>
-                        </div>
-                        <div id="itemOptionsModalContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
-                            <label class="block text-sm font-medium text-gray-700">Define Option Names:</label>
-                            <div id="itemOptionsListDisplayModal" class="flex flex-wrap gap-2 mb-2 min-h-[40px]">
-                                <p class="text-xs text-gray-500 italic w-full">No options added yet.</p>
+
+                        <div class="space-y-4">
+                            <div class="flex items-center space-x-4">
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="itemIsSteak" name="itemIsSteak" onchange="toggleItemTypeOptionsUI()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
+                                    <label for="itemIsSteak" class="ml-2 block text-sm text-gray-800">Steak Item</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="itemHasOptionsModal" name="itemHasOptionsModal" onchange="toggleItemOptionsUIInModal()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
+                                    <label for="itemHasOptionsModal" class="ml-2 block text-sm text-gray-800">Has General Options</label>
+                                </div>
                             </div>
-                            <div class="flex gap-2 items-center">
-                                <input type="text" id="newOptionNameInputModal" placeholder="Option name (e.g., Medium Rare)" class="flex-grow px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm">
-                                <button type="button" onclick="addOptionToItemFormTempModal()" class="px-3 py-2 btn-secondary text-sm">Add</button>
+
+                            <div id="steakCookingPreferencesContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
+                                <label class="block text-sm font-medium text-gray-700">Steak Cooking Preferences:</label>
+                                <div id="steakCookingOptionsList" class="steak-options-grid grid gap-2">
+                                    </div>
+                            </div>
+
+                            <div id="itemOptionsModalContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
+                                <label class="block text-sm font-medium text-gray-700">General Item Options:</label>
+                                <div id="itemOptionsListDisplayModal" class="flex flex-wrap gap-2 mb-2 min-h-[40px] border border-gray-200 p-2 rounded-md bg-white">
+                                    <p class="text-xs text-gray-500 italic w-full">No general options added</p>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                                    <div class="md:col-span-2">
+                                        <label for="newOptionNameInputModal" class="block text-xs font-medium text-gray-600">Option Name</label>
+                                        <input type="text" id="newOptionNameInputModal" placeholder="e.g., Peppercorn Sauce" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm">
+                                    </div>
+                                    <div>
+                                        <label for="newOptionPriceInputModal" class="block text-xs font-medium text-gray-600">Price Change (€)</label>
+                                        <input type="number" step="0.01" id="newOptionPriceInputModal" placeholder="e.g., 2.00 or -0.50" inputmode="decimal" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm">
+                                    </div>
+                                </div>
+                                <button type="button" onclick="addOptionToItemFormTempModal()" class="mt-2 px-4 py-2 btn-secondary text-sm w-full md:w-auto">Add Option</button>
                             </div>
                         </div>
-                        <input type="hidden" id="itemId">
+
                         <div class="flex gap-2">
                             <button type="button" id="saveItemBtn" onclick="saveItem()" class="w-full py-2 px-4 btn-success">💾 Save Item</button>
                             <button type="button" id="cancelEditBtn" onclick="cancelEditItem()" class="w-full py-2 px-4 btn-secondary hidden">✖️ Cancel</button>
                         </div>
                     </form>
+
                     <div class="mt-6">
                         <h4 class="text-md font-medium text-gray-800 mb-2">Existing Items</h4>
                         <div id="existingItemsListModal" class="space-y-2 max-h-60 overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50">
@@ -344,30 +384,33 @@
 
     <script>
         // --- Global State & Configuration ---
-        let menu = {}; // To store categories and their items
-        let selectedCategory = null; // Currently active category filter
-        let editingItem = null; // Stores item object when editing in management modal
+        let menu = {}; 
+        let selectedCategory = null; 
+        let editingItem = null; 
         let currentOrder = JSON.parse(localStorage.getItem('sushakiSteakhouseCurrentOrder')) || [];
-        let currentOrderLineItemCounter = parseInt(localStorage.getItem('sushakiSteakhouseOrderLineItemCounter')) || 0; // For unique IDs within an order
-        let orderNumber = 1; // This will be the NEXT anticipated order number
+        let currentOrderLineItemCounter = parseInt(localStorage.getItem('sushakiSteakhouseOrderLineItemCounter')) || 0; 
+        let orderNumber = 1; 
         let universalOrderComment = localStorage.getItem('sushakiSteakhouseUniversalOrderComment') || "";
         let selectedTableNumber = localStorage.getItem('sushakiSteakhouseSelectedTable') || "";
 
         let isMobileOrderPanelOpen = false;
-        let itemForNumpad = null; // { orderId, currentQuantity, itemName }
+        let itemForNumpad = null; 
         let numpadCurrentInput = "";
 
-        // Constants for localStorage keys
-        const ORDER_NUMBER_KEY = 'sushakiSteakhouseNextOrderNumber'; 
+        let itemBeingConfigured = null; 
+        let tempSteakChoiceForMultiStep = null; 
+        let currentOptionSelectionStep = null; 
+
+        const ORDER_NUMBER_KEY = 'sushakiSteakhouseNextOrderNumber';
         const LAST_ORDER_DATE_KEY = 'sushakiSteakhouseLastOrderDate';
         const SELECTED_TABLE_KEY = 'sushakiSteakhouseSelectedTable';
+        const PREDEFINED_STEAK_COOKING_LEVELS = ["Rare", "Medium Rare", "Medium", "Medium Well", "Well Done"];
 
-        const elements = {}; // Cache for frequently accessed DOM elements
+        const elements = {}; 
 
-        // --- DOM Element Caching ---
         function cacheDOMElements() {
             elements.headerOrderNumber = document.getElementById('header-order-number');
-            elements.headerTableNumberInput = document.getElementById('header-table-number-input'); 
+            elements.headerTableNumberInput = document.getElementById('header-table-number-input');
             elements.categoriesContainer = document.getElementById('categories');
             elements.productsContainer = document.getElementById('products');
             elements.orderItemsContainer = document.getElementById('order-items-container');
@@ -378,44 +421,43 @@
             elements.mobileOrderCountBadge = document.getElementById('mobile-order-count-badge');
             elements.orderPanel = document.getElementById('order-panel');
             elements.orderPanelBackdrop = document.getElementById('order-panel-backdrop');
-            elements.sendOrderBtn = document.getElementById('sendOrderBtn'); 
+            elements.sendOrderBtn = document.getElementById('sendOrderBtn');
             elements.settingsGearContainer = document.getElementById('settings-gear-container');
-            // Modals
             elements.managementModal = document.getElementById('managementModal');
             elements.itemOptionSelectModal = document.getElementById('itemOptionSelectModal');
             elements.optionModalItemName = document.getElementById('optionModalItemName');
             elements.optionModalItemDescription = document.getElementById('optionModalItemDescription');
             elements.optionModalOptionsContainer = document.getElementById('optionModalOptionsContainer');
-            // Item Management Form (within Management Modal)
+            elements.confirmOptionBtn = document.getElementById('confirmOptionBtn');
             elements.itemNameInput = document.getElementById('itemName');
             elements.itemPriceInput = document.getElementById('itemPrice');
             elements.itemCategorySelect = document.getElementById('itemCategory');
-            elements.itemIdInput = document.getElementById('itemId'); // Hidden input for item ID
+            elements.itemIdInput = document.getElementById('itemId'); 
             elements.saveItemBtn = document.getElementById('saveItemBtn');
             elements.cancelEditBtn = document.getElementById('cancelEditBtn');
             elements.existingItemsListModal = document.getElementById('existingItemsListModal');
-            elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); // Corrected in previous good version
+            elements.itemIsSteakCheckbox = document.getElementById('itemIsSteak');
+            elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); // Corrected ID
             elements.itemOptionsModalContainer = document.getElementById('itemOptionsModalContainer');
             elements.itemOptionsListDisplayModal = document.getElementById('itemOptionsListDisplayModal');
             elements.newOptionNameInputModal = document.getElementById('newOptionNameInputModal');
-            // Category Management Form (within Management Modal)
+            elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal'); // Added for price input
+            elements.steakCookingPreferencesContainer = document.getElementById('steakCookingPreferencesContainer');
+            elements.steakCookingOptionsList = document.getElementById('steakCookingOptionsList');
             elements.categoryNameInput = document.getElementById('categoryName');
             elements.existingCategoriesListModal = document.getElementById('existingCategoriesListModal');
-            // Toast Notification
             elements.toast = document.getElementById('toast');
             elements.toastMessage = document.getElementById('toast-message');
-            // Numpad
             elements.numpadContainer = document.getElementById('numpad-container');
             elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
         }
 
-        // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
             cacheDOMElements();
-            initializeOrderNumberAndDate(); // Sets up or retrieves the daily order number
-            loadMenu(); // Fetches menu data from the server
+            initializeOrderNumberAndDate();
+            loadMenu();
+            populateSteakCookingOptionsCheckboxes();
 
-            // Restore and listen for changes on universal order comment
             if(elements.universalOrderCommentInput) {
                 elements.universalOrderCommentInput.value = universalOrderComment;
                 elements.universalOrderCommentInput.addEventListener('input', (e) => {
@@ -424,7 +466,6 @@
                 });
             }
 
-            // Restore and listen for changes on table number input
             if(elements.headerTableNumberInput) {
                 elements.headerTableNumberInput.value = selectedTableNumber;
                 elements.headerTableNumberInput.addEventListener('input', (e) => {
@@ -432,13 +473,26 @@
                     localStorage.setItem(SELECTED_TABLE_KEY, selectedTableNumber);
                 });
             }
-            updateOrderDisplay(); // Display any existing order from localStorage
+            updateOrderDisplay();
         });
 
-        // --- Date and Order Number Management ---
+        function populateSteakCookingOptionsCheckboxes() {
+            if (!elements.steakCookingOptionsList) return;
+            elements.steakCookingOptionsList.innerHTML = ''; 
+            PREDEFINED_STEAK_COOKING_LEVELS.forEach(level => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center';
+                const checkboxId = `steakOptionForm_${level.replace(/\s+/g, '')}`; 
+                div.innerHTML = `
+                    <input type="checkbox" id="${checkboxId}" name="steakCookingLevelForm" value="${level}" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
+                    <label for="${checkboxId}" class="ml-2 text-sm text-gray-700">${level}</label>
+                `;
+                elements.steakCookingOptionsList.appendChild(div);
+            });
+        }
+
         function getLocalDateStr() {
             const now = new Date();
-            // Format: YYYY-MM-DD
             return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         }
 
@@ -448,33 +502,30 @@
             const storedNextOrderNumber = parseInt(localStorage.getItem(ORDER_NUMBER_KEY));
 
             if (storedLastOrderDate === todayStr && !isNaN(storedNextOrderNumber) && storedNextOrderNumber > 0) {
-                orderNumber = storedNextOrderNumber; // Use stored number if it's for today
+                orderNumber = storedNextOrderNumber;
             } else {
-                orderNumber = 1; // Reset to 1 for a new day or if no valid stored number
+                orderNumber = 1;
             }
-            localStorage.setItem(LAST_ORDER_DATE_KEY, todayStr); // Store/update the date for the current order number logic
-            if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber; 
+            localStorage.setItem(LAST_ORDER_DATE_KEY, todayStr);
+            if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
 
-            // Also initialize table number from local storage
             selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
             if(elements.headerTableNumberInput) elements.headerTableNumberInput.value = selectedTableNumber;
         }
 
-        // --- Menu Data Handling ---
         async function loadMenu() {
             try {
                 const response = await fetch('/api/menu');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                menu = await response.json() || {}; // Default to empty object if response is null/undefined
+                menu = await response.json() || {};
 
-                // If current selectedCategory is no longer valid or no category is selected, pick the first one
                 if (Object.keys(menu).length > 0 && (!selectedCategory || !menu[selectedCategory])) {
-                    selectedCategory = Object.keys(menu)[0]; 
+                    selectedCategory = Object.keys(menu)[0];
                 } else if (Object.keys(menu).length === 0) {
-                    selectedCategory = null; // No categories exist
+                    selectedCategory = null;
                 }
-                renderCategories(); // This will also trigger renderProductsForSelectedCategory
-                populateManagementCategorySelect(); // Ensure management modal's category list is also updated
+                renderCategories();
+                populateManagementCategorySelect();
             } catch (error) {
                 showToast(`Error loading menu: ${error.message}`, 'error');
                 console.error("Load menu error:", error);
@@ -482,7 +533,7 @@
                 if(elements.productsContainer) elements.productsContainer.innerHTML = '<p class="text-gray-500 italic col-span-full text-center">Could not load items.</p>';
             }
         }
-        
+
         async function saveMenuToServer() {
             try {
                 const response = await fetch('/api/menu', {
@@ -491,22 +542,20 @@
                     body: JSON.stringify(menu)
                 });
                 if (!response.ok) {
-                    // Attempt to get more detailed error message from server response
                     const errorData = await response.json().catch(() => ({message: `HTTP ${response.status} - ${response.statusText}`}));
                     throw new Error(`Failed to save menu: ${errorData.message}`);
                 }
-                return true; // Indicate success
+                return true;
             } catch (error) {
                 showToast(error.message, 'error');
                 console.error("Save menu error:", error);
-                return false; // Indicate failure
+                return false;
             }
         }
 
-        // --- UI Rendering (Categories & Products) ---
         function renderCategories() {
             if (!elements.categoriesContainer) return;
-            elements.categoriesContainer.innerHTML = ''; // Clear existing categories
+            elements.categoriesContainer.innerHTML = '';
 
             if (Object.keys(menu).length === 0) {
                 elements.categoriesContainer.innerHTML = '<p class="text-gray-500 italic">No categories defined.</p>';
@@ -516,7 +565,6 @@
                 return;
             }
 
-            // Using a dropdown for categories on mobile for better space utilization
             const selectEl = document.createElement('select');
             selectEl.className = 'w-full p-2.5 border border-gray-400 rounded-md shadow-sm focus:ring-black focus:border-black text-gray-800 bg-white text-sm';
             selectEl.id = 'categorySelectorDropdown';
@@ -537,23 +585,20 @@
             };
 
             elements.categoriesContainer.appendChild(selectEl);
-            
-            // Initial render of products for the selected (or default) category
+
             if (selectedCategory && Object.keys(menu).includes(selectedCategory)) {
                  renderProductsForSelectedCategory();
             } else if (Object.keys(menu).length > 0 && selectEl.options.length > 0) {
-                // Fallback if selectedCategory was somehow invalid but categories exist
-                selectedCategory = selectEl.value; 
+                selectedCategory = selectEl.value;
                 renderProductsForSelectedCategory();
             } else {
-                // No categories, or selectedCategory is still null after trying to pick one
                  if (elements.productsContainer) elements.productsContainer.innerHTML = '<p class="text-gray-600 italic col-span-full text-center py-8">Select a category.</p>';
             }
         }
 
         function renderProductsForSelectedCategory() {
             if (!elements.productsContainer) return;
-            elements.productsContainer.innerHTML = ''; // Clear existing products
+            elements.productsContainer.innerHTML = '';
             if (!selectedCategory || !menu[selectedCategory] || menu[selectedCategory].length === 0) {
                 elements.productsContainer.innerHTML = `<p class="text-gray-600 italic col-span-full text-center py-8">No items in "${selectedCategory || 'this'}" category.</p>`;
                 return;
@@ -562,28 +607,48 @@
             menu[selectedCategory].forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'product-card bg-white rounded-lg shadow hover:shadow-md transition-shadow overflow-hidden flex flex-col cursor-pointer border border-gray-200';
-                card.onclick = () => addToOrder(item.id); // Add item to order on click
+                card.onclick = () => addToOrder(item.id);
 
-                let optionsBadgeHTML = '';
-                if (item.options && Array.isArray(item.options) && item.options.length > 0) {
-                    optionsBadgeHTML = `<span class="options-badge absolute top-2 right-2">Options</span>`;
+                let badgeIconsHTML = '';
+                const hasSteakOptions = item.isSteak && item.steakCookingOptions && item.steakCookingOptions.length > 0;
+                const hasGenOptions = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
+                const hasOldOptions = !item.isSteak && !item.hasGeneralOptions && item.options && Array.isArray(item.options) && item.options.length > 0;
+
+                let actualBadgeElements = [];
+                if (hasSteakOptions) {
+                    actualBadgeElements.push(`<span class="steak-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-drumstick-bite text-sm"></i></span>`);
                 }
-                
+                if (hasGenOptions || hasOldOptions) {
+                    actualBadgeElements.push(`<span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span>`);
+                }
+
+                if (actualBadgeElements.length > 0) {
+                    badgeIconsHTML = `
+                        <div class="absolute bottom-2 right-2 flex flex-col space-y-1">
+                            ${actualBadgeElements.join('')}
+                        </div>
+                    `;
+                }
+
                 card.innerHTML = `
-                    <div class="relative p-3 flex-grow flex flex-col justify-between">
-                        ${optionsBadgeHTML}
-                        <h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
-                        <p class="text-lg font-bold text-black">€${(item.price || 0).toFixed(2)}</p>
+                    <div class="relative p-3 flex-grow flex flex-col h-full">
+                        <div class="flex-grow flex flex-col pr-8"> 
+                            <div class="flex-grow">
+                                <h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
+                            </div>
+                            <div class="mt-auto">
+                               <p class="text-lg font-bold text-black">€${(item.price || 0).toFixed(2)}</p>
+                            </div>
+                        </div>
+                        ${badgeIconsHTML}
                     </div>
                 `;
                 elements.productsContainer.appendChild(card);
             });
         }
-
-        // --- Order Management Logic ---
+        
         function addToOrder(itemId) {
             let menuItem;
-            // Find the item in the menu across all categories
             for (const categoryKey in menu) {
                 const found = (menu[categoryKey] || []).find(i => i.id === itemId);
                 if (found) { menuItem = found; break; }
@@ -595,23 +660,70 @@
                 return;
             }
 
-            // If item has options, open the option selection modal
-            if (menuItem.options && Array.isArray(menuItem.options) && menuItem.options.length > 0) {
-                openItemOptionSelectModal(menuItem);
+            itemBeingConfigured = {...menuItem}; 
+            tempSteakChoiceForMultiStep = null; 
+            currentOptionSelectionStep = null; 
+
+            const hasSteakOpts = menuItem.isSteak && menuItem.steakCookingOptions && menuItem.steakCookingOptions.length > 0;
+            // Check new generalOptions (array of objects) or old options (array of strings)
+            const hasGenOpts = (menuItem.hasGeneralOptions && menuItem.generalOptions && Array.isArray(menuItem.generalOptions) && menuItem.generalOptions.length > 0) ||
+                               (!menuItem.isSteak && !menuItem.hasGeneralOptions && menuItem.options && Array.isArray(menuItem.options) && menuItem.options.length > 0);
+
+            if (hasSteakOpts) {
+                currentOptionSelectionStep = 'steak';
+                openItemOptionSelectModal(itemBeingConfigured, 'steak_cooking');
+            } else if (hasGenOpts) {
+                currentOptionSelectionStep = 'general';
+                openItemOptionSelectModal(itemBeingConfigured, 'general_item_option');
             } else {
-                // If no options, add directly to order
-                currentOrderLineItemCounter++; // Increment for a unique ID for this line item
-                localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', currentOrderLineItemCounter.toString());
-                const uniqueLineId = `${menuItem.id}-line-${currentOrderLineItemCounter}`; // e.g., "item5-line-12"
-                currentOrder.push({ ...menuItem, quantity: 1, comment: "", orderId: uniqueLineId });
-                
-                updateOrderDisplay(); // Refresh the order panel
+                finalizeAndAddOrderItem(itemBeingConfigured, null, []);
+                resetMultiStepSelection();
             }
         }
+
+        function finalizeAndAddOrderItem(baseItem, steakChoice, generalChoicesWithOptions) { // generalChoicesWithOptions is now array of {name, priceChange}
+            currentOrderLineItemCounter++;
+            localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', currentOrderLineItemCounter.toString());
+
+            let uniqueSuffixParts = [];
+            if (steakChoice) uniqueSuffixParts.push(steakChoice.replace(/\s+/g, '_'));
+            if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
+                 uniqueSuffixParts.push(...generalChoicesWithOptions.map(opt => opt.name.replace(/\s+/g, '_')));
+            }
+            
+            const uniqueLineIdSuffix = uniqueSuffixParts.length > 0 ? uniqueSuffixParts.join('-') : 'noopts';
+            const uniqueLineId = `${baseItem.id}-${uniqueLineIdSuffix}-line-${currentOrderLineItemCounter}`;
+
+            let itemPriceWithModifiers = parseFloat(baseItem.price || 0);
+            if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
+                generalChoicesWithOptions.forEach(opt => {
+                    itemPriceWithModifiers += parseFloat(opt.priceChange || 0);
+                });
+            }
+
+            const orderItem = {
+                ...baseItem, // Includes original base price
+                quantity: 1,
+                comment: "",
+                orderId: uniqueLineId,
+                steakPreference: steakChoice || null,
+                generalSelectedOptions: generalChoicesWithOptions || [], // Array of {name, priceChange}
+                itemPriceWithModifiers: itemPriceWithModifiers // Final calculated price for one unit
+            };
+            currentOrder.push(orderItem);
+            updateOrderDisplay();
+        }
         
+        function resetMultiStepSelection() {
+            itemBeingConfigured = null;
+            tempSteakChoiceForMultiStep = null;
+            currentOptionSelectionStep = null;
+        }
+
+
         function updateOrderDisplay() {
             if (!elements.orderItemsContainer || !elements.emptyOrderMessage) return;
-            elements.orderItemsContainer.innerHTML = ''; // Clear current items
+            elements.orderItemsContainer.innerHTML = '';
             let total = 0;
 
             if (currentOrder.length === 0) {
@@ -619,27 +731,42 @@
             } else {
                 elements.emptyOrderMessage.style.display = 'none';
                 currentOrder.forEach(item => {
-                    const itemTotal = (item.price || 0) * item.quantity;
+                    // Use itemPriceWithModifiers for calculation if available, else base price
+                    const pricePerUnit = typeof item.itemPriceWithModifiers === 'number' ? item.itemPriceWithModifiers : parseFloat(item.price || 0);
+                    const itemTotal = pricePerUnit * item.quantity;
                     total += itemTotal;
+
                     const div = document.createElement('div');
-                    // Highlight item if it's selected for numpad quantity adjustment
                     div.className = `order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm ${item.orderId === itemForNumpad?.orderId ? 'selected-for-numpad' : ''}`;
-                    
-                    let optionText = item.selectedOption ? `<span class="block text-xs text-gray-500 ml-4">↳ ${item.selectedOption}</span>` : '';
+
+                    let optionDisplayHTML = '';
+                    if (item.steakPreference) {
+                        optionDisplayHTML += `<span class="block font-bold text-sm text-red-700 ml-2 mt-0.5">↳ Cook: ${item.steakPreference}</span>`;
+                    }
+                    if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
+                        item.generalSelectedOptions.forEach(opt => {
+                            const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
+                            optionDisplayHTML += `<span class="block text-xs text-gray-600 ml-4">↳ ${opt.name}${priceChangeDisplay}</span>`;
+                        });
+                    }
                     let commentText = item.comment ? `<span class="block text-xs text-gray-600 ml-4 break-all"><em>Note: ${item.comment}</em></span>` : '';
 
                     div.innerHTML = `
                         <div class="flex-grow pr-2">
                             <span class="font-medium text-gray-800">${item.name}</span>
-                            ${optionText}
+                            <span class="text-xs text-gray-500 ml-1">(Base: €${parseFloat(item.price || 0).toFixed(2)})</span>
+                            ${optionDisplayHTML}
                             ${commentText}
                         </div>
-                        <div class="flex items-center space-x-2 flex-shrink-0">
-                            <button onclick="decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600"><i class="fas fa-minus-circle"></i></button>
-                            <span class="font-semibold text-gray-800 w-6 text-center cursor-pointer" onclick="openNumpadForOrderItem('${item.orderId}', ${item.quantity}, '${item.name.replace(/'/g, "\\'")}')">${item.quantity}</span>
-                            <button onclick="incrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-green-600"><i class="fas fa-plus-circle"></i></button>
-                            <button onclick="promptForItemComment('${item.orderId}')" class="p-1 text-gray-500 hover:text-black" title="Add Note"><i class="fas fa-comment-dots"></i></button>
-                            <button onclick="removeItemByOrderId('${item.orderId}')" class="p-1 text-red-500 hover:text-red-700" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
+                        <div class="flex flex-col items-end space-y-1 flex-shrink-0">
+                             <span class="font-semibold text-gray-800">€${pricePerUnit.toFixed(2)} x ${item.quantity} = €${itemTotal.toFixed(2)}</span>
+                            <div class="flex items-center space-x-1">
+                                <button onclick="decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600"><i class="fas fa-minus-circle"></i></button>
+                                <span class="font-semibold text-gray-800 w-6 text-center cursor-pointer" onclick="openNumpadForOrderItem('${item.orderId}', ${item.quantity}, '${item.name.replace(/'/g, "\\'")}')">${item.quantity}</span>
+                                <button onclick="incrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-green-600"><i class="fas fa-plus-circle"></i></button>
+                                <button onclick="promptForItemComment('${item.orderId}')" class="p-1 text-gray-500 hover:text-black" title="Add Note"><i class="fas fa-comment-dots"></i></button>
+                                <button onclick="removeItemByOrderId('${item.orderId}')" class="p-1 text-red-500 hover:text-red-700" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
+                            </div>
                         </div>
                     `;
                     elements.orderItemsContainer.appendChild(div);
@@ -647,8 +774,8 @@
             }
 
             if(elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = `€${total.toFixed(2)}`;
-            localStorage.setItem('sushakiSteakhouseCurrentOrder', JSON.stringify(currentOrder)); // Persist order
-            updateMobileOrderBadge(); // Update the count on the floating order button
+            localStorage.setItem('sushakiSteakhouseCurrentOrder', JSON.stringify(currentOrder));
+            updateMobileOrderBadge();
         }
 
         function incrementQuantity(orderId) {
@@ -660,45 +787,47 @@
             const item = currentOrder.find(i => i.orderId === orderId);
             if (item) {
                 item.quantity--;
-                if (item.quantity <= 0) removeItemByOrderId(orderId); // Remove if quantity is 0 or less
+                if (item.quantity <= 0) removeItemByOrderId(orderId);
                 else updateOrderDisplay();
             }
         }
-        
+
         function removeItemByOrderId(orderId) {
             currentOrder = currentOrder.filter(item => item.orderId !== orderId);
-            // If the removed item was selected for numpad, hide numpad
             if (itemForNumpad && itemForNumpad.orderId === orderId) hideNumpad();
             updateOrderDisplay();
             showToast('Item removed from order.', 'info');
         }
 
         function promptForItemComment(orderId) {
-            const item = currentOrder.find(i => String(i.orderId) === orderId); // Ensure orderId is treated as string for comparison if needed
+            const item = currentOrder.find(i => String(i.orderId) === orderId);
             if (item) {
-                const newComment = prompt("Enter note for " + item.name + (item.selectedOption ? ` (${item.selectedOption})` : '') + ":", item.comment || "");
-                if (newComment !== null) { // User clicked OK, not Cancel
+                let currentSelectionDisplay = "";
+                if (item.steakPreference) {
+                    currentSelectionDisplay += ` (Cook: ${item.steakPreference})`;
+                }
+                if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
+                     currentSelectionDisplay += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name + (parseFloat(opt.priceChange || 0) !== 0 ? ` ${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)}` : '')).join(', ')})`;
+                }
+                const newComment = prompt("Enter note for " + item.name + currentSelectionDisplay.trim() + ":", item.comment || "");
+                if (newComment !== null) {
                     item.comment = newComment.trim();
-                    updateOrderDisplay(); 
+                    updateOrderDisplay();
                 }
             }
         }
-        
+
         function newOrder() {
-            // Confirm before clearing if there are items in the current order
             if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) return;
 
             currentOrder = [];
             universalOrderComment = "";
             if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
             localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
-            currentOrderLineItemCounter = 0; // Reset line item counter for the new order
+            currentOrderLineItemCounter = 0;
             localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
-            
-            // `orderNumber` already holds the anticipated next number.
-            // `initializeOrderNumberAndDate` handles loading it or resetting it for a new day.
 
-            hideNumpad(); // Ensure numpad is hidden
+            hideNumpad();
             updateOrderDisplay();
             showToast('Order cleared. Ready for Order #' + orderNumber + (selectedTableNumber ? `. Table: ${selectedTableNumber}` : '.'), 'info');
         }
@@ -727,9 +856,18 @@
 
         const orderData = {
             tableNumber: selectedTableNumber,
-            items: currentOrder,
+            items: currentOrder.map(item => ({
+                id: item.id,
+                name: item.name,
+                basePrice: parseFloat(item.price || 0), // Send base price
+                quantity: item.quantity,
+                steakPreference: item.steakPreference || null,
+                generalSelectedOptions: item.generalSelectedOptions || [], // Array of {name, priceChange}
+                itemPriceWithModifiers: item.itemPriceWithModifiers, // Send calculated price per unit
+                comment: item.comment || "",
+                isSteak: item.isSteak || false,
+            })),
             universalComment: universalOrderComment.trim()
-            // The server will assign the 'number' property (order number)
         };
 
         try {
@@ -739,55 +877,45 @@
                 body: JSON.stringify(orderData)
             });
 
-            const result = await response.json(); // Try to parse JSON regardless of response.ok
+            const result = await response.json();
 
-            if (response.ok) { // HTTP 2xx status
+            if (response.ok) {
                 if (result.status === "success") {
                     showToast(result.message || `Order #${result.order_number} sent, printed, and logged!`, 'success');
-                    // Clear order details from UI and storage as it was successful
                     currentOrder = [];
-                    universalOrderComment = "";
-                    if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
-                    localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
-                    currentOrderLineItemCounter = 0; 
-                    localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
-
-                    // Update to the next order number provided by the server
-                    orderNumber = result.order_number + 1; 
-                    localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
-                    localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr()); // Mark this number as used for today
-                    if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-
-                    hideNumpad();
-                    updateOrderDisplay();
-
-                } else if (result.status === "error_print_failed") {
-                    // ** MODIFIED SECTION FOR PRINT FAILURE **
-                    // Show error message from server, or a default one
-                    showToast(result.message || `Order #${result.order_number} FAILED TO PRINT. Order NOT saved. Check printer.`, 'error', 7000);
-                    
-                    // DO NOT clear currentOrder, universalOrderComment, or currentOrderLineItemCounter.
-                    // The order remains on screen for the user to retry or take other action.
-
-                    // The server attempted to use this order number, so the next attempt should use the subsequent number.
-                    if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
-                        orderNumber = result.order_number + 1;
-                        localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
-                        localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr()); // Keep track of the date for this number sequence
-                        if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-                    }
-                
-                } else if (result.status === "error_log_failed_after_print") {
-                    // Order was printed but not logged
-                    showToast(result.message || `Order #${result.order_number} WAS PRINTED, but record keeping FAILED. Notify staff.`, 'warning', 10000);
-                    currentOrder = []; // Clear order as it was printed
                     universalOrderComment = "";
                     if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
                     localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
                     currentOrderLineItemCounter = 0;
                     localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
 
-                    orderNumber = result.order_number + 1; // Order was printed, number used
+                    orderNumber = result.order_number + 1;
+                    localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
+                    localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
+                    if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+
+                    hideNumpad();
+                    updateOrderDisplay();
+
+                } else if (result.status === "error_print_failed") {
+                    showToast(result.message || `Order #${result.order_number} FAILED TO PRINT. Order NOT saved. Check printer.`, 'error', 7000);
+                    if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
+                        orderNumber = result.order_number + 1;
+                        localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
+                        localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
+                        if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+                    }
+
+                } else if (result.status === "error_log_failed_after_print") {
+                    showToast(result.message || `Order #${result.order_number} WAS PRINTED, but record keeping FAILED. Notify staff.`, 'warning', 10000);
+                    currentOrder = [];
+                    universalOrderComment = "";
+                    if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
+                    localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
+                    currentOrderLineItemCounter = 0;
+                    localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
+
+                    orderNumber = result.order_number + 1;
                     localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
                     localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
                     if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
@@ -795,13 +923,11 @@
                     hideNumpad();
                     updateOrderDisplay();
                 } else {
-                    // Other server-side errors reported with a 200 HTTP status but a custom error status in JSON
                     let errorMsg = "Order processing failed.";
                     if (result && result.message) errorMsg = result.message;
                     else if (result && result.status) errorMsg = `Server reported: ${result.status}`;
 
                     showToast(errorMsg + (result.order_number ? ` (Attempted Order #${result.order_number})` : ''), 'error', 7000);
-                    // If an order number was attempted, advance to the next one
                     if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
                         orderNumber = result.order_number + 1;
                         localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
@@ -809,30 +935,28 @@
                         if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
                     }
                 }
-            } else { // HTTP non-2xx status (e.g., 400, 500)
+            } else {
                 let errorMsg = `Server error: ${response.status}.`;
-                if (result && result.message) { // result might have been parsed if server sent JSON error
+                if (result && result.message) {
                    errorMsg = result.message;
                 } else {
-                   // If result.message is not there or result is not valid JSON, try to get raw text
                    try {
-                       const errorText = await response.text(); // This consumes the response body if not already done
+                       const errorText = await response.text();
                        errorMsg = `Server error: ${response.status}${errorText ? ' - ' + errorText.substring(0,100) : ''}.`;
                    } catch (textError) { /* Ignore, use original errorMsg */ }
                 }
                 showToast(errorMsg + ' Order remains on screen.', 'error', 7000);
-                // If an order number was part of the error payload, advance it
-                if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) { 
+                if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
                     orderNumber = result.order_number + 1;
                     localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
                     localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
                     if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
                 }
             }
-        } catch (error) { // Catches network errors or if response.json() fails initially
+        } catch (error) {
             console.error('Send order network/parse error:', error);
             let detailedErrorMsg = 'Network error or invalid server response. Could not send order.';
-            if (error instanceof TypeError) { 
+            if (error instanceof TypeError) {
                  detailedErrorMsg = 'Server returned an unexpected response format. Check server logs.';
             } else if (error.message) {
                 detailedErrorMsg = `Error: ${error.message}. Could not send order.`;
@@ -846,20 +970,19 @@
         }
     }
 
-        // --- Mobile Order Panel UI ---
         function toggleMobileOrderPanel() {
             isMobileOrderPanelOpen = !isMobileOrderPanelOpen;
             if (isMobileOrderPanelOpen) {
                 elements.orderPanel.classList.remove('translate-y-full');
                 elements.orderPanelBackdrop.classList.remove('hidden');
-                if (elements.settingsGearContainer) elements.settingsGearContainer.classList.add('hidden'); // Hide gear when panel is open
-                document.body.style.overflow = 'hidden'; // Prevent scrolling of main content
+                if (elements.settingsGearContainer) elements.settingsGearContainer.classList.add('hidden');
+                document.body.style.overflow = 'hidden';
             } else {
                 elements.orderPanel.classList.add('translate-y-full');
                 elements.orderPanelBackdrop.classList.add('hidden');
-                if (elements.settingsGearContainer) elements.settingsGearContainer.classList.remove('hidden'); // Show gear
-                document.body.style.overflow = ''; // Restore scrolling
-                hideNumpad(); // Also hide numpad when panel closes
+                if (elements.settingsGearContainer) elements.settingsGearContainer.classList.remove('hidden');
+                document.body.style.overflow = '';
+                hideNumpad();
             }
         }
 
@@ -874,33 +997,31 @@
                 }
             }
         }
-        
-        // --- Numpad Functionality ---
+
         function openNumpadForOrderItem(orderId, currentQuantity, itemName) {
             itemForNumpad = { orderId, currentQuantity, itemName };
-            numpadCurrentInput = currentQuantity.toString(); // Initialize numpad with current quantity
+            numpadCurrentInput = currentQuantity.toString();
             if (elements.numpadItemNameDisplay) elements.numpadItemNameDisplay.innerHTML = `Quantity for: <span class="font-bold">${itemName}</span>`;
             if (elements.numpadContainer) elements.numpadContainer.classList.remove('hidden');
-            updateOrderDisplay(); // To highlight the item selected for numpad
+            updateOrderDisplay();
         }
 
         function hideNumpad() {
             if (elements.numpadContainer) elements.numpadContainer.classList.add('hidden');
             itemForNumpad = null;
             numpadCurrentInput = "";
-            updateOrderDisplay(); // To remove highlight from any item
+            updateOrderDisplay();
         }
 
         function handleNumpadInput(value) {
-            if (!itemForNumpad) return; // Numpad not active for any item
+            if (!itemForNumpad) return;
             if (value === 'clear') {
                 numpadCurrentInput = "";
             } else if (value === 'backspace') {
                 numpadCurrentInput = numpadCurrentInput.slice(0, -1);
-            } else if (numpadCurrentInput.length < 3) { // Limit quantity input length (e.g., max 999)
+            } else if (numpadCurrentInput.length < 3) {
                 numpadCurrentInput += value;
             }
-            // Optional: Update a display for numpadCurrentInput here if you add one to show live input
         }
 
         function confirmNumpadInput() {
@@ -911,65 +1032,138 @@
             if (item) {
                 if (!isNaN(newQuantity) && newQuantity > 0) {
                     item.quantity = newQuantity;
-                } else if (numpadCurrentInput === "" || newQuantity === 0) { // If cleared or set to 0
-                    removeItemByOrderId(item.orderId); // Remove item
+                } else if (numpadCurrentInput === "" || newQuantity === 0) {
+                    removeItemByOrderId(item.orderId);
                 } else {
-                    // Invalid input (e.g., not a number, or negative after parsing)
                     showToast("Invalid quantity. Please enter a number greater than 0.", "warning");
-                    // Quantity remains unchanged in this case
                 }
             }
-            hideNumpad(); // This will also call updateOrderDisplay
+            hideNumpad();
         }
 
-        // --- Item Option Selection Modal Logic ---
-        let currentItemForOptions = null; // Stores the menu item for which options are being selected
-        function openItemOptionSelectModal(menuItem) {
-            currentItemForOptions = menuItem;
+        let currentItemOptionContext = null; 
+
+        function openItemOptionSelectModal(itemForModal, context) { 
+            document.querySelectorAll('#optionModalOptionsContainer input').forEach(input => {
+                input.checked = false;
+                const parentDiv = input.closest('.option-selectable');
+                if (parentDiv) parentDiv.classList.remove('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
+            });
+            currentItemOptionContext = context; 
             if (!elements.itemOptionSelectModal || !elements.optionModalItemName || !elements.optionModalOptionsContainer) return;
 
-            elements.optionModalItemName.textContent = `Options for: ${menuItem.name}`;
-            elements.optionModalItemDescription.textContent = menuItem.description || `Please choose an option for ${menuItem.name}.`;
-            elements.optionModalOptionsContainer.innerHTML = ''; // Clear previous options
+            elements.optionModalItemName.textContent = `Options for: ${itemForModal.name}`;
+            elements.optionModalOptionsContainer.innerHTML = '';
+            elements.confirmOptionBtn.disabled = true;
 
-            if (menuItem.options && menuItem.options.length > 0) {
-                menuItem.options.forEach((option, index) => {
-                    const optionId = `modal_item_option_${menuItem.id}_${index}`; // Unique ID for radio button
+            let optionsToShow = [];
+            let description = "";
+            let inputType = 'radio';
+
+            if (context === 'steak_cooking' && itemForModal.isSteak) {
+                optionsToShow = itemForModal.steakCookingOptions || []; // Array of strings
+                description = `Select cooking preference for ${itemForModal.name}.`;
+                inputType = 'radio';
+            } else if (context === 'general_item_option') {
+                if (itemForModal.hasGeneralOptions && itemForModal.generalOptions && Array.isArray(itemForModal.generalOptions) && itemForModal.generalOptions.length > 0) {
+                    optionsToShow = itemForModal.generalOptions; // Array of {name, priceChange}
+                } else if (!itemForModal.isSteak && itemForModal.options && Array.isArray(itemForModal.options) && itemForModal.options.length > 0) {
+                    // Backward compatibility: convert old string options to new object format for display
+                    optionsToShow = itemForModal.options.map(optStr => ({ name: optStr, priceChange: 0 }));
+                }
+                description = `Select option(s) for ${itemForModal.name}. (Multiple selections allowed)`;
+                inputType = 'checkbox';
+            } else {
+                console.warn("Modal opened with unexpected context or item structure:", itemForModal, context);
+                elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No suitable options for this step.</p>`;
+                elements.itemOptionSelectModal.classList.remove('hidden');
+                elements.itemOptionSelectModal.classList.add('flex');
+                return;
+            }
+            elements.optionModalItemDescription.textContent = description;
+
+            if (optionsToShow.length > 0) {
+                elements.confirmOptionBtn.disabled = false;
+                optionsToShow.forEach((optionData, index) => { // optionData can be string or {name, priceChange}
+                    const optionName = (typeof optionData === 'object' && optionData.name) ? optionData.name : optionData;
+                    const priceChange = (typeof optionData === 'object' && typeof optionData.priceChange === 'number') ? optionData.priceChange : 0;
+
+                    const optionId = `modal_item_opt_${itemForModal.id}_${context}_${optionName.replace(/\s+/g, '_')}_${index}`;
                     const div = document.createElement('div');
-                    // Styling for clickable option rows
-                    div.className = "p-3 border border-gray-300 rounded-md hover:bg-gray-100 cursor-pointer group focus-within:ring-2 focus-within:ring-black"; 
-                    div.onclick = () => { 
-                        const radioBtn = document.getElementById(optionId);
-                        if (radioBtn) radioBtn.checked = true;
-                        // Visual feedback for selection
-                        Array.from(elements.optionModalOptionsContainer.children).forEach(child => child.classList.remove('border-black', 'bg-gray-100', 'ring-2', 'ring-black'));
-                        div.classList.add('border-black', 'bg-gray-100', 'ring-2', 'ring-black');
-                    };
+                    div.className = "option-selectable p-3 border border-gray-300 rounded-md hover:bg-gray-100 cursor-pointer group focus-within:ring-2 focus-within:ring-black";
 
-                    const radio = document.createElement('input');
-                    radio.type = 'radio';
-                    radio.name = `item_option_for_${menuItem.id}`; // Group radio buttons for the same item
-                    radio.id = optionId;
-                    radio.value = option; // The actual option string
-                    radio.className = "form-radio h-4 w-4 text-black focus:ring-black";
-                    if (index === 0) { // Pre-select the first option
-                        radio.checked = true;
-                        div.classList.add('border-black', 'bg-gray-100', 'ring-2', 'ring-black'); 
+                    const inputElement = document.createElement('input');
+                    inputElement.type = inputType;
+                    inputElement.name = `item_option_for_${itemForModal.id}_${context}`; 
+                    if (inputType === 'checkbox') {
+                        inputElement.name = optionId; 
+                    }
+                    inputElement.id = optionId;
+                    inputElement.value = optionName; // Store name for identification
+                    // Store price change on the input element itself for easy retrieval
+                    inputElement.dataset.priceChange = priceChange; 
+                    inputElement.className = `form-${inputType} h-4 w-4 text-black border-gray-300 focus:ring-black accent-black`;
+
+                    let labelText = optionName;
+                    if (inputType === 'checkbox' && priceChange !== 0) {
+                        labelText += ` (${priceChange > 0 ? '+' : ''}€${priceChange.toFixed(2)})`;
                     }
 
                     const label = document.createElement('label');
                     label.htmlFor = optionId;
-                    label.textContent = option;
-                    label.className = "ml-2 text-sm text-gray-700 cursor-pointer";
+                    label.textContent = labelText;
+                    label.className = "ml-2 text-sm text-gray-700 cursor-pointer flex-grow";
+                    
+                    const innerFlex = document.createElement('div');
+                    innerFlex.className = "flex items-center w-full";
+                    innerFlex.appendChild(inputElement);
+                    innerFlex.appendChild(label);
+                    div.appendChild(innerFlex);
+                    
+                    div.onclick = function(event) {
+                        if (event.target === inputElement || event.target === label || label.contains(event.target)) {
+                           return; 
+                        }
+                        inputElement.click(); 
+                    };
 
-                    div.appendChild(radio);
-                    div.appendChild(label);
+                    inputElement.addEventListener('change', function() {
+                        const parentDiv = this.closest('.option-selectable');
+                        if (!parentDiv) return;
+
+                        if (this.type === 'radio') {
+                            if (this.checked) {
+                                elements.optionModalOptionsContainer.querySelectorAll('input[type="radio"][name="' + this.name + '"]').forEach(otherRadio => {
+                                    const otherParentDiv = otherRadio.closest('.option-selectable');
+                                    if (otherParentDiv && otherRadio !== this) {
+                                        otherParentDiv.classList.remove('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
+                                    }
+                                });
+                                parentDiv.classList.add('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
+                            }
+                        } else { 
+                            if (this.checked) {
+                                parentDiv.classList.add('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
+                            } else {
+                                parentDiv.classList.remove('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
+                            }
+                        }
+                    });
+                    
+                    if (inputType === 'radio' && index === 0) { 
+                        inputElement.checked = true;
+                         setTimeout(() => { // Ensure DOM is updated before applying style
+                            const parentDiv = inputElement.closest('.option-selectable');
+                            if(parentDiv && inputElement.checked) { // Check again due to timeout
+                                parentDiv.classList.add('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
+                            }
+                        }, 0);
+                    }
                     elements.optionModalOptionsContainer.appendChild(div);
                 });
             } else {
-                elements.optionModalOptionsContainer.innerHTML = '<p class="text-sm text-gray-500">No specific options for this item.</p>';
+                elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No specific options defined for this item.</p>`;
             }
-            // Show the modal
             elements.itemOptionSelectModal.classList.remove('hidden');
             elements.itemOptionSelectModal.classList.add('flex');
         }
@@ -979,40 +1173,53 @@
                 elements.itemOptionSelectModal.classList.add('hidden');
                 elements.itemOptionSelectModal.classList.remove('flex');
             }
-            currentItemForOptions = null; // Clear the item being processed
+            currentItemOptionContext = null;
+            resetMultiStepSelection(); 
         }
 
         function confirmOptionSelection() {
-            if (!currentItemForOptions || !elements.optionModalOptionsContainer) return;
-            const selectedRadio = elements.optionModalOptionsContainer.querySelector('input[type="radio"]:checked');
-
-            if (!selectedRadio) {
-                showToast("Please select an option.", 'warning');
-                return;
+            if (!itemBeingConfigured || !elements.optionModalOptionsContainer || !currentItemOptionContext) {
+                 console.error("State missing for confirmOptionSelection", itemBeingConfigured, currentItemOptionContext);
+                 return;
             }
-            const selectedOptionValue = selectedRadio.value;
 
-            // Add item to order with the selected option
-            currentOrderLineItemCounter++;
-            localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', currentOrderLineItemCounter.toString());
-            // Create a unique ID for this line item, incorporating the option if desired for uniqueness
-            const uniqueLineId = `${currentItemForOptions.id}-${selectedOptionValue.replace(/\s+/g, '_')}-line-${currentOrderLineItemCounter}`;
-            
-            currentOrder.push({
-                ...currentItemForOptions, // Spread original item properties
-                quantity: 1, 
-                comment: "",
-                selectedOption: selectedOptionValue, 
-                orderId: uniqueLineId // Assign the unique line ID
-            });
-            
-            updateOrderDisplay();
-            cancelOptionSelection(); // Close modal and reset
+            if (currentItemOptionContext === 'steak_cooking') {
+                const selectedRadio = elements.optionModalOptionsContainer.querySelector('input[type="radio"]:checked');
+                if (!selectedRadio) {
+                    showToast("Please select a cooking preference.", 'warning');
+                    return;
+                }
+                tempSteakChoiceForMultiStep = selectedRadio.value;
+
+                const hasGenOpts = (itemBeingConfigured.hasGeneralOptions && itemBeingConfigured.generalOptions && Array.isArray(itemBeingConfigured.generalOptions) && itemBeingConfigured.generalOptions.length > 0) ||
+                                   (!itemBeingConfigured.isSteak && !itemBeingConfigured.hasGeneralOptions && itemBeingConfigured.options && Array.isArray(itemBeingConfigured.options) && itemBeingConfigured.options.length > 0);
+
+                if (hasGenOpts && currentOptionSelectionStep === 'steak') {
+                    currentOptionSelectionStep = 'general';
+                    openItemOptionSelectModal(itemBeingConfigured, 'general_item_option');
+                    return; 
+                } else {
+                    finalizeAndAddOrderItem(itemBeingConfigured, tempSteakChoiceForMultiStep, []);
+                    resetMultiStepSelection();
+                    cancelOptionSelection(); 
+                }
+            } else if (currentItemOptionContext === 'general_item_option') {
+                const checkedBoxes = elements.optionModalOptionsContainer.querySelectorAll('input[type="checkbox"]:checked');
+                const generalSelectionsWithOptions = Array.from(checkedBoxes).map(cb => {
+                    return {
+                        name: cb.value,
+                        priceChange: parseFloat(cb.dataset.priceChange || 0)
+                    };
+                });
+                
+                finalizeAndAddOrderItem(itemBeingConfigured, tempSteakChoiceForMultiStep, generalSelectionsWithOptions);
+                resetMultiStepSelection();
+                cancelOptionSelection(); 
+            }
         }
 
-        // --- Management Modal & Item/Category CRUD ---
-        let currentManagementTab = 'items'; // Default tab
-        let tempItemOptionsModal = []; // Temporary array for options when creating/editing an item in modal
+        let currentManagementTab = 'items';
+        let tempItemOptionsModal = []; // Will store objects: { name: 'Option X', priceChange: 1.50 }
 
         function toggleManagementModal() {
             if (!elements.managementModal) return;
@@ -1023,15 +1230,13 @@
             } else {
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
-                loadManagementData(); // Populate with current menu data
-                // Default to 'items' tab or the last active one if you store it
+                loadManagementData();
                 switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]'));
             }
         }
 
         function switchManagementTab(tabName, clickedButton) {
             currentManagementTab = tabName;
-            // Style tabs for active/inactive state
             document.querySelectorAll('.management-tab').forEach(btn => {
                 btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
                 btn.classList.add('text-gray-600', 'hover:bg-gray-300');
@@ -1045,39 +1250,36 @@
             const categoriesView = document.getElementById('categoriesManagement');
             if (!itemsView || !categoriesView) return;
 
-            // Show/hide tab content
             if (tabName === 'items') {
                 itemsView.style.display = 'block';
                 categoriesView.style.display = 'none';
-                resetItemFormAndUIModal(); // Clear item form when switching to items tab
-            } else { // 'categories'
+                resetItemFormAndUIModal();
+            } else {
                 itemsView.style.display = 'none';
                 categoriesView.style.display = 'block';
-                if (elements.categoryNameInput) elements.categoryNameInput.value = ''; // Clear category form
+                if (elements.categoryNameInput) elements.categoryNameInput.value = '';
             }
         }
 
         function populateManagementCategorySelect() {
             if (!elements.itemCategorySelect) return;
-            const currentCategoryValue = elements.itemCategorySelect.value; // Preserve selected value if possible
+            const currentCategoryValue = elements.itemCategorySelect.value;
             elements.itemCategorySelect.innerHTML = Object.keys(menu)
                 .map(c => `<option value="${c}">${c}</option>`)
                 .join('');
             if (Object.keys(menu).length === 0) {
                 elements.itemCategorySelect.innerHTML = '<option value="">Create a category first</option>';
             } else if (currentCategoryValue && menu[currentCategoryValue]) {
-                // If previous selection is still valid, re-select it
                 elements.itemCategorySelect.value = currentCategoryValue;
             } else if (elements.itemCategorySelect.options.length > 0) {
-                 // Otherwise, default to the first option if categories exist
                  elements.itemCategorySelect.selectedIndex = 0;
             }
         }
-        
+
         function loadManagementData() {
-            populateManagementCategorySelect(); // For the item form
-            renderExistingItemsInModal();     // List of items
-            renderExistingCategoriesInModal(); // List of categories
+            populateManagementCategorySelect();
+            renderExistingItemsInModal();
+            renderExistingCategoriesInModal();
         }
 
         function renderExistingItemsInModal() {
@@ -1088,14 +1290,25 @@
                 (items || []).forEach(item => {
                     itemCount++;
                     const div = document.createElement('div');
-                    // Highlight if this item is currently being edited
                     div.className = `p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm ${editingItem && editingItem.id === item.id ? 'bg-gray-200 border-gray-500' : 'bg-white hover:bg-gray-50'}`;
+
+                    let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
+                                       <span class="text-xs text-gray-500 ml-1">(${category}) - €${(item.price || 0).toFixed(2)}</span>`;
+
+                    const hasSteakOpts = item.isSteak && item.steakCookingOptions && item.steakCookingOptions.length > 0;
+                    const hasGeneralOpts = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
+                    // const hasOldGenOpts = !item.isSteak && !item.hasGeneralOptions && item.options && item.options.length > 0; // Old format check
+
+                    if (hasSteakOpts) {
+                        itemDetails += `<span class="text-xs text-orange-700 ml-1">(Steak Opts: ${item.steakCookingOptions.length})</span>`;
+                    }
+                    if (hasGeneralOpts) { // Now generalOptions is an array of objects
+                        itemDetails += `<span class="text-xs text-blue-600 ml-1">(Gen Opts: ${item.generalOptions.length})</span>`;
+                    }
+
+
                     div.innerHTML = `
-                        <div>
-                            <span class="font-medium text-gray-800">${item.name}</span>
-                            <span class="text-xs text-gray-500 ml-1">(${category}) - €${(item.price || 0).toFixed(2)}</span>
-                            ${item.options && item.options.length > 0 ? `<span class="text-xs text-blue-600 ml-1">(${item.options.length} options)</span>` : ''}
-                        </div>
+                        <div>${itemDetails}</div>
                         <div class="space-x-1 flex-shrink-0">
                             <button onclick="editItemModal(${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
                             <button onclick="deleteItem(${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
@@ -1126,167 +1339,222 @@
                 elements.existingCategoriesListModal.appendChild(div);
             });
         }
-        
+
         function generateItemId() {
-            // Find the max existing ID and add 1, or start from 1 if no items
             const allItems = [].concat(...Object.values(menu).map(categoryItems => categoryItems || []));
             return allItems.length > 0 ? Math.max(0, ...allItems.map(i => i.id || 0)) + 1 : 1;
         }
 
         function resetItemFormAndUIModal() {
-            // Clear form fields
             if(elements.itemNameInput) elements.itemNameInput.value = '';
             if(elements.itemPriceInput) elements.itemPriceInput.value = '';
-            if(elements.itemIdInput) elements.itemIdInput.value = ''; // Clear hidden ID field
+            if(elements.itemIdInput) elements.itemIdInput.value = ''; 
             if(elements.itemCategorySelect && elements.itemCategorySelect.options.length > 0) elements.itemCategorySelect.selectedIndex = 0;
-            
-            // Reset options UI
-            if(elements.itemHasOptionsCheckboxModal) elements.itemHasOptionsCheckboxModal.checked = false;
-            tempItemOptionsModal = []; // Clear temporary options array
-            toggleItemOptionsUIInModal(); // This will hide the options section and render empty list
 
-            // Reset button states
+            if(elements.itemIsSteakCheckbox) elements.itemIsSteakCheckbox.checked = false;
+            if(elements.itemHasOptionsCheckboxModal) elements.itemHasOptionsCheckboxModal.checked = false;
+            tempItemOptionsModal = []; // Reset to empty array
+
+            if (elements.steakCookingOptionsList) {
+                elements.steakCookingOptionsList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+            }
+            if (elements.newOptionNameInputModal) elements.newOptionNameInputModal.value = '';
+            if (elements.newOptionPriceInputModal) elements.newOptionPriceInputModal.value = '';
+
+
+            toggleItemTypeOptionsUI(); // This will also call toggleItemOptionsUIInModal
+
             if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save Item';
             if(elements.cancelEditBtn) elements.cancelEditBtn.classList.add('hidden');
-            editingItem = null; // No item is being edited
-            renderExistingItemsInModal(); // Refresh list to remove any edit highlight
+            editingItem = null;
+            renderExistingItemsInModal(); // Re-render list to remove highlight
         }
 
         function editItemModal(itemIdToEdit) {
             let foundItem;
             let itemCategoryName;
-            // Find the item and its category
             Object.entries(menu).forEach(([category, items]) => {
                 const item = (items || []).find(i => i.id === itemIdToEdit);
                 if (item) { foundItem = item; itemCategoryName = category; }
             });
 
             if (foundItem) {
-                editingItem = { ...foundItem }; // Store a copy for editing
-                // Populate form fields
+                editingItem = { ...foundItem };
                 if(elements.itemNameInput) elements.itemNameInput.value = foundItem.name;
                 if(elements.itemPriceInput) elements.itemPriceInput.value = foundItem.price;
                 if(elements.itemCategorySelect) elements.itemCategorySelect.value = itemCategoryName;
-                if(elements.itemIdInput) elements.itemIdInput.value = foundItem.id; // Set hidden ID field
+                if(elements.itemIdInput) elements.itemIdInput.value = foundItem.id; 
 
-                // Populate options UI
-                if(elements.itemHasOptionsCheckboxModal) { 
-                    elements.itemHasOptionsCheckboxModal.checked = (foundItem.options && foundItem.options.length > 0);
+                if(elements.itemIsSteakCheckbox) elements.itemIsSteakCheckbox.checked = !!foundItem.isSteak;
+
+                if (foundItem.isSteak && elements.steakCookingOptionsList) {
+                    const itemSteakOptions = foundItem.steakCookingOptions || [];
+                    elements.steakCookingOptionsList.querySelectorAll('input[name="steakCookingLevelForm"]').forEach(cb => {
+                        cb.checked = itemSteakOptions.includes(cb.value);
+                    });
+                } else if (elements.steakCookingOptionsList) {
+                     elements.steakCookingOptionsList.querySelectorAll('input[name="steakCookingLevelForm"]').forEach(cb => cb.checked = false);
                 }
-                tempItemOptionsModal = (foundItem.options && foundItem.options.length > 0) ? [...foundItem.options] : [];
-                toggleItemOptionsUIInModal(); // Show/hide and render options list
 
-                // Update button states
+                // Handle general options (new object format or old string array format)
+                if (foundItem.hasGeneralOptions && foundItem.generalOptions && Array.isArray(foundItem.generalOptions)) {
+                    // Ensure all items in generalOptions are objects with name and priceChange
+                    tempItemOptionsModal = foundItem.generalOptions.map(opt => 
+                        typeof opt === 'string' ? { name: opt, priceChange: 0 } : opt
+                    );
+                } else if (!foundItem.hasGeneralOptions && foundItem.options && Array.isArray(foundItem.options)) { // Backward compatibility for old `options` array of strings
+                    tempItemOptionsModal = foundItem.options.map(optName => ({ name: optName, priceChange: 0 }));
+                } else {
+                    tempItemOptionsModal = [];
+                }
+                if(elements.itemHasOptionsCheckboxModal) {
+                     elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0) || (!foundItem.hasGeneralOptions && foundItem.options && foundItem.options.length > 0) ;
+                }
+
+
+                toggleItemTypeOptionsUI(); // This will call toggleItemOptionsUIInModal which calls renderTemporaryOptionsListModal
+
                 if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
                 if(elements.cancelEditBtn) elements.cancelEditBtn.classList.remove('hidden');
-                renderExistingItemsInModal(); // Refresh list to highlight the item being edited
-                if(elements.itemNameInput) elements.itemNameInput.focus(); // Focus on first field
+                renderExistingItemsInModal(); // Highlight the edited item
+                if(elements.itemNameInput) elements.itemNameInput.focus();
             }
         }
-        
+
         function cancelEditItem() {
             resetItemFormAndUIModal();
             showToast('Edit cancelled.', 'info');
         }
 
         async function saveItem() {
-            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect || !elements.itemIdInput || !elements.itemHasOptionsCheckboxModal) return;
+            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect || !elements.itemIsSteakCheckbox || !elements.itemHasOptionsCheckboxModal || !elements.itemIdInput) {
+                console.error("A required form element is missing in `elements` cache for saveItem.");
+                showToast('Error: Form elements missing. Cannot save.', 'error');
+                return;
+            }
 
             const itemName = elements.itemNameInput.value.trim();
-            const itemPrice = parseFloat(elements.itemPriceInput.value);
+            const itemPrice = parseFloat(elements.itemPriceInput.value); // This is base price
             const itemCategory = elements.itemCategorySelect.value;
-            // Use existing ID if editing, otherwise generate a new one
-            const itemId = elements.itemIdInput.value ? parseInt(elements.itemIdInput.value) : (editingItem ? editingItem.id : generateItemId());
-
-            // Basic validation
-            if (!itemName || isNaN(itemPrice) || itemPrice < 0) {
-                showToast('Item Name and Price are required and Price must be valid.', 'warning'); return;
+            
+            let itemIdVal;
+            if (editingItem && elements.itemIdInput.value) {
+                itemIdVal = parseInt(elements.itemIdInput.value);
+                 if (isNaN(itemIdVal) || itemIdVal !== editingItem.id) { 
+                    console.error("Item ID mismatch or invalid during edit. Expected:", editingItem.id, "Got:", elements.itemIdInput.value);
+                    showToast('Error: Item ID conflict during update.', 'error');
+                    return;
+                 }
+            } else if (editingItem) { 
+                itemIdVal = editingItem.id;
+            } else { 
+                itemIdVal = generateItemId();
             }
-             if (!itemCategory && Object.keys(menu).length > 0) { // Category must be selected if categories exist
+            
+            if (isNaN(itemIdVal)) {
+                showToast('Error: Invalid Item ID. Cannot save.', 'error');
+                return;
+            }
+
+            if (!itemName || isNaN(itemPrice) || itemPrice < 0) {
+                showToast('Item Name and Base Price are required and Price must be valid.', 'warning'); return;
+            }
+             if (!itemCategory && Object.keys(menu).length > 0) {
                 showToast('Please select a category for the item.', 'warning'); return;
             }
-             if (Object.keys(menu).length === 0 && !itemCategory) { // If no categories exist, this is an issue (should be caught by select population)
+             if (Object.keys(menu).length === 0 && !itemCategory) {
                 showToast('Please create a category first, then select it for the item.', 'warning'); return;
             }
 
+            const itemData = {
+                id: itemIdVal,
+                name: itemName,
+                price: itemPrice, // Base price
+                isSteak: elements.itemIsSteakCheckbox.checked,
+                hasGeneralOptions: elements.itemHasOptionsCheckboxModal.checked,
+                steakCookingOptions: [],
+                generalOptions: [] // Will store {name, priceChange}
+            };
 
-            const itemData = { id: itemId, name: itemName, price: itemPrice };
-            // Add options if checkbox is checked and options are defined
-            if (elements.itemHasOptionsCheckboxModal.checked) {
-                if (tempItemOptionsModal.length === 0) {
-                    showToast('If "item has options" is checked, please add at least one option name.', 'warning'); return;
-                }
-                itemData.options = [...tempItemOptionsModal]; // Copy from temporary array
-            } else {
-                itemData.options = []; // Ensure options array is empty if not checked
+            if(itemData.isSteak) {
+                document.querySelectorAll('#steakCookingOptionsList input[name="steakCookingLevelForm"]:checked').forEach(cb => {
+                    itemData.steakCookingOptions.push(cb.value);
+                });
             }
 
-            // --- Logic to update the menu object ---
+            if (itemData.hasGeneralOptions) {
+                // tempItemOptionsModal now holds objects {name, priceChange}
+                if (tempItemOptionsModal.length === 0) {
+                    showToast('If "Has General Options" is checked, please add at least one option.', 'warning'); return;
+                }
+                itemData.generalOptions = [...tempItemOptionsModal]; 
+            } else {
+                itemData.generalOptions = []; // Ensure it's an empty array if not checked
+            }
+            
+            // Remove old 'options' field if it exists from previous versions
+            delete itemData.options;
+
+
             let oldCategoryOfItem = null;
-            // If editing, find and potentially remove the item from its old category if category changed
             if (editingItem) { 
                 Object.keys(menu).forEach(cat => {
                     const itemIndex = (menu[cat] || []).findIndex(i => i.id === editingItem.id);
                     if (itemIndex > -1) {
                         oldCategoryOfItem = cat;
-                        if (cat !== itemCategory) { // Only remove if category changed
-                           menu[cat].splice(itemIndex, 1);
+                        if (cat !== itemCategory) { 
+                           menu[cat].splice(itemIndex, 1); 
                         }
                     }
                 });
             }
-            
-            if (!menu[itemCategory]) menu[itemCategory] = []; // Ensure target category array exists
-            
-            // Find if item with this ID already exists in the target category
+
+            if (!menu[itemCategory]) menu[itemCategory] = [];
+
             const existingItemIndexInTargetCategory = menu[itemCategory].findIndex(i => i.id === itemData.id);
-            if (existingItemIndexInTargetCategory > -1) { // Item with this ID already in target category
-                // This can happen if editing an item and keeping its ID, or if creating a new item with a conflicting ID (less likely with generateItemId)
-                if (!editingItem || editingItem.id !== itemData.id) { 
-                     // This implies a new item or an item being moved/renamed to an ID that conflicts in the target category.
-                     // This scenario should be rare if generateItemId works correctly for new items.
-                     // If it's an existing item being moved and its ID now conflicts, it's an issue.
-                     showToast('Error: An item with this ID already exists in the target category.', 'error');
-                     // If we removed it from an old category during an edit, we should put it back to avoid data loss.
-                     if (editingItem && oldCategoryOfItem && oldCategoryOfItem !== itemCategory && menu[oldCategoryOfItem]) {
-                         menu[oldCategoryOfItem].push({...editingItem}); // Re-add original item data to old category
-                     }
-                     return; // Prevent save
+
+            if (existingItemIndexInTargetCategory > -1) { 
+                if (editingItem && editingItem.id === itemData.id) { 
+                    menu[itemCategory][existingItemIndexInTargetCategory] = itemData; 
+                } else if (!editingItem) { 
+                     showToast('Error: Item ID conflict for new item. Please try again.', 'error');
+                     return;
                 }
-                // If editing the same item within the same category (or moving to new category but ID is fine), just update it
-                menu[itemCategory][existingItemIndexInTargetCategory] = itemData;
-            } else {
-                // New item, or item moved to a new category where its ID is unique
+                 else { 
+                    showToast('Error: An item with this ID already exists in the target category.', 'error');
+                    if (editingItem && oldCategoryOfItem && oldCategoryOfItem !== itemCategory && menu[oldCategoryOfItem]) {
+                        menu[oldCategoryOfItem].push({...editingItem}); 
+                    }
+                    return; 
+                }
+            } else { 
                 menu[itemCategory].push(itemData);
             }
-            
-            menu[itemCategory].sort((a, b) => a.name.localeCompare(b.name)); // Keep items sorted by name
 
-            // --- Save to server and update UI ---
+            menu[itemCategory].sort((a, b) => a.name.localeCompare(b.name));
+
             const success = await saveMenuToServer();
             if (success) {
                 showToast(editingItem ? 'Item updated successfully!' : 'Item saved successfully!', 'success');
-                resetItemFormAndUIModal(); // Clear form
-                loadMenu(); // Reload main menu view & management data to reflect changes
+                resetItemFormAndUIModal();
+                loadMenu(); 
             } else {
-                // If save failed, ideally revert local changes. Simplest is to reload from server.
                 showToast('Failed to save item to server. Reverting local changes.', 'error');
-                loadMenu(); // Reload from server to ensure data integrity and revert local optimistic updates
+                loadMenu(); 
             }
         }
-        
+
         async function deleteItem(itemIdToDelete) {
             if (!confirm('Are you sure you want to delete this item? This cannot be undone.')) return;
-            
+
             let itemFoundAndDeletedLocally = false;
-            let originalItemData = null; // For potential rollback on server save failure
+            let originalItemData = null;
             let originalCategory = null;
 
-            // Find and remove item from local menu object
             Object.keys(menu).forEach(cat => {
                 const itemIndex = (menu[cat] || []).findIndex(i => i.id === itemIdToDelete);
                 if (itemIndex > -1) {
-                    originalItemData = {...menu[cat][itemIndex]}; // Store backup
+                    originalItemData = {...menu[cat][itemIndex]};
                     originalCategory = cat;
                     menu[cat].splice(itemIndex, 1);
                     itemFoundAndDeletedLocally = true;
@@ -1297,20 +1565,18 @@
                 showToast('Item not found for deletion.', 'warning'); return;
             }
 
-            const success = await saveMenuToServer(); // Attempt to save changes to server
+            const success = await saveMenuToServer();
             if (success) {
                 showToast('Item deleted successfully.', 'success');
-                // If the deleted item was being edited, reset the form
                 if (editingItem && editingItem.id === itemIdToDelete) resetItemFormAndUIModal();
-                loadMenu(); // Reload main menu view & management data
+                loadMenu();
             } else {
                 showToast('Failed to delete item on server. Reverting local deletion.', 'error');
-                // Rollback: add item back to local menu if server save failed
-                if (originalItemData && originalCategory && menu[originalCategory]) { 
+                if (originalItemData && originalCategory && menu[originalCategory]) {
                     menu[originalCategory].push(originalItemData);
-                    menu[originalCategory].sort((a,b) => a.name.localeCompare(b.name)); // Re-sort
+                    menu[originalCategory].sort((a,b) => a.name.localeCompare(b.name));
                 }
-                loadMenu(); // Re-fetch from server to ensure consistency
+                loadMenu();
             }
         }
 
@@ -1319,146 +1585,170 @@
             const categoryName = elements.categoryNameInput.value.trim();
             if (!categoryName) { showToast('Category name cannot be empty.', 'warning'); return; }
             if (menu[categoryName]) { showToast('Category already exists.', 'warning'); return; }
-            
-            menu[categoryName] = []; // Add new category with an empty array for items
+
+            menu[categoryName] = [];
             const success = await saveMenuToServer();
             if (success) {
                 showToast(`Category "${categoryName}" added successfully.`, 'success');
-                elements.categoryNameInput.value = ''; // Clear input
-                loadMenu(); // Reload menu and management data
-                // If the "Create a category first" option was showing, refresh the select
+                elements.categoryNameInput.value = '';
+                loadMenu();
                 if(elements.itemCategorySelect && elements.itemCategorySelect.querySelector('option[value=""]')) {
-                    populateManagementCategorySelect(); 
+                    populateManagementCategorySelect();
                 }
             }  else {
-                delete menu[categoryName]; // Revert local change if server save failed
+                delete menu[categoryName];
                 showToast('Failed to save category on server.', 'error');
             }
         }
 
         async function deleteCategory(categoryNameToDelete) {
-            // Confirm deletion, especially if category contains items
             if (menu[categoryNameToDelete] && menu[categoryNameToDelete].length > 0) {
                 if (!confirm(`Category "${categoryNameToDelete}" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.`)) return;
             } else {
                 if (!confirm(`Are you sure you want to delete category "${categoryNameToDelete}"? This cannot be undone.`)) return;
             }
-            const backupCategoryData = menu[categoryNameToDelete] ? [...menu[categoryNameToDelete]] : null; // Backup for rollback
-            delete menu[categoryNameToDelete]; // Delete locally first
+            const backupCategoryData = menu[categoryNameToDelete] ? [...menu[categoryNameToDelete]] : null;
+            delete menu[categoryNameToDelete];
 
             const success = await saveMenuToServer();
             if (success) {
                 showToast(`Category "${categoryNameToDelete}" deleted successfully.`, 'success');
-                // If the deleted category was selected, select the first available category or null
-                if (selectedCategory === categoryNameToDelete) { 
-                    selectedCategory = Object.keys(menu)[0] || null; 
+                if (selectedCategory === categoryNameToDelete) {
+                    selectedCategory = Object.keys(menu)[0] || null;
                 }
-                loadMenu(); // This will re-render categories and products, and update management lists
+                loadMenu();
             } else {
-                // Rollback if server save failed
-                if(backupCategoryData !== null) menu[categoryNameToDelete] = backupCategoryData; 
+                if(backupCategoryData !== null) menu[categoryNameToDelete] = backupCategoryData;
                 showToast(`Failed to delete category "${categoryNameToDelete}" on server.`, 'error');
-                loadMenu(); // Re-fetch from server
+                loadMenu();
             }
         }
 
-        // --- Item Options UI within Management Modal ---
+        function toggleItemTypeOptionsUI() {
+            const isSteak = document.getElementById('itemIsSteak').checked;
+            document.getElementById('steakCookingPreferencesContainer').style.display = isSteak ? 'block' : 'none';
+
+            if(!isSteak) {
+                document.querySelectorAll('#steakCookingOptionsList input[name="steakCookingLevelForm"]').forEach(cb => cb.checked = false);
+            }
+            toggleItemOptionsUIInModal();
+        }
+
+
         function toggleItemOptionsUIInModal() {
-            if (!elements.itemOptionsModalContainer || !elements.itemHasOptionsCheckboxModal) return;
-            // Show/hide the options input section based on checkbox
-            elements.itemOptionsModalContainer.style.display = elements.itemHasOptionsCheckboxModal.checked ? 'block' : 'none';
-            // If unchecked, clear any temporary options
-            if (!elements.itemHasOptionsCheckboxModal.checked) tempItemOptionsModal = [];
-            renderTemporaryOptionsListModal(); // Update the displayed list of options
+            const hasOptions = document.getElementById('itemHasOptionsModal').checked;
+            document.getElementById('itemOptionsModalContainer').style.display = hasOptions ? 'block' : 'none';
+
+            if(!hasOptions) {
+                tempItemOptionsModal = [];
+            }
+            renderTemporaryOptionsListModal();
         }
 
         function addOptionToItemFormTempModal() {
-            if (!elements.newOptionNameInputModal) return;
+            if (!elements.newOptionNameInputModal || !elements.newOptionPriceInputModal) return;
             const optionName = elements.newOptionNameInputModal.value.trim();
-            if (optionName && !tempItemOptionsModal.includes(optionName)) {
-                tempItemOptionsModal.push(optionName);
-                renderTemporaryOptionsListModal(); // Refresh list
-                elements.newOptionNameInputModal.value = ''; // Clear input
-                elements.newOptionNameInputModal.focus(); // Focus for next input
-            } else if (tempItemOptionsModal.includes(optionName)) {
-                showToast('This option name already exists for the item.', 'warning');
-            } else if (!optionName) {
+            const priceChangeText = elements.newOptionPriceInputModal.value.trim();
+            const priceChange = priceChangeText === "" ? 0 : parseFloat(priceChangeText);
+
+            if (!optionName) {
                 showToast('Option name cannot be empty.', 'warning');
+                return;
             }
+            if (isNaN(priceChange)) {
+                showToast('Price change must be a valid number or empty (for 0).', 'warning');
+                return;
+            }
+
+            if (tempItemOptionsModal.find(opt => opt.name === optionName)) {
+                showToast('This general option name already exists for the item.', 'warning');
+                return;
+            }
+            
+            tempItemOptionsModal.push({ name: optionName, priceChange: priceChange });
+            renderTemporaryOptionsListModal();
+            elements.newOptionNameInputModal.value = '';
+            elements.newOptionPriceInputModal.value = '';
+            elements.newOptionNameInputModal.focus();
         }
 
         function renderTemporaryOptionsListModal() {
             if (!elements.itemOptionsListDisplayModal) return;
-            elements.itemOptionsListDisplayModal.innerHTML = ''; // Clear current list
-            if (tempItemOptionsModal.length === 0) {
-                elements.itemOptionsListDisplayModal.innerHTML = '<p class="text-xs text-gray-500 italic w-full">No options added yet. Type an option name and click "Add".</p>';
+            elements.itemOptionsListDisplayModal.innerHTML = '';
+            if (tempItemOptionsModal.length === 0 && document.getElementById('itemHasOptionsModal').checked) {
+                elements.itemOptionsListDisplayModal.innerHTML = '<p class="text-xs text-gray-500 italic w-full">No general options added yet.</p>';
+                return;
+            } else if (tempItemOptionsModal.length === 0 && !document.getElementById('itemHasOptionsModal').checked) {
+                elements.itemOptionsListDisplayModal.innerHTML = '';
                 return;
             }
-            // Create a "pill" for each option with a remove button
-            tempItemOptionsModal.forEach(optName => {
+
+            tempItemOptionsModal.forEach(opt => {
                 const pillSpan = document.createElement('span');
-                pillSpan.className = 'option-pill'; // Defined in <style>
-                pillSpan.textContent = optName;
+                pillSpan.className = 'option-pill'; 
+                const priceDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
+                pillSpan.textContent = `${opt.name}${priceDisplay}`;
 
                 const removeBtn = document.createElement('button');
-                removeBtn.className = 'remove-option-btn'; // Defined in <style>
-                removeBtn.innerHTML = '&times;'; // "X" symbol
-                removeBtn.title = `Remove option: ${optName}`;
-                removeBtn.type = 'button'; // Important for forms
-                removeBtn.onclick = () => removeTemporaryOptionModal(optName);
+                removeBtn.className = 'remove-option-btn'; 
+                removeBtn.innerHTML = '&times;'; 
+                removeBtn.title = `Remove option: ${opt.name}`;
+                removeBtn.type = 'button'; 
+                removeBtn.onclick = () => removeTemporaryOptionModal(opt.name);
                 pillSpan.appendChild(removeBtn);
                 elements.itemOptionsListDisplayModal.appendChild(pillSpan);
             });
         }
-        function removeTemporaryOptionModal(optionName) {
-            tempItemOptionsModal = tempItemOptionsModal.filter(opt => opt !== optionName);
-            renderTemporaryOptionsListModal(); // Refresh list
+        function removeTemporaryOptionModal(optionNameToRemove) { 
+            tempItemOptionsModal = tempItemOptionsModal.filter(opt => opt.name !== optionNameToRemove);
+            renderTemporaryOptionsListModal();
         }
 
-        // --- Toast Notifications ---
         let toastTimeout;
-        function showToast(message, type = 'info', duration = 3000) { 
+        function showToast(message, type = 'info', duration = 3000) {
             if (!elements.toast || !elements.toastMessage) return;
-            clearTimeout(toastTimeout); // Clear any existing toast timeout
+            clearTimeout(toastTimeout);
             elements.toastMessage.textContent = message;
-            
-            // Reset classes and apply type-specific background
-            elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] opacity-0 transition-opacity duration-300'; // Base classes
-            
+
+            elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] opacity-0 transition-opacity duration-300';
+
             switch(type) {
                 case 'success': elements.toast.classList.add('bg-green-600'); break;
                 case 'warning': elements.toast.classList.add('bg-yellow-500'); break;
                 case 'error': elements.toast.classList.add('bg-red-600'); break;
-                default: elements.toast.classList.add('bg-gray-800'); // Default 'info'
+                default: elements.toast.classList.add('bg-gray-800');
             }
-            
-            elements.toast.classList.remove('hidden'); // Make it visible
-            setTimeout(() => elements.toast.classList.remove('opacity-0'), 10); // Trigger fade-in
 
-            // Set timeout to hide and then remove toast
+            elements.toast.classList.remove('hidden');
+            setTimeout(() => elements.toast.classList.remove('opacity-0'), 10);
+
             toastTimeout = setTimeout(() => {
-                elements.toast.classList.add('opacity-0'); // Trigger fade-out
-                setTimeout(() => elements.toast.classList.add('hidden'), 300); // Actually hide after fade
+                elements.toast.classList.add('opacity-0');
+                setTimeout(() => elements.toast.classList.add('hidden'), 300);
             }, duration);
         }
-        
-        // --- Kitchen Ticket (Client-side representation, actual print is server-side) ---
-        // This function is for client-side display if needed, actual printing is server-side.
-        function prepareKitchenTicketData() { 
+
+        function prepareKitchenTicketData() {
             const ticketNumEl = document.getElementById('ticket-order-number');
             const ticketItemsEl = document.getElementById('ticket-items');
             const ticketNotesEl = document.getElementById('ticket-notes-content');
             const ticketTimeEl = document.getElementById('ticket-time');
 
-            if(ticketNumEl) ticketNumEl.textContent = orderNumber; // Shows anticipated next order number
-            if(ticketTimeEl) ticketTimeEl.textContent = new Date().toLocaleString(navigator.language || 'en-US'); // Current time
+            if(ticketNumEl) ticketNumEl.textContent = orderNumber;
+            if(ticketTimeEl) ticketTimeEl.textContent = new Date().toLocaleString(navigator.language || 'en-US');
 
             if(ticketItemsEl) {
-                ticketItemsEl.innerHTML = currentOrder.map(item =>
-                    `<div>${item.quantity}x ${item.name}` +
-                    (item.selectedOption ? ` (${item.selectedOption})` : '') +
-                    `${item.comment ? ` <small><em>(${item.comment})</em></small>` : ''}</div>`
-                ).join('');
+                ticketItemsEl.innerHTML = currentOrder.map(item => {
+                    let optionStr = '';
+                    if (item.steakPreference) {
+                        optionStr += ` (Cook: ${item.steakPreference})`;
+                    }
+                    if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
+                        // For kitchen ticket, price change might not be needed, just the option name
+                        optionStr += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name).join(', ')})`;
+                    }
+                    return `<div>${item.quantity}x ${item.name}${optionStr.trim()}${item.comment ? ` <small><em>(${item.comment})</em></small>` : ''}</div>`
+                }).join('');
             }
             if(ticketNotesEl) ticketNotesEl.textContent = universalOrderComment || "None";
         }
