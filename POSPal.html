@@ -41,17 +41,16 @@
          }
 
         .options-badge, .steak-badge {
-            /* Base styling, specific sizing/padding will be on the element itself if icons */
             font-weight: 500;
             color: white;
-            border-radius: 3px; /* Default, can be overridden by .rounded */
+            border-radius: 3px; 
             white-space: nowrap;
         }
         .options-badge {
-             background-color: #4b5563; /* Default gray for options */
+             background-color: #4b5563; 
         }
         .steak-badge {
-            background-color: #c2410c; /* Default orange for steak */
+            background-color: #c2410c; 
         }
 
         .option-pill {
@@ -135,7 +134,6 @@
             background-color: #15803d;
         }
 
-        /* Fixed management tabs */
         .management-tab-container {
             position: relative;
             z-index: 10;
@@ -147,13 +145,11 @@
         .steak-options-grid {
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
         }
-        /* Style for selected option in modal */
         .option-selectable.selected {
-            border-color: #111827 !important; /* Ensure this overrides default border */
-            background-color: #f3f4f6; /* gray-100 */
+            border-color: #111827 !important; 
+            background-color: #f3f4f6; 
         }
         .option-selectable.selected input {
-             /* Ensure input is visible if custom background is applied */
         }
     </style>
 </head>
@@ -273,10 +269,12 @@
                 <button onclick="toggleManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
             </div>
 
+            <!-- MODIFIED: Added Order History Tab Button -->
             <div class="p-4 border-b border-gray-300 management-tab-container">
                 <div class="flex space-x-1 rounded-md bg-gray-200 p-1">
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Manage Categories</button>
+                    <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Order History</button>
                 </div>
             </div>
 
@@ -367,6 +365,18 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- NEW: Order History Tab Content -->
+                <div id="orderHistoryManagement" class="hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Today's Orders</h3>
+                    <button onclick="loadTodaysOrdersForReprint()" class="mb-4 px-4 py-2 btn-secondary text-sm">
+                        <i class="fas fa-sync-alt mr-1"></i> Refresh List
+                    </button>
+                    <div id="todaysOrdersList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50">
+                        <p class="text-xs text-gray-500 italic">Loading today's orders...</p>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -437,11 +447,11 @@
             elements.cancelEditBtn = document.getElementById('cancelEditBtn');
             elements.existingItemsListModal = document.getElementById('existingItemsListModal');
             elements.itemIsSteakCheckbox = document.getElementById('itemIsSteak');
-            elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); // Corrected ID
+            elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); 
             elements.itemOptionsModalContainer = document.getElementById('itemOptionsModalContainer');
             elements.itemOptionsListDisplayModal = document.getElementById('itemOptionsListDisplayModal');
             elements.newOptionNameInputModal = document.getElementById('newOptionNameInputModal');
-            elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal'); // Added for price input
+            elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal'); 
             elements.steakCookingPreferencesContainer = document.getElementById('steakCookingPreferencesContainer');
             elements.steakCookingOptionsList = document.getElementById('steakCookingOptionsList');
             elements.categoryNameInput = document.getElementById('categoryName');
@@ -450,6 +460,8 @@
             elements.toastMessage = document.getElementById('toast-message');
             elements.numpadContainer = document.getElementById('numpad-container');
             elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
+            // NEW: Cache element for reprint list
+            elements.todaysOrdersList = document.getElementById('todaysOrdersList');
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -665,7 +677,6 @@
             currentOptionSelectionStep = null; 
 
             const hasSteakOpts = menuItem.isSteak && menuItem.steakCookingOptions && menuItem.steakCookingOptions.length > 0;
-            // Check new generalOptions (array of objects) or old options (array of strings)
             const hasGenOpts = (menuItem.hasGeneralOptions && menuItem.generalOptions && Array.isArray(menuItem.generalOptions) && menuItem.generalOptions.length > 0) ||
                                (!menuItem.isSteak && !menuItem.hasGeneralOptions && menuItem.options && Array.isArray(menuItem.options) && menuItem.options.length > 0);
 
@@ -681,7 +692,7 @@
             }
         }
 
-        function finalizeAndAddOrderItem(baseItem, steakChoice, generalChoicesWithOptions) { // generalChoicesWithOptions is now array of {name, priceChange}
+        function finalizeAndAddOrderItem(baseItem, steakChoice, generalChoicesWithOptions) { 
             currentOrderLineItemCounter++;
             localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', currentOrderLineItemCounter.toString());
 
@@ -702,13 +713,13 @@
             }
 
             const orderItem = {
-                ...baseItem, // Includes original base price
+                ...baseItem, 
                 quantity: 1,
                 comment: "",
                 orderId: uniqueLineId,
                 steakPreference: steakChoice || null,
-                generalSelectedOptions: generalChoicesWithOptions || [], // Array of {name, priceChange}
-                itemPriceWithModifiers: itemPriceWithModifiers // Final calculated price for one unit
+                generalSelectedOptions: generalChoicesWithOptions || [], 
+                itemPriceWithModifiers: itemPriceWithModifiers 
             };
             currentOrder.push(orderItem);
             updateOrderDisplay();
@@ -731,7 +742,6 @@
             } else {
                 elements.emptyOrderMessage.style.display = 'none';
                 currentOrder.forEach(item => {
-                    // Use itemPriceWithModifiers for calculation if available, else base price
                     const pricePerUnit = typeof item.itemPriceWithModifiers === 'number' ? item.itemPriceWithModifiers : parseFloat(item.price || 0);
                     const itemTotal = pricePerUnit * item.quantity;
                     total += itemTotal;
@@ -859,11 +869,11 @@
             items: currentOrder.map(item => ({
                 id: item.id,
                 name: item.name,
-                basePrice: parseFloat(item.price || 0), // Send base price
+                basePrice: parseFloat(item.price || 0), 
                 quantity: item.quantity,
                 steakPreference: item.steakPreference || null,
-                generalSelectedOptions: item.generalSelectedOptions || [], // Array of {name, priceChange}
-                itemPriceWithModifiers: item.itemPriceWithModifiers, // Send calculated price per unit
+                generalSelectedOptions: item.generalSelectedOptions || [], 
+                itemPriceWithModifiers: item.itemPriceWithModifiers, 
                 comment: item.comment || "",
                 isSteak: item.isSteak || false,
             })),
@@ -880,62 +890,39 @@
             const result = await response.json();
 
             if (response.ok) {
+                 // Handle new multi-copy print statuses
                 if (result.status === "success") {
-                    showToast(result.message || `Order #${result.order_number} sent, printed, and logged!`, 'success');
-                    currentOrder = [];
-                    universalOrderComment = "";
-                    if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
-                    localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
-                    currentOrderLineItemCounter = 0;
-                    localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
-
-                    orderNumber = result.order_number + 1;
-                    localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
-                    localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
-                    if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-
-                    hideNumpad();
-                    updateOrderDisplay();
-
-                } else if (result.status === "error_print_failed") {
-                    showToast(result.message || `Order #${result.order_number} FAILED TO PRINT. Order NOT saved. Check printer.`, 'error', 7000);
-                    if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
-                        orderNumber = result.order_number + 1;
-                        localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
-                        localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
-                        if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-                    }
-
+                    showToast(result.message || `Order #${result.order_number} sent, all copies printed, and logged!`, 'success');
+                } else if (result.status === "warning_print_copy2_failed") {
+                    showToast(result.message || `Order #${result.order_number}: Copy 1 PRINTED & LOGGED. Copy 2 FAILED.`, 'warning', 7000);
+                } else if (result.status === "error_print_failed_copy1") {
+                    showToast(result.message || `Order #${result.order_number} - COPY 1 FAILED. Order NOT saved.`, 'error', 7000);
                 } else if (result.status === "error_log_failed_after_print") {
-                    showToast(result.message || `Order #${result.order_number} WAS PRINTED, but record keeping FAILED. Notify staff.`, 'warning', 10000);
+                    showToast(result.message || `Order #${result.order_number} - PRINTED but LOGGING FAILED. Notify staff!`, 'error', 10000);
+                } else { // Generic error from server but response was OK
+                    showToast(result.message || `Order #${result.order_number} processed with issues: ${result.status}`, 'warning', 7000);
+                }
+
+                // Common logic for successful or partially successful processing
+                if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "error_log_failed_after_print") {
                     currentOrder = [];
                     universalOrderComment = "";
                     if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
                     localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
                     currentOrderLineItemCounter = 0;
                     localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
-
-                    orderNumber = result.order_number + 1;
+                    hideNumpad();
+                    updateOrderDisplay();
+                }
+                 // Always update order number if provided by server, regardless of full success
+                if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
+                    orderNumber = parseInt(result.order_number) + 1; // Prepare for the *next* order
                     localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
                     localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
                     if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-
-                    hideNumpad();
-                    updateOrderDisplay();
-                } else {
-                    let errorMsg = "Order processing failed.";
-                    if (result && result.message) errorMsg = result.message;
-                    else if (result && result.status) errorMsg = `Server reported: ${result.status}`;
-
-                    showToast(errorMsg + (result.order_number ? ` (Attempted Order #${result.order_number})` : ''), 'error', 7000);
-                    if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
-                        orderNumber = result.order_number + 1;
-                        localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
-                        localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
-                        if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-                    }
                 }
-            } else {
+
+            } else { // HTTP error (e.g., 500, 400)
                 let errorMsg = `Server error: ${response.status}.`;
                 if (result && result.message) {
                    errorMsg = result.message;
@@ -946,8 +933,9 @@
                    } catch (textError) { /* Ignore, use original errorMsg */ }
                 }
                 showToast(errorMsg + ' Order remains on screen.', 'error', 7000);
+                // Potentially update order number if server still managed to assign one despite other errors
                 if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
-                    orderNumber = result.order_number + 1;
+                     orderNumber = parseInt(result.order_number) + 1;
                     localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
                     localStorage.setItem(LAST_ORDER_DATE_KEY, getLocalDateStr());
                     if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
@@ -1061,14 +1049,13 @@
             let inputType = 'radio';
 
             if (context === 'steak_cooking' && itemForModal.isSteak) {
-                optionsToShow = itemForModal.steakCookingOptions || []; // Array of strings
+                optionsToShow = itemForModal.steakCookingOptions || []; 
                 description = `Select cooking preference for ${itemForModal.name}.`;
                 inputType = 'radio';
             } else if (context === 'general_item_option') {
                 if (itemForModal.hasGeneralOptions && itemForModal.generalOptions && Array.isArray(itemForModal.generalOptions) && itemForModal.generalOptions.length > 0) {
-                    optionsToShow = itemForModal.generalOptions; // Array of {name, priceChange}
+                    optionsToShow = itemForModal.generalOptions; 
                 } else if (!itemForModal.isSteak && itemForModal.options && Array.isArray(itemForModal.options) && itemForModal.options.length > 0) {
-                    // Backward compatibility: convert old string options to new object format for display
                     optionsToShow = itemForModal.options.map(optStr => ({ name: optStr, priceChange: 0 }));
                 }
                 description = `Select option(s) for ${itemForModal.name}. (Multiple selections allowed)`;
@@ -1084,7 +1071,7 @@
 
             if (optionsToShow.length > 0) {
                 elements.confirmOptionBtn.disabled = false;
-                optionsToShow.forEach((optionData, index) => { // optionData can be string or {name, priceChange}
+                optionsToShow.forEach((optionData, index) => { 
                     const optionName = (typeof optionData === 'object' && optionData.name) ? optionData.name : optionData;
                     const priceChange = (typeof optionData === 'object' && typeof optionData.priceChange === 'number') ? optionData.priceChange : 0;
 
@@ -1099,8 +1086,7 @@
                         inputElement.name = optionId; 
                     }
                     inputElement.id = optionId;
-                    inputElement.value = optionName; // Store name for identification
-                    // Store price change on the input element itself for easy retrieval
+                    inputElement.value = optionName; 
                     inputElement.dataset.priceChange = priceChange; 
                     inputElement.className = `form-${inputType} h-4 w-4 text-black border-gray-300 focus:ring-black accent-black`;
 
@@ -1152,9 +1138,9 @@
                     
                     if (inputType === 'radio' && index === 0) { 
                         inputElement.checked = true;
-                         setTimeout(() => { // Ensure DOM is updated before applying style
+                         setTimeout(() => { 
                             const parentDiv = inputElement.closest('.option-selectable');
-                            if(parentDiv && inputElement.checked) { // Check again due to timeout
+                            if(parentDiv && inputElement.checked) { 
                                 parentDiv.classList.add('selected', 'ring-2', 'ring-black', 'border-black', 'bg-gray-100');
                             }
                         }, 0);
@@ -1219,7 +1205,7 @@
         }
 
         let currentManagementTab = 'items';
-        let tempItemOptionsModal = []; // Will store objects: { name: 'Option X', priceChange: 1.50 }
+        let tempItemOptionsModal = []; 
 
         function toggleManagementModal() {
             if (!elements.managementModal) return;
@@ -1230,8 +1216,9 @@
             } else {
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
-                loadManagementData();
-                switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]'));
+                loadManagementData(); // General data for items/categories
+                // Default to items tab, or handle active tab if needed
+                switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]')); 
             }
         }
 
@@ -1248,16 +1235,23 @@
 
             const itemsView = document.getElementById('itemsManagement');
             const categoriesView = document.getElementById('categoriesManagement');
-            if (!itemsView || !categoriesView) return;
+            const orderHistoryView = document.getElementById('orderHistoryManagement'); // NEW
+
+            if (!itemsView || !categoriesView || !orderHistoryView) return;
+
+            itemsView.style.display = 'none';
+            categoriesView.style.display = 'none';
+            orderHistoryView.style.display = 'none'; // NEW
 
             if (tabName === 'items') {
                 itemsView.style.display = 'block';
-                categoriesView.style.display = 'none';
                 resetItemFormAndUIModal();
-            } else {
-                itemsView.style.display = 'none';
+            } else if (tabName === 'categories') {
                 categoriesView.style.display = 'block';
                 if (elements.categoryNameInput) elements.categoryNameInput.value = '';
+            } else if (tabName === 'orderHistory') { // NEW
+                orderHistoryView.style.display = 'block';
+                loadTodaysOrdersForReprint(); // Load orders when tab is switched to
             }
         }
 
@@ -1297,12 +1291,11 @@
 
                     const hasSteakOpts = item.isSteak && item.steakCookingOptions && item.steakCookingOptions.length > 0;
                     const hasGeneralOpts = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
-                    // const hasOldGenOpts = !item.isSteak && !item.hasGeneralOptions && item.options && item.options.length > 0; // Old format check
 
                     if (hasSteakOpts) {
                         itemDetails += `<span class="text-xs text-orange-700 ml-1">(Steak Opts: ${item.steakCookingOptions.length})</span>`;
                     }
-                    if (hasGeneralOpts) { // Now generalOptions is an array of objects
+                    if (hasGeneralOpts) { 
                         itemDetails += `<span class="text-xs text-blue-600 ml-1">(Gen Opts: ${item.generalOptions.length})</span>`;
                     }
 
@@ -1353,7 +1346,7 @@
 
             if(elements.itemIsSteakCheckbox) elements.itemIsSteakCheckbox.checked = false;
             if(elements.itemHasOptionsCheckboxModal) elements.itemHasOptionsCheckboxModal.checked = false;
-            tempItemOptionsModal = []; // Reset to empty array
+            tempItemOptionsModal = []; 
 
             if (elements.steakCookingOptionsList) {
                 elements.steakCookingOptionsList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
@@ -1362,12 +1355,12 @@
             if (elements.newOptionPriceInputModal) elements.newOptionPriceInputModal.value = '';
 
 
-            toggleItemTypeOptionsUI(); // This will also call toggleItemOptionsUIInModal
+            toggleItemTypeOptionsUI(); 
 
             if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save Item';
             if(elements.cancelEditBtn) elements.cancelEditBtn.classList.add('hidden');
             editingItem = null;
-            renderExistingItemsInModal(); // Re-render list to remove highlight
+            renderExistingItemsInModal(); 
         }
 
         function editItemModal(itemIdToEdit) {
@@ -1396,13 +1389,11 @@
                      elements.steakCookingOptionsList.querySelectorAll('input[name="steakCookingLevelForm"]').forEach(cb => cb.checked = false);
                 }
 
-                // Handle general options (new object format or old string array format)
                 if (foundItem.hasGeneralOptions && foundItem.generalOptions && Array.isArray(foundItem.generalOptions)) {
-                    // Ensure all items in generalOptions are objects with name and priceChange
                     tempItemOptionsModal = foundItem.generalOptions.map(opt => 
                         typeof opt === 'string' ? { name: opt, priceChange: 0 } : opt
                     );
-                } else if (!foundItem.hasGeneralOptions && foundItem.options && Array.isArray(foundItem.options)) { // Backward compatibility for old `options` array of strings
+                } else if (!foundItem.hasGeneralOptions && foundItem.options && Array.isArray(foundItem.options)) { 
                     tempItemOptionsModal = foundItem.options.map(optName => ({ name: optName, priceChange: 0 }));
                 } else {
                     tempItemOptionsModal = [];
@@ -1412,11 +1403,11 @@
                 }
 
 
-                toggleItemTypeOptionsUI(); // This will call toggleItemOptionsUIInModal which calls renderTemporaryOptionsListModal
+                toggleItemTypeOptionsUI(); 
 
                 if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
                 if(elements.cancelEditBtn) elements.cancelEditBtn.classList.remove('hidden');
-                renderExistingItemsInModal(); // Highlight the edited item
+                renderExistingItemsInModal(); 
                 if(elements.itemNameInput) elements.itemNameInput.focus();
             }
         }
@@ -1434,7 +1425,7 @@
             }
 
             const itemName = elements.itemNameInput.value.trim();
-            const itemPrice = parseFloat(elements.itemPriceInput.value); // This is base price
+            const itemPrice = parseFloat(elements.itemPriceInput.value); 
             const itemCategory = elements.itemCategorySelect.value;
             
             let itemIdVal;
@@ -1469,11 +1460,11 @@
             const itemData = {
                 id: itemIdVal,
                 name: itemName,
-                price: itemPrice, // Base price
+                price: itemPrice, 
                 isSteak: elements.itemIsSteakCheckbox.checked,
                 hasGeneralOptions: elements.itemHasOptionsCheckboxModal.checked,
                 steakCookingOptions: [],
-                generalOptions: [] // Will store {name, priceChange}
+                generalOptions: [] 
             };
 
             if(itemData.isSteak) {
@@ -1483,16 +1474,14 @@
             }
 
             if (itemData.hasGeneralOptions) {
-                // tempItemOptionsModal now holds objects {name, priceChange}
                 if (tempItemOptionsModal.length === 0) {
                     showToast('If "Has General Options" is checked, please add at least one option.', 'warning'); return;
                 }
                 itemData.generalOptions = [...tempItemOptionsModal]; 
             } else {
-                itemData.generalOptions = []; // Ensure it's an empty array if not checked
+                itemData.generalOptions = []; 
             }
             
-            // Remove old 'options' field if it exists from previous versions
             delete itemData.options;
 
 
@@ -1744,13 +1733,111 @@
                         optionStr += ` (Cook: ${item.steakPreference})`;
                     }
                     if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
-                        // For kitchen ticket, price change might not be needed, just the option name
                         optionStr += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name).join(', ')})`;
                     }
                     return `<div>${item.quantity}x ${item.name}${optionStr.trim()}${item.comment ? ` <small><em>(${item.comment})</em></small>` : ''}</div>`
                 }).join('');
             }
             if(ticketNotesEl) ticketNotesEl.textContent = universalOrderComment || "None";
+        }
+
+        // --- NEW FUNCTIONS FOR REPRINT ---
+        async function loadTodaysOrdersForReprint() {
+            if (!elements.todaysOrdersList) return;
+            elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Loading today\'s orders...</p>';
+            try {
+                const response = await fetch('/api/todays_orders_for_reprint');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+                    throw new Error(errorData.message || `Failed to load orders: ${response.statusText}`);
+                }
+                const orders = await response.json();
+                renderTodaysOrdersList(orders);
+            } catch (error) {
+                console.error("Error loading today's orders for reprint:", error);
+                elements.todaysOrdersList.innerHTML = `<p class="text-xs text-red-500 italic">Error loading orders: ${error.message}. Try refreshing.</p>`;
+                showToast(`Error loading orders: ${error.message}`, 'error');
+            }
+        }
+
+        function renderTodaysOrdersList(orders) {
+            if (!elements.todaysOrdersList) return;
+            elements.todaysOrdersList.innerHTML = '';
+
+            if (!orders || orders.length === 0) {
+                elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">No orders found for today.</p>';
+                return;
+            }
+
+            orders.forEach(order => {
+                const div = document.createElement('div');
+                div.className = "p-2.5 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
+                
+                // Format timestamp for better readability
+                let formattedTimestamp = order.timestamp;
+                try {
+                    const dateObj = new Date(order.timestamp);
+                    if (!isNaN(dateObj)) {
+                         formattedTimestamp = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    }
+                } catch(e) { /* keep original if parsing fails */ }
+
+
+                div.innerHTML = `
+                    <div>
+                        <span class="font-semibold text-gray-800">Order #${order.order_number}</span>
+                        <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
+                        <span class="text-xs text-gray-500 ml-2">Time: ${formattedTimestamp}</span>
+                    </div>
+                    <button onclick="reprintOrder('${order.order_number}')" class="px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition">
+                        <i class="fas fa-print mr-1"></i> Reprint
+                    </button>
+                `;
+                elements.todaysOrdersList.appendChild(div);
+            });
+        }
+
+        async function reprintOrder(orderNumToReprint) {
+            if (!orderNumToReprint) {
+                showToast('Invalid order number for reprint.', 'error');
+                return;
+            }
+
+            const reprintButton = event.target.closest('button');
+            if (reprintButton) {
+                reprintButton.disabled = true;
+                reprintButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Reprinting...';
+            }
+
+            try {
+                const response = await fetch('/api/reprint_order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order_number: orderNumToReprint })
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    if (result.status === "success") {
+                        showToast(result.message || `Order #${orderNumToReprint} REPRINTED successfully!`, 'success');
+                    } else if (result.status === "warning_reprint_copy2_failed") {
+                        showToast(result.message || `Order #${orderNumToReprint}: Kitchen REPRINTED. Copy 2 FAILED.`, 'warning', 7000);
+                    } else { // Includes "error_reprint_failed" or other server-side errors reported in a 200 OK
+                        showToast(result.message || `Failed to reprint Order #${orderNumToReprint}.`, 'error', 7000);
+                    }
+                } else { // HTTP error (e.g. 404, 500)
+                     showToast(result.message || `Server error during reprint of Order #${orderNumToReprint}: ${response.status}.`, 'error', 7000);
+                }
+
+            } catch (error) {
+                console.error(`Error reprinting order ${orderNumToReprint}:`, error);
+                showToast(`Network error or invalid response while reprinting Order #${orderNumToReprint}.`, 'error', 7000);
+            } finally {
+                 if (reprintButton) {
+                    reprintButton.disabled = false;
+                    reprintButton.innerHTML = '<i class="fas fa-print mr-1"></i> Reprint';
+                }
+            }
         }
 
     </script>
