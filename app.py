@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 # IMPORTANT: Replace "Your_Printer_Name_Here" with your actual printer name
-PRINTER_NAME = "Your_Printer_Name_Here" # Example: "EPSON TM-T20II Receipt"
+PRINTER_NAME = "80mm Series Printer" # Example: "EPSON TM-T20II Receipt"
 
 # --- File Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -209,37 +209,34 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         ticket_content = bytearray()
         ticket_content += InitializePrinter
         NORMAL_FONT_LINE_WIDTH = 42 
+        SMALL_FONT_LINE_WIDTH = 56 # Approximate for Font B
 
         ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
         restaurant_name = "Kyr Stefanos" 
         ticket_content += to_bytes(restaurant_name + "\n")
         ticket_content += BoldOff 
         
-        ticket_content += AlignCenter + SelectFontA + NormalText # Normal size for "Kitchen Order"
+        ticket_content += AlignCenter + SelectFontA + NormalText
         header_text = "Kitchen Order"
-        if copy_info: 
-             header_text += f" ({copy_info})"
         ticket_content += to_bytes(header_text + "\n")
         
         ticket_content += AlignLeft 
-        ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
         
-        # Order Number - Large and Bold
-        ticket_content += SelectFontA + DoubleHeightWidth + BoldOn # Kept large for emphasis
+        ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
         order_num_text = f"Order #: {order_data.get('number', 'N/A')}"
         ticket_content += to_bytes(order_num_text + "\n")
         
         table_number = order_data.get('tableNumber')
         if table_number and table_number.upper() != 'N/A':
             table_text = f"Table: {table_number}"
-            ticket_content += to_bytes(table_text + "\n") # Still large with order number
+            ticket_content += to_bytes(table_text + "\n")
         ticket_content += BoldOff 
             
-        ticket_content += SelectFontA + NormalText # Normal size for time
+        ticket_content += SelectFontA + NormalText
         time_to_display = original_timestamp_str if original_timestamp_str else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         ticket_content += to_bytes(f"Time: {time_to_display}\n")
         
-        ticket_content += BoldOn + to_bytes("ITEMS:\n") + BoldOff # "ITEMS:" header bold, normal size
+        ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
         
         grand_total = 0.0
         for item_idx, item in enumerate(order_data.get('items', [])):
@@ -249,17 +246,48 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             line_total = item_quantity * item_price_unit
             grand_total += line_total
 
-            # MODIFICATION: Item name and quantity - NormalText, Font A, Bold
-            ticket_content += SelectFontA + NormalText + BoldOn 
-            qty_name_text = f"{item_quantity}x {item_name_orig}"
-            wrapped_name_lines = word_wrap_text(qty_name_text, NORMAL_FONT_LINE_WIDTH, initial_indent="", subsequent_indent="  ")
-            for line_part in wrapped_name_lines:
-                 ticket_content += to_bytes(line_part + "\n")
-            ticket_content += BoldOff 
+            # MODIFICATION: Smartly print large item name and normal price on the same line.
+            left_side = f"{item_quantity}x {item_name_orig}"
+            right_side = f"{line_total:.2f}"
 
+            # Calculate space: large text is double width, normal text is single width.
+            large_text_width = len(left_side) * 2
+            normal_text_width = len(right_side)
+            
+            if large_text_width + normal_text_width < NORMAL_FONT_LINE_WIDTH:
+                # --- It fits on one line ---
+                ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
+                ticket_content += to_bytes(left_side)
+                
+                # Switch to normal font for the price
+                ticket_content += NormalText + BoldOff
+                
+                # Calculate padding to push price to the right
+                padding_size = NORMAL_FONT_LINE_WIDTH - large_text_width - normal_text_width
+                padding = " " * padding_size
+                ticket_content += to_bytes(padding)
+                
+                # Print the normal-sized price
+                ticket_content += to_bytes(right_side + "\n")
+            else:
+                # --- It doesn't fit, use fallback ---
+                ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
+                DOUBLE_WIDTH_LINE_CHARS = NORMAL_FONT_LINE_WIDTH // 2
+                wrapped_name_lines = word_wrap_text(left_side, DOUBLE_WIDTH_LINE_CHARS)
+                for line in wrapped_name_lines:
+                    ticket_content += to_bytes(line + "\n")
+                
+                # Switch to normal font and print price on a new line, right-aligned
+                ticket_content += NormalText + BoldOff
+                ticket_content += AlignRight + to_bytes(right_side + "\n") + AlignLeft
+
+            # Ensure font is reset for modifiers
+            ticket_content += NormalText + BoldOff 
+
+            # Print modifiers and comments (indented) in normal font
             steak_pref = item.get('steakPreference')
             if steak_pref:
-                ticket_content += SelectFontA + NormalText + BoldOn 
+                ticket_content += BoldOn 
                 pref_text = f"  Cook: {steak_pref}"
                 wrapped_pref_lines = word_wrap_text(pref_text, NORMAL_FONT_LINE_WIDTH, initial_indent="  ", subsequent_indent="    ")
                 for pref_line_part in wrapped_pref_lines:
@@ -268,13 +296,12 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
             general_options = item.get('generalSelectedOptions', [])
             if general_options:
-                ticket_content += SelectFontA + NormalText # Options normal, not bold unless price change
                 for opt in general_options:
                     opt_name = opt.get('name', 'N/A')
                     opt_price_change = float(opt.get('priceChange', 0.0))
                     price_change_str = ""
                     if opt_price_change != 0:
-                        price_change_str = f" ({'+' if opt_price_change > 0 else ''}EUR {opt_price_change:.2f})"
+                        price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})"
                     
                     option_line = f"  + {opt_name}{price_change_str}"
                     wrapped_option_lines = word_wrap_text(option_line, NORMAL_FONT_LINE_WIDTH, initial_indent="  ", subsequent_indent="    ") 
@@ -283,33 +310,18 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
             item_comment = item.get('comment', '').strip()
             if item_comment:
-                ticket_content += SelectFontA + NormalText + BoldOn                 
+                ticket_content += BoldOn
                 wrapped_comments = word_wrap_text(f"Note: {item_comment}", NORMAL_FONT_LINE_WIDTH, initial_indent="    ", subsequent_indent="    ")
                 for comment_line in wrapped_comments:
                      ticket_content += to_bytes(comment_line + "\n")
                 ticket_content += BoldOff                  
-
-            ticket_content += SelectFontA + NormalText + AlignRight
-            pricing_text_line1 = f"{item_quantity} x EUR {item_price_unit:.2f}"
-            ticket_content += to_bytes(pricing_text_line1 + "\n")
-            pricing_text_line2 = f"= EUR {line_total:.2f}"
-            ticket_content += to_bytes(pricing_text_line2 + "\n")
-            ticket_content += AlignLeft 
-            # MODIFICATION: Removed extra newline after each item's pricing
-            # ticket_content += to_bytes("\n") 
             
-            # Add a small visual separator if it's not the last item, or if there are comments/options to ensure spacing
             if item_idx < len(order_data.get('items', [])) - 1:
-                 if steak_pref or general_options or item_comment : # if item had details, add a small space
-                     ticket_content += to_bytes("\n") # Add a single newline for separation if details were present
-                 else: # if it was just item name and price, a very subtle separator or none
-                     pass # Or a very faint line: ticket_content += to_bytes("." * NORMAL_FONT_LINE_WIDTH + "\n")
-            elif steak_pref or general_options or item_comment: # Last item but had details
-                ticket_content += to_bytes("\n")
+                ticket_content += to_bytes("." * NORMAL_FONT_LINE_WIDTH + "\n")
 
 
         ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
-        ticket_content += SelectFontA + DoubleHeightWidth + BoldOn + AlignRight # Total large and bold
+        ticket_content += SelectFontA + DoubleHeightWidth + BoldOn + AlignRight
         total_string = f"TOTAL: EUR {grand_total:.2f}"
         ticket_content += to_bytes(total_string + "\n")
         ticket_content += BoldOff + AlignLeft
@@ -325,13 +337,20 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             wrapped_universal_comment_lines = word_wrap_text(universal_comment, NORMAL_FONT_LINE_WIDTH, initial_indent="", subsequent_indent="") 
             for line in wrapped_universal_comment_lines:
                 ticket_content += to_bytes(line + "\n")
-            ticket_content += to_bytes("\n") # One newline after universal comment if present
+            ticket_content += to_bytes("\n")
+        
+        ticket_content += to_bytes("\n")
+        ticket_content += AlignCenter + SelectFontB
+        disclaimer_text = "This is not a legal receipt of payment and is for informational purposes only."
+        wrapped_disclaimer_lines = word_wrap_text(disclaimer_text, SMALL_FONT_LINE_WIDTH)
+        for line in wrapped_disclaimer_lines:
+            ticket_content += to_bytes(line + "\n")
+
+        ticket_content += SelectFontA + AlignLeft
             
-        # MODIFICATION: Reduced blank lines before cut from 2 to 1
-        ticket_content += to_bytes("\n") 
+        ticket_content += to_bytes("\n\n\n\n") 
         ticket_content += FullCut
 
-        # --- Printer Handling (No changes here, but ensure PRINTER_NAME is set) ---
         if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
             app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print order #{order_data.get('number', 'N/A')}.")
             return False
@@ -346,7 +365,7 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         PRINTER_STATUS_OFFLINE = 0x00000080; PRINTER_STATUS_ERROR = 0x00000002
         PRINTER_STATUS_NOT_AVAILABLE = 0x00001000; PRINTER_STATUS_PAPER_OUT = 0x00000010
         PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
-        PRINTER_STATUS_DOOR_OPEN = 0x00000400; PRINTER_STATUS_NO_TONER = 0x00040000 # Though less common for thermal
+        PRINTER_STATUS_DOOR_OPEN = 0x00000400; PRINTER_STATUS_NO_TONER = 0x00040000
         PRINTER_STATUS_PAUSED = 0x00000001
 
         problem_flags_map = {
@@ -387,7 +406,7 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         error_code = e_win32.winerror
         error_msg = e_win32.strerror
         order_id_str = f"order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}"
-        if error_code == 1801: # ERROR_INVALID_PRINTER_NAME
+        if error_code == 1801:
              app.logger.error(f"Printing failed for {order_id_str}: Invalid printer name '{PRINTER_NAME}'. Error {error_code}: {error_msg}")
         else:
              app.logger.error(f"A win32print error occurred for {order_id_str} with printer '{PRINTER_NAME}'. Error {error_code}: {error_msg}")
@@ -538,35 +557,31 @@ def handle_order():
 
     if not printed_copy1:
         app.logger.warning(f"Order #{authoritative_order_number} - COPY 1 FAILED to print. Order will NOT be saved or further processed.")
-        # Do not record to CSV if the primary kitchen ticket fails.
         return jsonify({
             "status": "error_print_failed_copy1",
             "order_number": authoritative_order_number,
             "printed": "Copy 1 Failed",
             "logged": False,
             "message": f"Order #{authoritative_order_number} - COPY 1 (Kitchen) FAILED TO PRINT. Order NOT saved. Check printer!"
-        }), 200 # Return 200 so client can display message, but it's an error state for the order.
+        }), 200
 
     app.logger.info(f"Order #{authoritative_order_number} - Copy 1 printed successfully.")
 
     app.logger.info(f"Attempting to print Copy 2 for order #{authoritative_order_number}")
-    time.sleep(0.5) # Small delay between prints
+    time.sleep(0.5)
     try:
         printed_copy2 = print_kitchen_ticket(order_data_internal, copy_info="Copy 2")
     except Exception as e_print2:
         app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (Copy 2): {str(e_print2)}")
         printed_copy2 = False
 
-    # Determine overall print status
     if printed_copy1 and printed_copy2:
         print_status_summary = "All Copies Printed"
         app.logger.info(f"Order #{authoritative_order_number} - Both copies printed successfully.")
     elif printed_copy1 and not printed_copy2:
         print_status_summary = "Copy 1 Printed, Copy 2 Failed"
         app.logger.warning(f"Order #{authoritative_order_number} - Copy 1 was PRINTED, but Copy 2 FAILED to print.")
-    # No 'else' needed as printed_copy1 must be true to reach here.
     
-    # Log to CSV since at least Copy 1 (Kitchen) was successful.
     csv_log_succeeded = False
     try:
         csv_log_succeeded = record_order_in_csv(order_data_internal, print_status_summary)
@@ -575,30 +590,24 @@ def handle_order():
         csv_log_succeeded = False
 
     if not csv_log_succeeded:
-        # This is a serious issue: order printed (at least partially) but not logged.
         app.logger.error(f"Order #{authoritative_order_number} (Print status: {print_status_summary}) FAILED to log to CSV. This is a critical error.")
-        # The response should indicate this problem clearly.
         return jsonify({
             "status": "error_log_failed_after_print",
             "order_number": authoritative_order_number,
-            "printed": print_status_summary, # Reflect what actually printed
+            "printed": print_status_summary,
             "logged": False,
             "message": f"Order #{authoritative_order_number} - PRINT STATUS: {print_status_summary}. FAILED TO SAVE TO RECORDS. NOTIFY STAFF IMMEDIATELY."
-        }), 200 # 200 to allow client to show detailed message.
+        }), 200
 
-    # Construct final response based on outcomes
-    final_status_code = "error_unknown" # Default, should be overwritten
+    final_status_code = "error_unknown"
     message = "An unexpected issue occurred."
 
     if printed_copy1 and printed_copy2 and csv_log_succeeded:
         message = f"Order #{authoritative_order_number} processed: 2 copies printed, and logged successfully!"
         final_status_code = "success"
     elif printed_copy1 and not printed_copy2 and csv_log_succeeded:
-        # This state is now handled correctly: Copy 1 printed, logged, Copy 2 failed.
         message = f"Order #{authoritative_order_number} processed: Copy 1 PRINTED & LOGGED. Copy 2 FAILED to print. Please check printer for Copy 2."
         final_status_code = "warning_print_copy2_failed" 
-    # The case where printed_copy1 is true but csv_log_succeeded is false is handled by the return above.
-    # The case where printed_copy1 is false is handled by the first return in this function.
 
     app.logger.info(f"Order #{authoritative_order_number} processing complete. Final Status: {final_status_code}, Printed: {print_status_summary}, Logged: {csv_log_succeeded}")
     return jsonify({
@@ -618,21 +627,18 @@ def get_todays_orders_for_reprint():
         filename = os.path.join(DATA_DIR, f"orders_{today_date_str}.csv")
         
         if not os.path.exists(filename):
-            return jsonify([]) # No orders for today yet
+            return jsonify([])
 
         orders_for_reprint = []
         with open(filename, 'r', newline='', encoding='utf-8') as f_read:
             reader = csv.DictReader(f_read)
             for row in reader:
-                # Ensure it's a real order with items and not the summary row
                 if row.get('order_number', '').lower() != 'total_for_day' and row.get('items_json'): 
                     orders_for_reprint.append({
                         'order_number': row.get('order_number'),
                         'table_number': row.get('table_number'),
-                        'timestamp': row.get('timestamp') 
-                        # Add other fields if needed by the front-end for display
+                        'timestamp': row.get('timestamp')
                     })
-        # Sort by timestamp descending (most recent first)
         orders_for_reprint.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         return jsonify(orders_for_reprint)
 
@@ -660,18 +666,17 @@ def reprint_order_endpoint():
         with open(filename, 'r', newline='', encoding='utf-8') as f_read:
             reader = csv.DictReader(f_read)
             for row in reader:
-                if row.get('order_number') == str(order_number_to_reprint) and row.get('items_json'): # Make sure items_json exists
+                if row.get('order_number') == str(order_number_to_reprint) and row.get('items_json'):
                     found_order_row = row
                     break
         
         if not found_order_row:
             return jsonify({"status": "error", "message": f"Order #{order_number_to_reprint} not found in today's records or is missing item data."}), 404
 
-        # Safely parse items_json
         items_list_str = found_order_row.get('items_json', '[]')
         try:
             items_list = json.loads(items_list_str)
-            if not isinstance(items_list, list): # Basic validation
+            if not isinstance(items_list, list):
                  app.logger.error(f"Decoded items_json for order #{order_number_to_reprint} is not a list: {items_list_str}")
                  raise json.JSONDecodeError("Items data is not a list", items_list_str, 0)
         except json.JSONDecodeError as je:
@@ -679,23 +684,19 @@ def reprint_order_endpoint():
             return jsonify({"status": "error", "message": f"Corrupted item data for order #{order_number_to_reprint}. Cannot reprint."}), 500
 
 
-        if not items_list: # Check if list is empty after parsing
+        if not items_list:
             app.logger.warning(f"Order #{order_number_to_reprint} has no item details for reprint (items_list is empty).")
-            # This might be okay if an order can truly have no items, or an error if items are expected.
-            # For now, we'll allow it but it's worth noting. If items are mandatory, this should be an error.
 
         reprint_order_data = {
             'number': found_order_row.get('order_number'),
             'tableNumber': found_order_row.get('table_number', 'N/A'),
-            'items': items_list, # Use the parsed list
+            'items': items_list,
             'universalComment': found_order_row.get('universal_comment', '')
-            # Add any other fields that print_kitchen_ticket might expect from the original order_data structure
         }
-        original_timestamp = found_order_row.get('timestamp') # To display on the reprint
+        original_timestamp = found_order_row.get('timestamp')
 
         app.logger.info(f"Attempting to reprint order #{order_number_to_reprint} (Original Timestamp: {original_timestamp})")
 
-        # Print first copy of reprint
         reprint_copy1_success = print_kitchen_ticket(reprint_order_data, 
                                                      copy_info="Reprint - Kitchen", 
                                                      original_timestamp_str=original_timestamp)
@@ -727,7 +728,7 @@ def reprint_order_endpoint():
             "message": f"Order #{order_number_to_reprint} REPRINTED successfully (2 copies)."
         }), 200
 
-    except json.JSONDecodeError: # This catch might be redundant if parsing is handled above, but good as a fallback.
+    except json.JSONDecodeError:
         app.logger.error(f"Error decoding items_json for order #{order_number_to_reprint} during reprint (outer catch).")
         return jsonify({"status": "error", "message": f"Corrupted item data for order #{order_number_to_reprint}. Cannot reprint."}), 500
     except Exception as e:
@@ -738,12 +739,11 @@ def reprint_order_endpoint():
 if __name__ == '__main__':
     app.logger.info("Application starting up...") 
 
-    # Check for PRINTER_NAME and pywin32
     if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
         app.logger.warning("PRINTER_NAME is not set or is set to the placeholder in app.py. Printing will fail. Please configure it.")
     else:
         try:
-            import win32print # Check import again here in case it failed silently before
+            import win32print
             app.logger.info(f"Attempting to access printer: '{PRINTER_NAME}' on startup.")
             try:
                 hprinter_test = win32print.OpenPrinter(PRINTER_NAME)
@@ -753,7 +753,7 @@ if __name__ == '__main__':
                 app.logger.warning(f"Could not open printer '{PRINTER_NAME}' on startup. It might be offline, misconfigured, or the name is incorrect. Printing will likely fail. Error: {e}")
         except ImportError:
             app.logger.error("CRITICAL: pywin32 library not found. Printing will not work. Please install it (e.g., pip install pywin32).")
-        except Exception as e_main_printer_check: # Catch any other unexpected errors during printer check
+        except Exception as e_main_printer_check:
             app.logger.error(f"An unexpected error occurred during printer check for '{PRINTER_NAME}': {e_main_printer_check}")
 
 
@@ -771,6 +771,4 @@ if __name__ == '__main__':
             app.logger.error(f"Could not create empty menu file at {MENU_FILE}. Error: {e}")
     
     app.logger.info("Starting Flask development server...")
-    # Use threaded=False if you encounter issues with win32print in a threaded Flask environment
-    # For development, debug=True is fine. For production, consider a proper WSGI server.
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=False)
