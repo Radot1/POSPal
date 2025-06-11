@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 # IMPORTANT: Replace "Your_Printer_Name_Here" with your actual printer name
-PRINTER_NAME = "80mm Series Printer" # Example: "EPSON TM-T20II Receipt"
+PRINTER_NAME = "80mm Series Printer" # Replace with your actual printer name
 
 # --- File Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -246,11 +246,11 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             line_total = item_quantity * item_price_unit
             grand_total += line_total
 
-            # MODIFICATION: Smartly print large item name and normal price on the same line.
+            # MODIFICATION: Smartly print large item name and normal price
             left_side = f"{item_quantity}x {item_name_orig}"
             right_side = f"{line_total:.2f}"
 
-            # Calculate space: large text is double width, normal text is single width.
+            # Calculate space requirements
             large_text_width = len(left_side) * 2
             normal_text_width = len(right_side)
             
@@ -270,17 +270,29 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
                 # Print the normal-sized price
                 ticket_content += to_bytes(right_side + "\n")
             else:
-                # --- It doesn't fit, use fallback ---
+                # --- New handling for multi-line items ---
                 ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
                 DOUBLE_WIDTH_LINE_CHARS = NORMAL_FONT_LINE_WIDTH // 2
                 wrapped_name_lines = word_wrap_text(left_side, DOUBLE_WIDTH_LINE_CHARS)
-                for line in wrapped_name_lines:
+                
+                # Print all lines except last normally
+                for line in wrapped_name_lines[:-1]:
                     ticket_content += to_bytes(line + "\n")
                 
-                # Switch to normal font and print price on a new line, right-aligned
-                ticket_content += NormalText + BoldOff
-                ticket_content += AlignRight + to_bytes(right_side + "\n") + AlignLeft
-
+                # Handle last line with price
+                last_line = wrapped_name_lines[-1]
+                last_line_width = len(last_line) * 2
+                
+                # Calculate available space for price
+                available_space = NORMAL_FONT_LINE_WIDTH - last_line_width
+                padding = " " * max(0, available_space - normal_text_width)
+                
+                # Print last line (item name) without newline
+                ticket_content += to_bytes(last_line)
+                
+                # Switch to normal font and add price
+                ticket_content += NormalText + BoldOff + to_bytes(padding + right_side + "\n")
+                ticket_content += AlignLeft  # Reset alignment
             # Ensure font is reset for modifiers
             ticket_content += NormalText + BoldOff 
 
