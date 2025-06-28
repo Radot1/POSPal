@@ -1,0 +1,3 @@
+order_number,table_number,timestamp,items_summary,universal_comment,order_total,printed_status
+5,2,2025-05-27 19:42:45,1x TestSTEAK2 (Cook: Rare) (Options: Sausage (+EUR 3.00)) [Unit EUR 13.00],,EUR 13.00,Yes
+Total_For_Day,,Summary as of 2025-05-27 19:42:45,1 orders processed,,EUR 13.00,
