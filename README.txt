@@ -1,9 +1,19 @@
-POSPal Installation Guide
--------------------------
-1. Run POSPal.exe
+POSPal - Restaurant Order System
+================================
+
+System Requirements:
+- Windows 10/11
+- 80mm Thermal Printer
+- Modern Web Browser
+
+Installation:
+1. Run POSPal_X.X.X.exe
 2. Open browser to http://localhost:5000
-3. (Optional) Run install_service.bat as Admin for background service
+3. For background service: Run install_service.bat as Administrator
 
 Configuration:
-- Access settings via Management > System Configuration
-- Printer name can be changed in settings
+- Access settings via the ⚙️ icon
+- Change printer name in System Configuration
+
+Support:
+contact@yourcompany.com

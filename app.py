@@ -1,28 +1,37 @@
 CURRENT_VERSION = "1.0.0"  # Update this with each release
 
-import flask
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
 import csv
 import os
-import win32print # type: ignore
+import win32print  # type: ignore
 import time
 import json
 import requests
 import threading
 import logging
+import sys  # Added for auto-update functionality
+
 
 app = Flask(__name__)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
 
-# --- File Paths ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# --- CORRECTED File Paths ---
+# This block correctly determines the base directory whether running as a script or a frozen .exe
+if getattr(sys, 'frozen', False):
+    # If the application is run as a bundle/executable
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    # If run as a normal python script
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
 ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock file for order counter
+CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
 # --- ESC/POS Commands ---
 ESC = b'\x1B'
@@ -45,9 +54,11 @@ PartialCut = GS + b'V\x01' # Or m=66 for some printers
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
 
-CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
 def load_config():
+    # Ensure data directory exists BEFORE loading config
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE) as f:
             return json.load(f)
@@ -62,10 +73,6 @@ PRINTER_NAME = config["printer_name"]
 
 # Disable debug mode
 app.config['DEBUG'] = False
-
-# Add CSRF protection
-from flask_wtf.csrf import CSRFProtect
-csrf = CSRFProtect(app)
 
 # Add rate limiting
 from flask_limiter import Limiter
@@ -218,14 +225,20 @@ def get_menu():
 def save_menu():
     new_menu_data = request.json
     try:
+        # Ensure data directory exists
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR, exist_ok=True)
         os.makedirs(os.path.dirname(MENU_FILE), exist_ok=True)
         temp_menu_file = MENU_FILE + ".tmp"
         with open(temp_menu_file, 'w', encoding='utf-8') as f:
             json.dump(new_menu_data, f, indent=2) 
         os.replace(temp_menu_file, MENU_FILE) 
         return jsonify({"status": "success"})
+    except PermissionError as e:
+        app.logger.error(f"Permission denied saving menu: {str(e)}")
+        return jsonify({"status": "error", "message": f"Permission error: {str(e)}"}), 500
     except Exception as e:
-        app.logger.error(f"Error saving menu: {e}")
+        app.logger.error(f"Error saving menu: {type(e).__name__}: {str(e)}")
         return jsonify({"status": "error", "message": f"Failed to save menu: {str(e)}"}), 500
 
 
@@ -323,15 +336,6 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             ticket_content += NormalText + BoldOff 
 
             # Print modifiers and comments (indented) in normal font
-            steak_pref = item.get('steakPreference')
-            if steak_pref:
-                ticket_content += BoldOn 
-                pref_text = f"  Cook: {steak_pref}"
-                wrapped_pref_lines = word_wrap_text(pref_text, NORMAL_FONT_LINE_WIDTH, initial_indent="  ", subsequent_indent="    ")
-                for pref_line_part in wrapped_pref_lines:
-                    ticket_content += to_bytes(pref_line_part + "\n")
-                ticket_content += BoldOff
-
             general_options = item.get('generalSelectedOptions', [])
             if general_options:
                 for opt in general_options:
@@ -462,10 +466,13 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
 def record_order_in_csv(order_data, print_status_message):
     try:
+        # Ensure data directory exists
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR, exist_ok=True)
         printed_status_for_csv = print_status_message
         os.makedirs(DATA_DIR, exist_ok=True) 
         date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = os.path.join(DATA_DIR, f"orders_{date_str}.csv")
+        filename = os.path.abspath(os.path.join(DATA_DIR, f"orders_{date_str}.csv"))
         fieldnames = ['order_number', 'table_number', 'timestamp', 'items_summary', 
                       'universal_comment', 'order_total', 'printed_status', 'items_json']
 
@@ -501,10 +508,6 @@ def record_order_in_csv(order_data, print_status_message):
         for item in order_data.get('items', []):
             part = f"{item.get('quantity', 0)}x {item.get('name', 'N/A')}"
             
-            steak_pref = item.get('steakPreference')
-            if steak_pref:
-                part += f" (Cook: {steak_pref})"
-
             general_options = item.get('generalSelectedOptions', [])
             if general_options:
                 opt_details = []
@@ -771,18 +774,20 @@ def reprint_order_endpoint():
         return jsonify({"status": "error", "message": f"Corrupted item data for order #{order_number_to_reprint}. Cannot reprint."}), 500
     except Exception as e:
         app.logger.error(f"Error reprinting order #{order_number_to_reprint}: {str(e)}")
-        return jsonify({"status": "error", "message": f"Could not reprint order #{order_number_to_reprint}: {str(e)}"}), 500
+        return jsonify({"status": "error", "message": f"Could not reprint order #{order_number_to_reprint}: {str(e)}"}), 50
 
-import requests
-import threading
 
 def check_for_updates():
     try:
-        response = requests.get("https://api.github.com/repos/yourusername/POSPal/releases/latest")
+        response = requests.get("https://api.github.com/repos/Radot1/POSPal/releases/latest")
+        if response.status_code != 200:
+            app.logger.error(f"Update check failed: HTTP {response.status_code}")
+            return
+            
         latest_ver = response.json()['tag_name']
         if latest_ver != CURRENT_VERSION:
             # Download and replace executable
-            new_exe = requests.get(f"https://github.com/yourusername/POSPal/releases/download/{latest_ver}/POSPal.exe")
+            new_exe = requests.get(f"https://github.com/Radot1/POSPal/releases/download/{latest_ver}/POSPal.exe")
             with open("POSPal_new.exe", "wb") as f:
                 f.write(new_exe.content)
             
@@ -798,13 +803,23 @@ def check_for_updates():
             
             os.system("start update.bat")
             os._exit(0)
-    except Exception:
-        pass  # Silently fail update check
+    except Exception as e:
+        app.logger.error(f"Update check failed: {str(e)}")
 
 # Add to startup logic
 if getattr(sys, 'frozen', False):
     threading.Timer(3600, check_for_updates).start()  # Check hourly
 
 if __name__ == '__main__':
+    # Verify we can write to DATA_DIR
+    try:
+        test_file = os.path.join(DATA_DIR, 'permission_test.tmp')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+    except Exception as e:
+        app.logger.critical(f"CRITICAL: Cannot write to data directory: {str(e)}")
+        sys.exit(1)
+        
     from waitress import serve
     serve(app, host='0.0.0.0', port=5000)

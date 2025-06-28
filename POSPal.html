@@ -40,17 +40,12 @@
             background-color: #e5e7eb;
          }
 
-        .options-badge, .steak-badge {
+        .options-badge {
             font-weight: 500;
             color: white;
             border-radius: 3px; 
             white-space: nowrap;
-        }
-        .options-badge {
-             background-color: #4b5563; 
-        }
-        .steak-badge {
-            background-color: #c2410c; 
+            background-color: #4b5563; 
         }
 
         .option-pill {
@@ -142,35 +137,26 @@
             position: relative;
             z-index: 1;
         }
-        .steak-options-grid {
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-        }
         .option-selectable.selected {
             border-color: #111827 !important; 
             background-color: #f3f4f6; 
-        }
-        .option-selectable.selected input {
         }
     </style>
 </head>
 <body class="bg-white text-gray-800 font-sans">
 
     <div id="main-content" class="pb-28"> <header class="bg-black text-white shadow-md sticky top-0 z-40">
-            <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-                <div class="flex items-center">
-                    <i class="fas fa-utensils text-2xl text-gray-300 mr-3"></i>
-                    <h1 class="text-xl font-bold text-gray-100">Kyr Stefanos</h1>
-                </div>
-                <div class="text-sm text-gray-300 flex flex-col items-end">
-                    <div>
-                        Order #<span id="header-order-number" class="font-semibold">1</span>
-                    </div>
-                    <div class="mt-0.5">
-                        Table: <input type="text" id="header-table-number-input" class="w-16 bg-gray-700 text-white text-center rounded-sm focus:ring-1 focus:ring-gray-400 focus:outline-none px-1 py-0.5 text-sm" placeholder="No.">
-                    </div>
-                </div>
-            </div>
-        </header>
+			<div class="container mx-auto px-4 py-3 flex justify-end items-center">
+				<div class="text-sm text-gray-300 flex flex-col items-end">
+					<div>
+						Order #<span id="header-order-number" class="font-semibold">1</span>
+					</div>
+					<div class="mt-0.5">
+						Table: <input type="text" id="header-table-number-input" class="w-16 bg-gray-700 text-white text-center rounded-sm focus:ring-1 focus:ring-gray-400 focus:outline-none px-1 py-0.5 text-sm" placeholder="No.">
+					</div>
+				</div>
+			</div>
+		</header>
 
         <section id="category-section" class="py-3 bg-white border-b border-gray-300 sticky top-[61px] z-30"> <div class="container mx-auto px-4">
                 <div id="categories" class="flex space-x-2 overflow-x-auto pb-2"> <p class="text-gray-500 italic">Loading categories...</p>
@@ -269,7 +255,6 @@
                 <button onclick="toggleManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
             </div>
 
-            <!-- MODIFIED: Added Order History Tab Button -->
             <div class="p-4 border-b border-gray-300 management-tab-container">
                 <div class="flex space-x-1 rounded-md bg-gray-200 p-1">
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
@@ -302,19 +287,9 @@
                         <div class="space-y-4">
                             <div class="flex items-center space-x-4">
                                 <div class="flex items-center">
-                                    <input type="checkbox" id="itemIsSteak" name="itemIsSteak" onchange="toggleItemTypeOptionsUI()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
-                                    <label for="itemIsSteak" class="ml-2 block text-sm text-gray-800">Steak Item</label>
-                                </div>
-                                <div class="flex items-center">
                                     <input type="checkbox" id="itemHasOptionsModal" name="itemHasOptionsModal" onchange="toggleItemOptionsUIInModal()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
                                     <label for="itemHasOptionsModal" class="ml-2 block text-sm text-gray-800">Has General Options</label>
                                 </div>
-                            </div>
-
-                            <div id="steakCookingPreferencesContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
-                                <label class="block text-sm font-medium text-gray-700">Steak Cooking Preferences:</label>
-                                <div id="steakCookingOptionsList" class="steak-options-grid grid gap-2">
-                                    </div>
                             </div>
 
                             <div id="itemOptionsModalContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
@@ -366,7 +341,6 @@
                     </div>
                 </div>
 
-                <!-- NEW: Order History Tab Content -->
                 <div id="orderHistoryManagement" class="hidden">
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">Today's Orders</h3>
                     <button onclick="loadTodaysOrdersForReprint()" class="mb-4 px-4 py-2 btn-secondary text-sm">
@@ -428,13 +402,11 @@
         let numpadCurrentInput = "";
 
         let itemBeingConfigured = null; 
-        let tempSteakChoiceForMultiStep = null; 
         let currentOptionSelectionStep = null; 
 
         const ORDER_NUMBER_KEY = 'sushakiSteakhouseNextOrderNumber';
         const LAST_ORDER_DATE_KEY = 'sushakiSteakhouseLastOrderDate';
         const SELECTED_TABLE_KEY = 'sushakiSteakhouseSelectedTable';
-        const PREDEFINED_STEAK_COOKING_LEVELS = ["Rare", "Medium Rare", "Medium", "Medium Well", "Well Done"];
 
         const elements = {}; 
 
@@ -466,21 +438,17 @@
             elements.saveItemBtn = document.getElementById('saveItemBtn');
             elements.cancelEditBtn = document.getElementById('cancelEditBtn');
             elements.existingItemsListModal = document.getElementById('existingItemsListModal');
-            elements.itemIsSteakCheckbox = document.getElementById('itemIsSteak');
             elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); 
             elements.itemOptionsModalContainer = document.getElementById('itemOptionsModalContainer');
             elements.itemOptionsListDisplayModal = document.getElementById('itemOptionsListDisplayModal');
             elements.newOptionNameInputModal = document.getElementById('newOptionNameInputModal');
             elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal'); 
-            elements.steakCookingPreferencesContainer = document.getElementById('steakCookingPreferencesContainer');
-            elements.steakCookingOptionsList = document.getElementById('steakCookingOptionsList');
             elements.categoryNameInput = document.getElementById('categoryName');
             elements.existingCategoriesListModal = document.getElementById('existingCategoriesListModal');
             elements.toast = document.getElementById('toast');
             elements.toastMessage = document.getElementById('toast-message');
             elements.numpadContainer = document.getElementById('numpad-container');
             elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
-            // NEW: Cache element for reprint list
             elements.todaysOrdersList = document.getElementById('todaysOrdersList');
         }
 
@@ -488,7 +456,6 @@
             cacheDOMElements();
             initializeOrderNumberAndDate();
             loadMenu();
-            populateSteakCookingOptionsCheckboxes();
 
             if(elements.universalOrderCommentInput) {
                 elements.universalOrderCommentInput.value = universalOrderComment;
@@ -507,21 +474,6 @@
             }
             updateOrderDisplay();
         });
-
-        function populateSteakCookingOptionsCheckboxes() {
-            if (!elements.steakCookingOptionsList) return;
-            elements.steakCookingOptionsList.innerHTML = ''; 
-            PREDEFINED_STEAK_COOKING_LEVELS.forEach(level => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center';
-                const checkboxId = `steakOptionForm_${level.replace(/\s+/g, '')}`; 
-                div.innerHTML = `
-                    <input type="checkbox" id="${checkboxId}" name="steakCookingLevelForm" value="${level}" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
-                    <label for="${checkboxId}" class="ml-2 text-sm text-gray-700">${level}</label>
-                `;
-                elements.steakCookingOptionsList.appendChild(div);
-            });
-        }
 
         function getLocalDateStr() {
             const now = new Date();
@@ -642,15 +594,10 @@
                 card.onclick = () => addToOrder(item.id);
 
                 let badgeIconsHTML = '';
-                const hasSteakOptions = item.isSteak && item.steakCookingOptions && item.steakCookingOptions.length > 0;
                 const hasGenOptions = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
-                const hasOldOptions = !item.isSteak && !item.hasGeneralOptions && item.options && Array.isArray(item.options) && item.options.length > 0;
 
                 let actualBadgeElements = [];
-                if (hasSteakOptions) {
-                    actualBadgeElements.push(`<span class="steak-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-drumstick-bite text-sm"></i></span>`);
-                }
-                if (hasGenOptions || hasOldOptions) {
+                if (hasGenOptions) {
                     actualBadgeElements.push(`<span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span>`);
                 }
 
@@ -693,31 +640,24 @@
             }
 
             itemBeingConfigured = {...menuItem}; 
-            tempSteakChoiceForMultiStep = null; 
             currentOptionSelectionStep = null; 
 
-            const hasSteakOpts = menuItem.isSteak && menuItem.steakCookingOptions && menuItem.steakCookingOptions.length > 0;
-            const hasGenOpts = (menuItem.hasGeneralOptions && menuItem.generalOptions && Array.isArray(menuItem.generalOptions) && menuItem.generalOptions.length > 0) ||
-                               (!menuItem.isSteak && !menuItem.hasGeneralOptions && menuItem.options && Array.isArray(menuItem.options) && menuItem.options.length > 0);
+            const hasGenOpts = (itemBeingConfigured.hasGeneralOptions && itemBeingConfigured.generalOptions && Array.isArray(itemBeingConfigured.generalOptions) && itemBeingConfigured.generalOptions.length > 0);
 
-            if (hasSteakOpts) {
-                currentOptionSelectionStep = 'steak';
-                openItemOptionSelectModal(itemBeingConfigured, 'steak_cooking');
-            } else if (hasGenOpts) {
+            if (hasGenOpts) {
                 currentOptionSelectionStep = 'general';
                 openItemOptionSelectModal(itemBeingConfigured, 'general_item_option');
             } else {
-                finalizeAndAddOrderItem(itemBeingConfigured, null, []);
+                finalizeAndAddOrderItem(itemBeingConfigured, []);
                 resetMultiStepSelection();
             }
         }
 
-        function finalizeAndAddOrderItem(baseItem, steakChoice, generalChoicesWithOptions) { 
+        function finalizeAndAddOrderItem(baseItem, generalChoicesWithOptions) { 
             currentOrderLineItemCounter++;
             localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', currentOrderLineItemCounter.toString());
 
             let uniqueSuffixParts = [];
-            if (steakChoice) uniqueSuffixParts.push(steakChoice.replace(/\s+/g, '_'));
             if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
                  uniqueSuffixParts.push(...generalChoicesWithOptions.map(opt => opt.name.replace(/\s+/g, '_')));
             }
@@ -737,7 +677,6 @@
                 quantity: 1,
                 comment: "",
                 orderId: uniqueLineId,
-                steakPreference: steakChoice || null,
                 generalSelectedOptions: generalChoicesWithOptions || [], 
                 itemPriceWithModifiers: itemPriceWithModifiers 
             };
@@ -747,7 +686,6 @@
         
         function resetMultiStepSelection() {
             itemBeingConfigured = null;
-            tempSteakChoiceForMultiStep = null;
             currentOptionSelectionStep = null;
         }
 
@@ -770,9 +708,6 @@
                     div.className = `order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm ${item.orderId === itemForNumpad?.orderId ? 'selected-for-numpad' : ''}`;
 
                     let optionDisplayHTML = '';
-                    if (item.steakPreference) {
-                        optionDisplayHTML += `<span class="block font-bold text-sm text-red-700 ml-2 mt-0.5">↳ Cook: ${item.steakPreference}</span>`;
-                    }
                     if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                         item.generalSelectedOptions.forEach(opt => {
                             const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
@@ -833,9 +768,6 @@
             const item = currentOrder.find(i => String(i.orderId) === orderId);
             if (item) {
                 let currentSelectionDisplay = "";
-                if (item.steakPreference) {
-                    currentSelectionDisplay += ` (Cook: ${item.steakPreference})`;
-                }
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                      currentSelectionDisplay += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name + (parseFloat(opt.priceChange || 0) !== 0 ? ` ${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)}` : '')).join(', ')})`;
                 }
@@ -891,11 +823,9 @@
                 name: item.name,
                 basePrice: parseFloat(item.price || 0), 
                 quantity: item.quantity,
-                steakPreference: item.steakPreference || null,
                 generalSelectedOptions: item.generalSelectedOptions || [], 
                 itemPriceWithModifiers: item.itemPriceWithModifiers, 
                 comment: item.comment || "",
-                isSteak: item.isSteak || false,
             })),
             universalComment: universalOrderComment.trim()
         };
@@ -953,7 +883,7 @@
                    } catch (textError) { /* Ignore, use original errorMsg */ }
                 }
                 showToast(errorMsg + ' Order remains on screen.', 'error', 7000);
-                // Potentially update order number if server still managed to assign one despite other errors
+                // Potentially update order number if server still managed to assign one
                 if (result && typeof result.order_number !== 'undefined' && result.order_number !== null) {
                      orderNumber = parseInt(result.order_number) + 1;
                     localStorage.setItem(ORDER_NUMBER_KEY, orderNumber.toString());
@@ -1068,16 +998,8 @@
             let description = "";
             let inputType = 'radio';
 
-            if (context === 'steak_cooking' && itemForModal.isSteak) {
-                optionsToShow = itemForModal.steakCookingOptions || []; 
-                description = `Select cooking preference for ${itemForModal.name}.`;
-                inputType = 'radio';
-            } else if (context === 'general_item_option') {
-                if (itemForModal.hasGeneralOptions && itemForModal.generalOptions && Array.isArray(itemForModal.generalOptions) && itemForModal.generalOptions.length > 0) {
-                    optionsToShow = itemForModal.generalOptions; 
-                } else if (!itemForModal.isSteak && itemForModal.options && Array.isArray(itemForModal.options) && itemForModal.options.length > 0) {
-                    optionsToShow = itemForModal.options.map(optStr => ({ name: optStr, priceChange: 0 }));
-                }
+            if (context === 'general_item_option') {
+                optionsToShow = itemForModal.generalOptions || [];
                 description = `Select option(s) for ${itemForModal.name}. (Multiple selections allowed)`;
                 inputType = 'checkbox';
             } else {
@@ -1189,27 +1111,7 @@
                  return;
             }
 
-            if (currentItemOptionContext === 'steak_cooking') {
-                const selectedRadio = elements.optionModalOptionsContainer.querySelector('input[type="radio"]:checked');
-                if (!selectedRadio) {
-                    showToast("Please select a cooking preference.", 'warning');
-                    return;
-                }
-                tempSteakChoiceForMultiStep = selectedRadio.value;
-
-                const hasGenOpts = (itemBeingConfigured.hasGeneralOptions && itemBeingConfigured.generalOptions && Array.isArray(itemBeingConfigured.generalOptions) && itemBeingConfigured.generalOptions.length > 0) ||
-                                   (!itemBeingConfigured.isSteak && !itemBeingConfigured.hasGeneralOptions && itemBeingConfigured.options && Array.isArray(itemBeingConfigured.options) && itemBeingConfigured.options.length > 0);
-
-                if (hasGenOpts && currentOptionSelectionStep === 'steak') {
-                    currentOptionSelectionStep = 'general';
-                    openItemOptionSelectModal(itemBeingConfigured, 'general_item_option');
-                    return; 
-                } else {
-                    finalizeAndAddOrderItem(itemBeingConfigured, tempSteakChoiceForMultiStep, []);
-                    resetMultiStepSelection();
-                    cancelOptionSelection(); 
-                }
-            } else if (currentItemOptionContext === 'general_item_option') {
+            if (currentItemOptionContext === 'general_item_option') {
                 const checkedBoxes = elements.optionModalOptionsContainer.querySelectorAll('input[type="checkbox"]:checked');
                 const generalSelectionsWithOptions = Array.from(checkedBoxes).map(cb => {
                     return {
@@ -1218,7 +1120,7 @@
                     };
                 });
                 
-                finalizeAndAddOrderItem(itemBeingConfigured, tempSteakChoiceForMultiStep, generalSelectionsWithOptions);
+                finalizeAndAddOrderItem(itemBeingConfigured, generalSelectionsWithOptions);
                 resetMultiStepSelection();
                 cancelOptionSelection(); 
             }
@@ -1236,8 +1138,7 @@
             } else {
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
-                loadManagementData(); // General data for items/categories
-                // Default to items tab, or handle active tab if needed
+                loadManagementData();
                 switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]')); 
             }
         }
@@ -1255,13 +1156,13 @@
 
             const itemsView = document.getElementById('itemsManagement');
             const categoriesView = document.getElementById('categoriesManagement');
-            const orderHistoryView = document.getElementById('orderHistoryManagement'); // NEW
+            const orderHistoryView = document.getElementById('orderHistoryManagement');
 
             if (!itemsView || !categoriesView || !orderHistoryView) return;
 
             itemsView.style.display = 'none';
             categoriesView.style.display = 'none';
-            orderHistoryView.style.display = 'none'; // NEW
+            orderHistoryView.style.display = 'none';
 
             if (tabName === 'items') {
                 itemsView.style.display = 'block';
@@ -1269,9 +1170,9 @@
             } else if (tabName === 'categories') {
                 categoriesView.style.display = 'block';
                 if (elements.categoryNameInput) elements.categoryNameInput.value = '';
-            } else if (tabName === 'orderHistory') { // NEW
+            } else if (tabName === 'orderHistory') {
                 orderHistoryView.style.display = 'block';
-                loadTodaysOrdersForReprint(); // Load orders when tab is switched to
+                loadTodaysOrdersForReprint();
             }
         }
 
@@ -1309,12 +1210,8 @@
                     let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
                                        <span class="text-xs text-gray-500 ml-1">(${category}) - €${(item.price || 0).toFixed(2)}</span>`;
 
-                    const hasSteakOpts = item.isSteak && item.steakCookingOptions && item.steakCookingOptions.length > 0;
                     const hasGeneralOpts = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
 
-                    if (hasSteakOpts) {
-                        itemDetails += `<span class="text-xs text-orange-700 ml-1">(Steak Opts: ${item.steakCookingOptions.length})</span>`;
-                    }
                     if (hasGeneralOpts) { 
                         itemDetails += `<span class="text-xs text-blue-600 ml-1">(Gen Opts: ${item.generalOptions.length})</span>`;
                     }
@@ -1363,19 +1260,14 @@
             if(elements.itemPriceInput) elements.itemPriceInput.value = '';
             if(elements.itemIdInput) elements.itemIdInput.value = ''; 
             if(elements.itemCategorySelect && elements.itemCategorySelect.options.length > 0) elements.itemCategorySelect.selectedIndex = 0;
-
-            if(elements.itemIsSteakCheckbox) elements.itemIsSteakCheckbox.checked = false;
+            
             if(elements.itemHasOptionsCheckboxModal) elements.itemHasOptionsCheckboxModal.checked = false;
             tempItemOptionsModal = []; 
 
-            if (elements.steakCookingOptionsList) {
-                elements.steakCookingOptionsList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
-            }
             if (elements.newOptionNameInputModal) elements.newOptionNameInputModal.value = '';
             if (elements.newOptionPriceInputModal) elements.newOptionPriceInputModal.value = '';
 
-
-            toggleItemTypeOptionsUI(); 
+            toggleItemOptionsUIInModal(); 
 
             if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save Item';
             if(elements.cancelEditBtn) elements.cancelEditBtn.classList.add('hidden');
@@ -1398,32 +1290,17 @@
                 if(elements.itemCategorySelect) elements.itemCategorySelect.value = itemCategoryName;
                 if(elements.itemIdInput) elements.itemIdInput.value = foundItem.id; 
 
-                if(elements.itemIsSteakCheckbox) elements.itemIsSteakCheckbox.checked = !!foundItem.isSteak;
-
-                if (foundItem.isSteak && elements.steakCookingOptionsList) {
-                    const itemSteakOptions = foundItem.steakCookingOptions || [];
-                    elements.steakCookingOptionsList.querySelectorAll('input[name="steakCookingLevelForm"]').forEach(cb => {
-                        cb.checked = itemSteakOptions.includes(cb.value);
-                    });
-                } else if (elements.steakCookingOptionsList) {
-                     elements.steakCookingOptionsList.querySelectorAll('input[name="steakCookingLevelForm"]').forEach(cb => cb.checked = false);
-                }
-
                 if (foundItem.hasGeneralOptions && foundItem.generalOptions && Array.isArray(foundItem.generalOptions)) {
-                    tempItemOptionsModal = foundItem.generalOptions.map(opt => 
-                        typeof opt === 'string' ? { name: opt, priceChange: 0 } : opt
-                    );
-                } else if (!foundItem.hasGeneralOptions && foundItem.options && Array.isArray(foundItem.options)) { 
-                    tempItemOptionsModal = foundItem.options.map(optName => ({ name: optName, priceChange: 0 }));
+                    tempItemOptionsModal = [...foundItem.generalOptions];
                 } else {
                     tempItemOptionsModal = [];
                 }
                 if(elements.itemHasOptionsCheckboxModal) {
-                     elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0) || (!foundItem.hasGeneralOptions && foundItem.options && foundItem.options.length > 0) ;
+                     elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0);
                 }
 
 
-                toggleItemTypeOptionsUI(); 
+                toggleItemOptionsUIInModal(); 
 
                 if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
                 if(elements.cancelEditBtn) elements.cancelEditBtn.classList.remove('hidden');
@@ -1438,7 +1315,7 @@
         }
 
         async function saveItem() {
-            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect || !elements.itemIsSteakCheckbox || !elements.itemHasOptionsCheckboxModal || !elements.itemIdInput) {
+            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect || !elements.itemHasOptionsCheckboxModal || !elements.itemIdInput) {
                 console.error("A required form element is missing in `elements` cache for saveItem.");
                 showToast('Error: Form elements missing. Cannot save.', 'error');
                 return;
@@ -1481,17 +1358,9 @@
                 id: itemIdVal,
                 name: itemName,
                 price: itemPrice, 
-                isSteak: elements.itemIsSteakCheckbox.checked,
                 hasGeneralOptions: elements.itemHasOptionsCheckboxModal.checked,
-                steakCookingOptions: [],
                 generalOptions: [] 
             };
-
-            if(itemData.isSteak) {
-                document.querySelectorAll('#steakCookingOptionsList input[name="steakCookingLevelForm"]:checked').forEach(cb => {
-                    itemData.steakCookingOptions.push(cb.value);
-                });
-            }
 
             if (itemData.hasGeneralOptions) {
                 if (tempItemOptionsModal.length === 0) {
@@ -1502,9 +1371,6 @@
                 itemData.generalOptions = []; 
             }
             
-            delete itemData.options;
-
-
             let oldCategoryOfItem = null;
             if (editingItem) { 
                 Object.keys(menu).forEach(cat => {
@@ -1590,25 +1456,51 @@
         }
 
         async function saveCategory() {
-            if (!elements.categoryNameInput) return;
-            const categoryName = elements.categoryNameInput.value.trim();
-            if (!categoryName) { showToast('Category name cannot be empty.', 'warning'); return; }
-            if (menu[categoryName]) { showToast('Category already exists.', 'warning'); return; }
+			if (!elements.categoryNameInput) return;
+			const categoryName = elements.categoryNameInput.value.trim();
+			if (!categoryName) { 
+				showToast('Category name cannot be empty.', 'warning'); 
+				return; 
+			}
+			if (menu[categoryName]) { 
+				showToast('Category already exists.', 'warning'); 
+				return; 
+			}
 
-            menu[categoryName] = [];
-            const success = await saveMenuToServer();
-            if (success) {
-                showToast(`Category "${categoryName}" added successfully.`, 'success');
-                elements.categoryNameInput.value = '';
-                loadMenu();
-                if(elements.itemCategorySelect && elements.itemCategorySelect.querySelector('option[value=""]')) {
-                    populateManagementCategorySelect();
-                }
-            }  else {
-                delete menu[categoryName];
-                showToast('Failed to save category on server.', 'error');
-            }
-        }
+			const newMenu = {...menu};
+			newMenu[categoryName] = [];
+			
+			try {
+				const response = await fetch('/api/menu', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify(newMenu)
+				});
+				
+				const contentType = response.headers.get('content-type');
+				if (!contentType || !contentType.includes('application/json')) {
+					const text = await response.text();
+					throw new Error(`Invalid response: ${text.substring(0, 100)}`);
+				}
+				
+				if (!response.ok) {
+					const errorData = await response.json();
+					throw new Error(errorData.message || 'Failed to save category');
+				}
+				
+				menu = newMenu;
+				showToast(`Category "${categoryName}" added successfully.`, 'success');
+				elements.categoryNameInput.value = '';
+				loadMenu();
+				
+				if(elements.itemCategorySelect && elements.itemCategorySelect.querySelector('option[value=""]')) {
+					populateManagementCategorySelect();
+				}
+			} catch (error) {
+				showToast(`Failed to save category: ${error.message}`, 'error');
+			}
+			
+		}
 
         async function deleteCategory(categoryNameToDelete) {
             if (menu[categoryNameToDelete] && menu[categoryNameToDelete].length > 0) {
@@ -1632,17 +1524,6 @@
                 loadMenu();
             }
         }
-
-        function toggleItemTypeOptionsUI() {
-            const isSteak = document.getElementById('itemIsSteak').checked;
-            document.getElementById('steakCookingPreferencesContainer').style.display = isSteak ? 'block' : 'none';
-
-            if(!isSteak) {
-                document.querySelectorAll('#steakCookingOptionsList input[name="steakCookingLevelForm"]').forEach(cb => cb.checked = false);
-            }
-            toggleItemOptionsUIInModal();
-        }
-
 
         function toggleItemOptionsUIInModal() {
             const hasOptions = document.getElementById('itemHasOptionsModal').checked;
@@ -1749,9 +1630,6 @@
             if(ticketItemsEl) {
                 ticketItemsEl.innerHTML = currentOrder.map(item => {
                     let optionStr = '';
-                    if (item.steakPreference) {
-                        optionStr += ` (Cook: ${item.steakPreference})`;
-                    }
                     if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                         optionStr += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name).join(', ')})`;
                     }
@@ -1761,7 +1639,6 @@
             if(ticketNotesEl) ticketNotesEl.textContent = universalOrderComment || "None";
         }
 
-        // --- NEW FUNCTIONS FOR REPRINT ---
         async function loadTodaysOrdersForReprint() {
             if (!elements.todaysOrdersList) return;
             elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Loading today\'s orders...</p>';
@@ -1793,7 +1670,6 @@
                 const div = document.createElement('div');
                 div.className = "p-2.5 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
                 
-                // Format timestamp for better readability
                 let formattedTimestamp = order.timestamp;
                 try {
                     const dateObj = new Date(order.timestamp);
@@ -1842,10 +1718,10 @@
                         showToast(result.message || `Order #${orderNumToReprint} REPRINTED successfully!`, 'success');
                     } else if (result.status === "warning_reprint_copy2_failed") {
                         showToast(result.message || `Order #${orderNumToReprint}: Kitchen REPRINTED. Copy 2 FAILED.`, 'warning', 7000);
-                    } else { // Includes "error_reprint_failed" or other server-side errors reported in a 200 OK
+                    } else { 
                         showToast(result.message || `Failed to reprint Order #${orderNumToReprint}.`, 'error', 7000);
                     }
-                } else { // HTTP error (e.g. 404, 500)
+                } else { 
                      showToast(result.message || `Server error during reprint of Order #${orderNumToReprint}: ${response.status}.`, 'error', 7000);
                 }
 
