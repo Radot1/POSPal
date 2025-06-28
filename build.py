@@ -1,13 +1,16 @@
 import PyInstaller.__main__
-import os
 import shutil
+import os
 
 # Clean previous builds
-if os.path.exists('dist'):
-    shutil.rmtree('dist')
-if os.path.exists('build'):
-    shutil.rmtree('build')
+build_dir = 'build'
+dist_dir = 'dist'
+if os.path.exists(build_dir):
+    shutil.rmtree(build_dir)
+if os.path.exists(dist_dir):
+    shutil.rmtree(dist_dir)
 
+# Build executable
 PyInstaller.__main__.run([
     'app.py',
     '--onefile',
@@ -16,3 +19,7 @@ PyInstaller.__main__.run([
     '--name', 'POSPal',
     '--icon', 'app_icon.ico'
 ])
+
+# Verify build
+if not os.path.exists(os.path.join(dist_dir, 'POSPal.exe')):
+    raise RuntimeError("Build failed - no executable generated")
