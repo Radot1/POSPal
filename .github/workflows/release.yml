@@ -2,17 +2,19 @@ name: Create Release
 on:
   push:
     tags:
-      - 'v*'  # Runs when you push tags like v1.0, v2.0
+      - 'v*'
 
 jobs:
   build-release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+      
       - name: Build
         run: python build.py
+        
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2  # Updated from v1
         with:
           files: |
             dist/POSPal.exe

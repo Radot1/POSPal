@@ -1,32 +1,28 @@
 name: Build POSPal
-on: [push]  # Runs on every code push
+on: [push]
 
 jobs:
   build:
-    runs-on: windows-latest  # Windows build environment
+    runs-on: windows-latest
     steps:
-      # Check out the code
-      - uses: actions/checkout@v2
-
-      # Set up Python
+      - uses: actions/checkout@v4  # Updated from v2
+        
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5  # Updated from v2
         with:
-          python-version: '3.9'
-
-      # Install dependencies
+          python-version: '3.11'  # Updated from 3.9
+          
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install waitress pyinstaller flask
-
-      # Build the executable
+          
       - name: Build executable
-        run: python build.py  # Uses your build.py script
-
-      # Upload the compiled EXE as an artifact
+        run: python build.py
+        
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4  # Updated from v2
         with:
           name: POSPal
-          path: dist/  # Where PyInstaller puts the EXE
+          path: dist/
+          retention-days: 5  # Optional: auto-delete old artifacts
