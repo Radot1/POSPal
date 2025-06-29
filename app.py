@@ -198,6 +198,28 @@ def get_next_daily_order_number():
 def serve_index():
     return send_from_directory('.', 'POSPal.html')
 
+# --- NEW ENDPOINT to get the next order number ---
+@app.route('/api/order_status', methods=['GET'])
+def get_order_status():
+    try:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        current_counter_val = 0
+        if os.path.exists(ORDER_COUNTER_FILE):
+            try:
+                with open(ORDER_COUNTER_FILE, 'r') as f:
+                    data = json.load(f)
+                    if data.get('date') == today_str:
+                        current_counter_val = data.get('counter', 0)
+            except (json.JSONDecodeError, FileNotFoundError):
+                # File is corrupt or gone, will reset to 0
+                pass
+        
+        return jsonify({"next_order_number": current_counter_val + 1})
+    except Exception as e:
+        app.logger.error(f"Error getting order status: {str(e)}")
+        return jsonify({"status": "error", "message": "Could not retrieve order status"}), 500
+
+
 @app.route('/api/menu', methods=['GET'])
 def get_menu():
     try:
