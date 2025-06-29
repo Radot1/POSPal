@@ -828,37 +828,84 @@ def get_daily_summary():
 
 
 def check_for_updates():
+    """
+    Checks for a new release on GitHub, downloads it, and creates a batch script
+    to perform the update and clean up after itself.
+    """
     try:
+        app.logger.info("Checking for application updates...")
         response = requests.get("https://api.github.com/repos/Radot1/POSPal/releases/latest")
         if response.status_code != 200:
-            app.logger.error(f"Update check failed: HTTP {response.status_code}")
+            app.logger.error(f"Update check failed: GitHub API returned HTTP {response.status_code}")
             return
             
         latest_ver = response.json()['tag_name']
+        app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version: {latest_ver}")
+        
         if latest_ver != CURRENT_VERSION:
-            # Download and replace executable
-            new_exe = requests.get(f"https://github.com/Radot1/POSPal/releases/download/{latest_ver}/POSPal.exe")
-            with open("POSPal_new.exe", "wb") as f:
-                f.write(new_exe.content)
+            app.logger.info(f"New version {latest_ver} found. Starting update process.")
+            # Download the new executable from the release assets
+            assets = response.json().get('assets', [])
+            download_url = ""
+            for asset in assets:
+                if asset.get('name') == 'POSPal.exe':
+                    download_url = asset.get('browser_download_url')
+                    break
             
-            # Create update script
-            with open("update.bat", "w") as bat:
-                bat.write(f"""
-                timeout 3
-                taskkill /f /im POSPal.exe
-                move /y POSPal_new.exe POSPal.exe
-                start POSPal.exe
-                del update.bat
-                """)
+            if not download_url:
+                app.logger.error("Could not find 'POSPal.exe' in the latest release assets.")
+                return
+
+            app.logger.info(f"Downloading new executable from: {download_url}")
+            new_exe_response = requests.get(download_url)
+            new_exe_response.raise_for_status() # Will raise an exception for 4xx/5xx responses
+
+            new_exe_path = os.path.join(BASE_DIR, "POSPal_new.exe")
+            with open(new_exe_path, "wb") as f:
+                f.write(new_exe_response.content)
+            app.logger.info(f"New executable saved to {new_exe_path}")
             
-            os.system("start update.bat")
+            # Create a more robust update script
+            update_script_path = os.path.join(BASE_DIR, "update.bat")
+            with open(update_script_path, "w") as bat:
+                bat.write(f"""@echo off
+echo Updating POSPal... Please wait.
+
+:: Give the main application a moment to close
+ping 127.0.0.1 -n 4 > nul
+
+:: Forcefully terminate the old process, hiding errors if it's already closed
+taskkill /f /im POSPal.exe > nul 2>&1
+
+:: Replace the old executable with the new one
+move /y "POSPal_new.exe" "POSPal.exe"
+
+:: Launch the new version
+echo Relaunching POSPal...
+start "" "POSPal.exe"
+
+:: Self-delete the batch file and exit the command prompt
+(goto) 2>nul & del "%~f0" & exit
+""")
+            
+            app.logger.info(f"Update script created at {update_script_path}")
+            
+            # Execute the update script in a new process
+            os.system(f'start /B "" "{update_script_path}"')
+            app.logger.info("Update script launched. The application will now exit.")
+            
+            # Exit the current application
             os._exit(0)
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Update check failed due to a network error: {str(e)}")
     except Exception as e:
-        app.logger.error(f"Update check failed: {str(e)}")
+        app.logger.error(f"An unexpected error occurred during the update check: {str(e)}")
 
 # Add to startup logic
-if getattr(sys, 'frozen', False):
-    threading.Timer(3600, check_for_updates).start()  # Check hourly
+if config.get("auto_update", False) and getattr(sys, 'frozen', False):
+    # Check for updates 5 seconds after startup, then hourly
+    threading.Timer(5, check_for_updates).start() 
+    threading.Timer(3600, check_for_updates).start()
 
 if __name__ == '__main__':
     # Verify we can write to DATA_DIR
@@ -868,8 +915,12 @@ if __name__ == '__main__':
             f.write('test')
         os.remove(test_file)
     except Exception as e:
-        app.logger.critical(f"CRITICAL: Cannot write to data directory: {str(e)}")
-        sys.exit(1)
+        app.logger.critical(f"CRITICAL: Cannot write to data directory: {DATA_DIR}. Error: {str(e)}")
+        # In a real GUI app, you'd show a message box here.
+        # For now, we exit with an error code.
+        sys.exit(f"Error: Insufficient permissions to write to the data directory: {DATA_DIR}")
         
     from waitress import serve
-    serve(app, host='0.0.0.0', port=5000)
+    app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{config.get('port', 5000)}")
+    serve(app, host='0.0.0.0', port=config.get('port', 5000))
+
