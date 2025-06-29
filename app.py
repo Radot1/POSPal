@@ -908,9 +908,8 @@ start "" "POSPal.exe"
 
 # Add to startup logic
 if config.get("auto_update", False) and getattr(sys, 'frozen', False):
-    # Check for updates 5 seconds after startup, then hourly
-    threading.Timer(5, check_for_updates).start() 
-    threading.Timer(3600, check_for_updates).start()
+    # Check for updates once, 5 seconds after startup
+    threading.Timer(5, check_for_updates).start()
 
 if __name__ == '__main__':
     # Verify we can write to DATA_DIR
