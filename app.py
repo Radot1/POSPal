@@ -38,7 +38,7 @@ ESC = b'\x1B'
 GS = b'\x1D'
 InitializePrinter = ESC + b'@'
 BoldOn = ESC + b'E\x01'
-BoldOff = ESC + b'E\x00'
+BoldOff = b'E\x00'
 DoubleHeightWidth = GS + b'!\x11'  # Double Height and Double Width
 DoubleHeight = GS + b'!\x01'       # Double Height only
 DoubleWidth = GS + b'!\x10'        # Double Width only
@@ -76,7 +76,14 @@ app.config['DEBUG'] = False
 
 # Add rate limiting
 from flask_limiter import Limiter
-limiter = Limiter(app, default_limits=["100 per minute"])
+from flask_limiter.util import get_remote_address
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"]
+)
+
 
 def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
     if isinstance(s, bytes):
@@ -496,88 +503,59 @@ def record_order_in_csv(order_data, print_status_message):
         date_str = datetime.now().strftime("%Y-%m-%d")
         filename = os.path.abspath(os.path.join(DATA_DIR, f"orders_{date_str}.csv"))
         fieldnames = ['order_number', 'table_number', 'timestamp', 'items_summary', 
-                      'universal_comment', 'order_total', 'printed_status', 'items_json']
+                      'universal_comment', 'order_total', 'payment_method', 'printed_status', 'items_json']
 
-        existing_rows = []
-        if os.path.exists(filename):
-            with open(filename, 'r', newline='', encoding='utf-8') as f_read:
-                reader = csv.DictReader(f_read)
-                for row in reader:
-                    if row.get('order_number', '').lower() != 'total_for_day': 
-                        existing_rows.append(row)
+        file_exists = os.path.exists(filename)
         
-        new_order_total = sum(
-            float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))) * int(item.get('quantity', 0))
-            for item in order_data.get('items', [])
-        )
-
-        current_running_total_from_csv = 0.0
-        for r in existing_rows:
-            try:
-                total_val_str = r.get('order_total')
-                if total_val_str:
-                    cleaned_total_str = total_val_str.replace('€', '').replace('EUR', '').strip()
-                    if cleaned_total_str: 
-                         current_running_total_from_csv += float(cleaned_total_str)
-            except ValueError:
-                app.logger.warning(f"Could not parse total '{r.get('order_total')}' from CSV for order {r.get('order_number')}.")
-            except AttributeError: 
-                app.logger.warning(f"Missing total for order {r.get('order_number')} in CSV.")
-
-        final_running_total = current_running_total_from_csv + new_order_total
-        
-        items_summary_parts = []
-        for item in order_data.get('items', []):
-            part = f"{item.get('quantity', 0)}x {item.get('name', 'N/A')}"
-            
-            general_options = item.get('generalSelectedOptions', [])
-            if general_options:
-                opt_details = []
-                for opt in general_options:
-                    opt_name = opt.get('name', 'N/A')
-                    opt_price_change = float(opt.get('priceChange', 0.0))
-                    price_str = ""
-                    if opt_price_change != 0:
-                        price_str = f" ({'+' if opt_price_change > 0 else ''}EUR {opt_price_change:.2f})"
-                    opt_details.append(f"{opt_name}{price_str}")
-                if opt_details:
-                    part += f" (Options: {', '.join(opt_details)})"
-            
-            comment = item.get('comment','').strip()
-            if comment:
-                part += f" (Note: {comment})"
-            
-            unit_price_final = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
-            part += f" [Unit EUR {unit_price_final:.2f}]"
-            items_summary_parts.append(part)
-
-        new_row_data = {
-            'order_number': order_data.get('number', 'N/A'),
-            'table_number': order_data.get('tableNumber', ''),
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'items_summary': " | ".join(items_summary_parts), 
-            'universal_comment': order_data.get('universalComment', '').strip(),
-            'order_total': f"EUR {new_order_total:.2f}",
-            'printed_status': printed_status_for_csv,
-            'items_json': json.dumps(order_data.get('items', [])) 
-        }
-        existing_rows.append(new_row_data) 
-
-        with open(filename, 'w', newline='', encoding='utf-8') as f_write:
+        with open(filename, 'a', newline='', encoding='utf-8') as f_write:
             writer = csv.DictWriter(f_write, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(existing_rows) 
-            writer.writerow({
-                'order_number': 'Total_For_Day', 
-                'table_number': '',
-                'timestamp': 'Summary as of ' + datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'items_summary': f"{len(existing_rows)} orders processed",
-                'universal_comment': '',
-                'order_total': f"EUR {final_running_total:.2f}",
-                'printed_status': '',
-                'items_json': '' 
-            })
-        app.logger.info(f"Order #{order_data.get('number', 'N/A')} logged to CSV. Printed: {printed_status_for_csv}. New daily total: EUR {final_running_total:.2f}")
+            if not file_exists:
+                writer.writeheader()
+
+            new_order_total = sum(
+                float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))) * int(item.get('quantity', 0))
+                for item in order_data.get('items', [])
+            )
+            
+            items_summary_parts = []
+            for item in order_data.get('items', []):
+                part = f"{item.get('quantity', 0)}x {item.get('name', 'N/A')}"
+                
+                general_options = item.get('generalSelectedOptions', [])
+                if general_options:
+                    opt_details = []
+                    for opt in general_options:
+                        opt_name = opt.get('name', 'N/A')
+                        opt_price_change = float(opt.get('priceChange', 0.0))
+                        price_str = ""
+                        if opt_price_change != 0:
+                            price_str = f" ({'+' if opt_price_change > 0 else ''}EUR {opt_price_change:.2f})"
+                        opt_details.append(f"{opt_name}{price_str}")
+                    if opt_details:
+                        part += f" (Options: {', '.join(opt_details)})"
+                
+                comment = item.get('comment','').strip()
+                if comment:
+                    part += f" (Note: {comment})"
+                
+                unit_price_final = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                part += f" [Unit EUR {unit_price_final:.2f}]"
+                items_summary_parts.append(part)
+
+            new_row_data = {
+                'order_number': order_data.get('number', 'N/A'),
+                'table_number': order_data.get('tableNumber', ''),
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'items_summary': " | ".join(items_summary_parts), 
+                'universal_comment': order_data.get('universalComment', '').strip(),
+                'order_total': f"{new_order_total:.2f}",
+                'payment_method': order_data.get('paymentMethod', 'Cash'),
+                'printed_status': printed_status_for_csv,
+                'items_json': json.dumps(order_data.get('items', [])) 
+            }
+            writer.writerow(new_row_data)
+            
+        app.logger.info(f"Order #{order_data.get('number', 'N/A')} logged to CSV. Payment: {order_data.get('paymentMethod', 'Cash')}, Printed: {printed_status_for_csv}.")
         return True
     except Exception as e:
         app.logger.error(f"CSV logging error for order #{order_data.get('number', 'N/A')}: {str(e)}")
@@ -604,7 +582,8 @@ def handle_order():
         'number': authoritative_order_number,
         'tableNumber': order_data_from_client.get('tableNumber', '').strip() or 'N/A',
         'items': order_data_from_client.get('items', []), 
-        'universalComment': order_data_from_client.get('universalComment', '')
+        'universalComment': order_data_from_client.get('universalComment', ''),
+        'paymentMethod': order_data_from_client.get('paymentMethod', 'Cash')
     }
 
     print_status_summary = "Not Printed"
@@ -696,7 +675,7 @@ def get_todays_orders_for_reprint():
         with open(filename, 'r', newline='', encoding='utf-8') as f_read:
             reader = csv.DictReader(f_read)
             for row in reader:
-                if row.get('order_number', '').lower() != 'total_for_day' and row.get('items_json'): 
+                if row.get('order_number') and row.get('items_json'): 
                     orders_for_reprint.append({
                         'order_number': row.get('order_number'),
                         'table_number': row.get('table_number'),
@@ -796,7 +775,56 @@ def reprint_order_endpoint():
         return jsonify({"status": "error", "message": f"Corrupted item data for order #{order_number_to_reprint}. Cannot reprint."}), 500
     except Exception as e:
         app.logger.error(f"Error reprinting order #{order_number_to_reprint}: {str(e)}")
-        return jsonify({"status": "error", "message": f"Could not reprint order #{order_number_to_reprint}: {str(e)}"}), 50
+        return jsonify({"status": "error", "message": f"Could not reprint order #{order_number_to_reprint}: {str(e)}"}), 500
+
+@app.route('/api/daily_summary', methods=['GET'])
+def get_daily_summary():
+    try:
+        today_date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = os.path.join(DATA_DIR, f"orders_{today_date_str}.csv")
+
+        if not os.path.exists(filename):
+            return jsonify({
+                "total_orders": 0,
+                "grand_total": 0.0,
+                "cash_total": 0.0,
+                "card_total": 0.0
+            })
+
+        total_orders = 0
+        grand_total = 0.0
+        cash_total = 0.0
+        card_total = 0.0
+
+        with open(filename, 'r', newline='', encoding='utf-8') as f_read:
+            reader = csv.DictReader(f_read)
+            for row in reader:
+                try:
+                    order_total = float(row.get('order_total', 0.0))
+                    payment_method = row.get('payment_method', 'Cash').strip().capitalize()
+
+                    total_orders += 1
+                    grand_total += order_total
+
+                    if payment_method == 'Card':
+                        card_total += order_total
+                    else:
+                        cash_total += order_total
+                except (ValueError, TypeError) as e:
+                    app.logger.warning(f"Could not parse row in daily summary: {row}. Error: {e}")
+
+
+        return jsonify({
+            "status": "success",
+            "total_orders": total_orders,
+            "grand_total": grand_total,
+            "cash_total": cash_total,
+            "card_total": card_total
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error generating daily summary: {str(e)}")
+        return jsonify({"status": "error", "message": f"Could not generate daily summary: {str(e)}"}), 500
 
 
 def check_for_updates():

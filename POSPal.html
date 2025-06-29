@@ -219,6 +219,12 @@
                 <span class="text-lg font-semibold text-gray-800">Total:</span>
                 <span id="order-total" class="text-lg font-bold text-black">€0.00</span>
             </div>
+            <div class="flex justify-between items-center">
+                <label for="paidByCardCheckbox" class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="paidByCardCheckbox" class="h-5 w-5 text-black border-gray-400 rounded focus:ring-black accent-black">
+                    <span class="text-sm font-medium text-gray-700">Pay by Card</span>
+                </label>
+            </div>
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="newOrder()" class="w-full py-3 btn-secondary transition">
                     <i class="fas fa-eraser mr-1"></i> New Order
@@ -260,6 +266,7 @@
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Manage Categories</button>
                     <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Order History</button>
+                    <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300 bg-blue-100">Day Summary</button>
                 </div>
             </div>
 
@@ -375,6 +382,20 @@
 		
     </div>
 
+    <!-- Day Summary Modal -->
+    <div id="daySummaryModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col text-gray-800">
+            <div class="p-4 border-b border-gray-300 flex justify-between items-center">
+                <h2 class="text-xl font-semibold">Day Summary</h2>
+                <button onclick="closeDaySummaryModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
+            </div>
+            <div id="daySummaryContent" class="p-6 space-y-4">
+                <p class="text-center italic">Loading summary...</p>
+            </div>
+        </div>
+    </div>
+
+
     <div id="toast" class="fixed top-5 right-5 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] hidden opacity-0 transition-opacity duration-300">
         <span id="toast-message">Toast message here</span>
     </div>
@@ -396,6 +417,7 @@
         let orderNumber = 1; 
         let universalOrderComment = localStorage.getItem('sushakiSteakhouseUniversalOrderComment') || "";
         let selectedTableNumber = localStorage.getItem('sushakiSteakhouseSelectedTable') || "";
+        let isPaidByCard = false;
 
         let isMobileOrderPanelOpen = false;
         let itemForNumpad = null; 
@@ -418,6 +440,7 @@
             elements.emptyOrderMessage = document.getElementById('empty-order-message');
             elements.orderTotalDisplay = document.getElementById('order-total');
             elements.universalOrderCommentInput = document.getElementById('universalOrderCommentInput');
+            elements.paidByCardCheckbox = document.getElementById('paidByCardCheckbox');
             elements.mobileOrderToggle = document.getElementById('mobile-order-toggle');
             elements.mobileOrderCountBadge = document.getElementById('mobile-order-count-badge');
             elements.orderPanel = document.getElementById('order-panel');
@@ -425,6 +448,8 @@
             elements.sendOrderBtn = document.getElementById('sendOrderBtn');
             elements.settingsGearContainer = document.getElementById('settings-gear-container');
             elements.managementModal = document.getElementById('managementModal');
+            elements.daySummaryModal = document.getElementById('daySummaryModal');
+            elements.daySummaryContent = document.getElementById('daySummaryContent');
             elements.itemOptionSelectModal = document.getElementById('itemOptionSelectModal');
             elements.optionModalItemName = document.getElementById('optionModalItemName');
             elements.optionModalItemDescription = document.getElementById('optionModalItemDescription');
@@ -461,6 +486,12 @@
                 elements.universalOrderCommentInput.addEventListener('input', (e) => {
                     universalOrderComment = e.target.value;
                     localStorage.setItem('sushakiSteakhouseUniversalOrderComment', universalOrderComment);
+                });
+            }
+            
+            if(elements.paidByCardCheckbox) {
+                elements.paidByCardCheckbox.addEventListener('change', (e) => {
+                    isPaidByCard = e.target.checked;
                 });
             }
 
@@ -792,6 +823,9 @@
             localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
             currentOrderLineItemCounter = 0;
             localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
+            isPaidByCard = false;
+            if(elements.paidByCardCheckbox) elements.paidByCardCheckbox.checked = false;
+
 
             hideNumpad();
             updateOrderDisplay();
@@ -832,7 +866,8 @@
                 itemPriceWithModifiers: item.itemPriceWithModifiers, 
                 comment: item.comment || "",
             })),
-            universalComment: universalOrderComment.trim()
+            universalComment: universalOrderComment.trim(),
+            paymentMethod: isPaidByCard ? 'Card' : 'Cash'
         };
 
         try {
@@ -860,15 +895,7 @@
 
                 // Common logic for successful or partially successful processing
                 if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "error_log_failed_after_print") {
-                    currentOrder = [];
-                    universalOrderComment = "";
-                    if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
-                    localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
-                    currentOrderLineItemCounter = 0;
-                    localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
-                    hideNumpad();
-                    updateOrderDisplay();
-                    fetchAndUpdateOrderNumber(); // REVISED: Fetch the next number from server
+                    newOrder(); // Reset everything
                 }
 
             } else { // HTTP error (e.g., 500, 400)
@@ -1729,6 +1756,62 @@
                     reprintButton.innerHTML = '<i class="fas fa-print mr-1"></i> Reprint';
                 }
             }
+        }
+
+        // --- Day Summary Modal Functions ---
+        async function openDaySummaryModal() {
+            if (!elements.daySummaryModal || !elements.daySummaryContent) return;
+            elements.daySummaryModal.classList.remove('hidden');
+            elements.daySummaryModal.classList.add('flex');
+            elements.daySummaryContent.innerHTML = '<p class="text-center italic">Loading summary...</p>';
+
+            try {
+                const response = await fetch('/api/daily_summary');
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || `Server error: ${response.status}`);
+                }
+                const summary = await response.json();
+                renderDaySummary(summary);
+            } catch (error) {
+                elements.daySummaryContent.innerHTML = `<p class="text-center text-red-500">Error loading summary: ${error.message}</p>`;
+            }
+        }
+
+        function closeDaySummaryModal() {
+            if (!elements.daySummaryModal) return;
+            elements.daySummaryModal.classList.add('hidden');
+            elements.daySummaryModal.classList.remove('flex');
+        }
+
+        function renderDaySummary(summary) {
+            if (!elements.daySummaryContent) return;
+            
+            if (summary.status === 'error') {
+                elements.daySummaryContent.innerHTML = `<p class="text-center text-red-500">${summary.message}</p>`;
+                return;
+            }
+
+            elements.daySummaryContent.innerHTML = `
+                <div class="space-y-3 text-base">
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium text-gray-600">Total Orders:</span>
+                        <span class="font-semibold text-gray-800">${summary.total_orders}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium text-gray-600">Total Cash Payments:</span>
+                        <span class="font-semibold text-green-600">€${summary.cash_total.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium text-gray-600">Total Card Payments:</span>
+                        <span class="font-semibold text-blue-600">€${summary.card_total.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black">
+                        <span class="text-lg font-bold text-gray-900">Grand Total:</span>
+                        <span class="text-lg font-bold text-gray-900">€${summary.grand_total.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
         }
 
     </script>
