@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.2"  # Update this with each release
+CURRENT_VERSION = "1.0.3"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
@@ -204,6 +204,11 @@ def get_next_daily_order_number():
 @app.route('/')
 def serve_index():
     return send_from_directory('.', 'POSPal.html')
+
+# --- NEW ENDPOINT to get app version ---
+@app.route('/api/version')
+def get_version():
+    return jsonify({"version": CURRENT_VERSION})
 
 # --- NEW ENDPOINT to get the next order number ---
 @app.route('/api/order_status', methods=['GET'])
@@ -923,4 +928,3 @@ if __name__ == '__main__':
     from waitress import serve
     app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{config.get('port', 5000)}")
     serve(app, host='0.0.0.0', port=config.get('port', 5000))
-
