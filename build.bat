@@ -4,7 +4,7 @@ REM Build script for POSPal
 REM Description: This script creates a clean virtual environment, installs all
 REM              necessary dependencies, and packages the application into a
 REM              final, runnable folder.
-REM Version: 1.5.0
+REM Version: 1.6.0
 REM ============================================================================
 setlocal
 
@@ -70,7 +70,7 @@ echo [BUILD] Building the application executable (this may take a moment)...
 pyinstaller ^
     --onefile ^
     --noconsole ^
-    --name "POSPal_%VERSION%" ^
+    --name "POSPal" ^
     --add-data "POSPal.html;." ^
     --icon "app_icon.ico" ^
     app.py
@@ -90,7 +90,7 @@ mkdir "%RELEASE_DIR%\data"
 mkdir "%RELEASE_DIR%\logs"
 
 rem Copy the executable from the temporary dist folder to the final release folder
-copy "dist\POSPal_%VERSION%.exe" "%RELEASE_DIR%\"
+copy "dist\POSPal.exe" "%RELEASE_DIR%\"
 
 rem Copy essential config and data files
 copy "config.json" "%RELEASE_DIR%\"
@@ -107,7 +107,7 @@ echo.
 echo [CLEANUP] Removing temporary build files...
 rd /s /q build
 rd /s /q dist
-del "POSPal_%VERSION%.spec"
+del "POSPal.spec"
 
 echo.
 echo ============================================================================
