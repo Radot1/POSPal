@@ -18,7 +18,7 @@ A lightweight, web-based Point of Sale (POS) system designed for small restauran
 
 2.  **Unzip:** Unzip the downloaded file to a permanent folder on your computer (e.g., `C:\POSPal`).
 
-3.  **Run:** Open the new folder and double-click `POSPal.exe`. A black console window will appear, which means the server is running. Keep this window open while you are using the POS.
+3.  **Run:** Open the new folder and double-click `POSPal.exe`. The application will start silently in the background. **No window will appear, which is normal.**
 
 4.  **Connect:** On your tablet or any other device connected to the same Wi-Fi, open a web browser and go to `http://<your-server-ip>:5000`.
     * *To find your server's IP address, open Command Prompt on the Windows machine and type `ipconfig`.*
@@ -41,4 +41,15 @@ Before you can print orders, you must configure the printer.
     }
     ```
 4.  Save the file and restart `POSPal.exe`.
+
+---
+
+## 🛑 How to Stop the Application
+
+Since the application runs as a background process, you must close it using the Windows Task Manager.
+
+1.  Press **`Ctrl + Shift + Esc`** to open Task Manager.
+2.  Go to the **"Details"** tab.
+3.  Find **`POSPal.exe`** in the list.
+4.  Select it and click **"End task"**.
 
