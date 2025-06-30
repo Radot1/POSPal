@@ -285,7 +285,7 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         SMALL_FONT_LINE_WIDTH = 56 # Approximate for Font B
 
         ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-        restaurant_name = "Kyr Stefanos" 
+        restaurant_name = "POSPal" 
         ticket_content += to_bytes(restaurant_name + "\n")
         ticket_content += BoldOff 
         
