@@ -820,9 +820,11 @@
             }
         }
 
-        function newOrder() {
-            if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) return;
-
+        /**
+         * Clears the current order data from the state and local storage.
+         * This function does NOT include a confirmation prompt.
+         */
+        function clearOrderData() {
             currentOrder = [];
             universalOrderComment = "";
             if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
@@ -832,11 +834,22 @@
             isPaidByCard = false;
             if(elements.paidByCardCheckbox) elements.paidByCardCheckbox.checked = false;
 
-
             hideNumpad();
             updateOrderDisplay();
-            showToast('Order cleared. Ready for the next order.', 'info');
             fetchAndUpdateOrderNumber(); // Refresh the number from server after clearing
+        }
+        
+        /**
+         * Initiates a new order. If the current order is not empty, it will
+         * prompt the user for confirmation before clearing the data.
+         */
+        function newOrder() {
+            if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) {
+                return;
+            }
+            
+            clearOrderData();
+            showToast('Order cleared. Ready for the next order.', 'info');
         }
 
     async function sendOrder() {
@@ -901,7 +914,7 @@
 
                 // Common logic for successful or partially successful processing
                 if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "error_log_failed_after_print") {
-                    newOrder(); // Reset everything
+                    clearOrderData(); // MODIFIED: Reset everything without confirmation
                 }
 
             } else { // HTTP error (e.g., 500, 400)

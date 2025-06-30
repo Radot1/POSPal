@@ -482,11 +482,13 @@
             elements.numpadContainer = document.getElementById('numpad-container');
             elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
             elements.todaysOrdersList = document.getElementById('todaysOrdersList');
-            elements.appVersionContainer = document.getElementById('appVersionContainer'); // Added
-            elements.appVersion = document.getElementById('appVersion'); // Added
+            elements.appVersionContainer = document.getElementById('appVersionContainer');
+            elements.appVersion = document.getElementById('appVersion');
             elements.demoModeBanner = document.getElementById('demo-mode-banner');
+            elements.mainHeader = document.getElementById('main-header');
+            elements.categorySection = document.getElementById('category-section');
         }
-
+        
         const mockMenu = {
             "Appetizers": [
                 {"id": 1, "name": "Garlic Bread", "price": 4.50, "hasGeneralOptions": false, "generalOptions": []},
@@ -505,8 +507,8 @@
         function showDemoModeBanner() {
             if(elements.demoModeBanner) {
                 elements.demoModeBanner.classList.remove('hidden');
-                document.getElementById('main-header').style.top = elements.demoModeBanner.offsetHeight + 'px';
-                document.getElementById('category-section').style.top = (elements.demoModeBanner.offsetHeight + 61) + 'px';
+                elements.mainHeader.style.top = elements.demoModeBanner.offsetHeight + 'px';
+                elements.categorySection.style.top = (elements.demoModeBanner.offsetHeight + 61) + 'px';
             }
         }
 
@@ -524,6 +526,10 @@
                 showDemoModeBanner();
                 menu = mockMenu; // Load mock menu
                 if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = "1";
+                // Manually set selectedCategory and render
+                if (Object.keys(menu).length > 0) {
+                    selectedCategory = Object.keys(menu)[0];
+                }
                 renderCategories();
                 populateManagementCategorySelect();
             }
@@ -561,7 +567,7 @@
 
 
         async function loadMenu() {
-            if (demoMode) return; // Already loaded mock menu
+            if (demoMode) return; // Already handled in initializeAppState
             try {
                 const response = await fetch('/api/menu');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -847,9 +853,7 @@
             }
         }
 
-        function newOrder() {
-            if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) return;
-
+        function clearOrderData() {
             currentOrder = [];
             universalOrderComment = "";
             if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
@@ -859,10 +863,8 @@
             isPaidByCard = false;
             if(elements.paidByCardCheckbox) elements.paidByCardCheckbox.checked = false;
 
-
             hideNumpad();
             updateOrderDisplay();
-            showToast('Order cleared. Ready for the next order.', 'info');
             
             if (!demoMode) {
                 fetchAndUpdateOrderNumber();
@@ -871,11 +873,20 @@
                 if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
             }
         }
+        
+        function newOrder() {
+            if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) {
+                return;
+            }
+            
+            clearOrderData();
+            showToast('Order cleared. Ready for the next order.', 'info');
+        }
 
     async function sendOrder() {
         if(demoMode) {
             showToast("Order Sent! (Demo Mode)", "success");
-            newOrder();
+            clearOrderData();
             orderNumber++;
             if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
             return;
@@ -927,7 +938,6 @@
             const result = await response.json();
 
             if (response.ok) {
-                 // Handle new multi-copy print statuses
                 if (result.status === "success") {
                     showToast(result.message || `Order #${result.order_number} sent, all copies printed, and logged!`, 'success');
                 } else if (result.status === "warning_print_copy2_failed") {
@@ -936,16 +946,15 @@
                     showToast(result.message || `Order #${result.order_number} - COPY 1 FAILED. Order NOT saved.`, 'error', 7000);
                 } else if (result.status === "error_log_failed_after_print") {
                     showToast(result.message || `Order #${result.order_number} - PRINTED but LOGGING FAILED. Notify staff!`, 'error', 10000);
-                } else { // Generic error from server but response was OK
+                } else { 
                     showToast(result.message || `Order #${result.order_number} processed with issues: ${result.status}`, 'warning', 7000);
                 }
 
-                // Common logic for successful or partially successful processing
                 if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "error_log_failed_after_print") {
-                    newOrder(); // Reset everything
+                    clearOrderData();
                 }
 
-            } else { // HTTP error (e.g., 500, 400)
+            } else {
                 let errorMsg = `Server error: ${response.status}.`;
                 if (result && result.message) {
                    errorMsg = result.message;
@@ -956,7 +965,6 @@
                    } catch (textError) { /* Ignore, use original errorMsg */ }
                 }
                 showToast(errorMsg + ' Order remains on screen.', 'error', 7000);
-                 // Even on failure, try to re-sync the order number
                 fetchAndUpdateOrderNumber();
             }
         } catch (error) {
@@ -968,7 +976,7 @@
                 detailedErrorMsg = `Error: ${error.message}. Could not send order.`;
             }
             showToast(detailedErrorMsg + ' Order remains on screen.', 'error', 7000);
-            fetchAndUpdateOrderNumber(); // Re-sync on network error
+            fetchAndUpdateOrderNumber();
         } finally {
             if(elements.sendOrderBtn) {
                 elements.sendOrderBtn.disabled = false;
@@ -1901,4 +1909,4 @@
 
     </script>
 </body>
-</ht
+</html>
