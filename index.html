@@ -3,25 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to [Your Software Name]</title>
+    <title>POSPal - Simple & Free Point of Sale System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; }
-        h1 { color: #333; }
-        p { color: #555; }
-        a { color: #007BFF; text-decoration: none; font-weight: bold; }
-        a:hover { text-decoration: underline; }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .cta-button {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .feature-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
     </style>
 </head>
-<body>
-    <h1>Welcome to [Your Software Name]</h1>
-    <p>
-        This is the official page for my project. [Briefly describe what your software does here. For example: "It's a revolutionary tool designed to streamline your workflow and boost productivity."]
-    </p>
-    <p>
-        You can find all the source code right here in this repository. To see it in action, check out the interactive demo.
-    </p>
-    <p>
-        <a href="POSPal.html">Launch the HTML Lookaround Demo</a>
-    </p>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fas fa-receipt text-2xl text-indigo-600"></i>
+                <h1 class="text-xl font-bold text-gray-900">POSPal</h1>
+            </div>
+            <a href="https://github.com/Radot1/POSPal" target="_blank" class="text-gray-600 hover:text-indigo-600 transition">
+                <i class="fab fa-github text-2xl"></i>
+            </a>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <main class="container mx-auto px-6 py-16 md:py-24 text-center">
+        <div class="max-w-3xl mx-auto">
+            <h2 class="text-4xl md:text-5xl font-bold text-gray-900 leading-tight">
+                A Modern, Simple, and Free Point of Sale System
+            </h2>
+            <p class="mt-6 text-lg text-gray-600">
+                POSPal is a lightweight, self-hosted POS designed for small restaurants and cafes. Manage your menu, take orders, and print kitchen tickets with ease. No subscriptions, no fees.
+            </p>
+            <div class="mt-8 flex justify-center items-center space-x-4">
+                <a href="https://github.com/Radot1/POSPal/releases/latest" class="cta-button bg-indigo-600 text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-700">
+                    <i class="fas fa-download mr-2"></i>
+                    Download Latest Release
+                </a>
+            </div>
+        </div>
+
+        <!-- Placeholder for App Screenshot -->
+        <div class="mt-16 max-w-4xl mx-auto">
+            <div class="bg-white p-4 rounded-xl shadow-2xl ring-1 ring-gray-900/5">
+                <img src="https://placehold.co/1200x750/e2e8f0/4a5568?text=POSPal+Screenshot" 
+                     alt="POSPal Application Screenshot" 
+                     class="rounded-lg w-full">
+            </div>
+        </div>
+    </main>
+
+    <!-- Features Section -->
+    <section class="bg-white py-16 md:py-24">
+        <div class="container mx-auto px-6">
+            <div class="text-center max-w-2xl mx-auto">
+                <h3 class="text-3xl font-bold text-gray-900">Everything You Need, Nothing You Don't</h3>
+                <p class="mt-4 text-gray-600">
+                    POSPal focuses on the essential features that help your business run smoothly, without the bloat of expensive enterprise systems.
+                </p>
+            </div>
+
+            <div class="mt-12 grid md:grid-cols-3 gap-8 text-center">
+                <!-- Feature 1: Simple Setup -->
+                <div class="feature-card bg-gray-50 p-8 rounded-xl shadow-sm">
+                    <div class="bg-indigo-100 text-indigo-600 rounded-full h-12 w-12 flex items-center justify-center mx-auto">
+                        <i class="fas fa-rocket text-xl"></i>
+                    </div>
+                    <h4 class="mt-6 text-lg font-semibold text-gray-900">Simple to Set Up</h4>
+                    <p class="mt-2 text-gray-600 text-sm">
+                        Download a single file, run it, and you're ready to go. No complex installation or database configuration required.
+                    </p>
+                </div>
+
+                <!-- Feature 2: Free Forever -->
+                <div class="feature-card bg-gray-50 p-8 rounded-xl shadow-sm">
+                    <div class="bg-indigo-100 text-indigo-600 rounded-full h-12 w-12 flex items-center justify-center mx-auto">
+                        <i class="fas fa-hand-holding-usd text-xl"></i>
+                    </div>
+                    <h4 class="mt-6 text-lg font-semibold text-gray-900">No Subscription Fees</h4>
+                    <p class="mt-2 text-gray-600 text-sm">
+                        POSPal is completely free and open-source. You own your data, and there are never any monthly fees or hidden costs.
+                    </p>
+                </div>
+
+                <!-- Feature 3: Automatic Updates -->
+                <div class="feature-card bg-gray-50 p-8 rounded-xl shadow-sm">
+                    <div class="bg-indigo-100 text-indigo-600 rounded-full h-12 w-12 flex items-center justify-center mx-auto">
+                        <i class="fas fa-sync-alt text-xl"></i>
+                    </div>
+                    <h4 class="mt-6 text-lg font-semibold text-gray-900">Automatic Updates</h4>
+                    <p class="mt-2 text-gray-600 text-sm">
+                        The app checks for new features and bug fixes on GitHub and can update itself automatically, so you always have the latest version.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Final CTA Section -->
+    <section class="bg-gray-800 text-white">
+        <div class="container mx-auto px-6 py-16 text-center">
+            <h3 class="text-3xl font-bold">Ready to Get Started?</h3>
+            <p class="mt-4 max-w-xl mx-auto">
+                Download the latest release and streamline your restaurant's workflow today.
+            </p>
+            <div class="mt-8">
+                <a href="https://github.com/Radot1/POSPal/releases/latest" class="cta-button bg-indigo-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-600">
+                    Get POSPal Now
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900">
+        <div class="container mx-auto px-6 py-4 text-center text-gray-400 text-sm">
+            <p>&copy; 2024 POSPal Project. Released under the MIT License.</p>
+            <p class="mt-1">View the source code on <a href="https://github.com/Radot1/POSPal" class="text-indigo-400 hover:underline">GitHub</a>.</p>
+        </div>
+    </footer>
+
 </body>
 </html>
