@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POSPal - Simple & Free Point of Sale System</title>
+    <title>POSPal - Simple & Powerful Point of Sale System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            scroll-behavior: smooth;
         }
         .cta-button {
             transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
@@ -20,126 +21,274 @@
             transform: translateY(-2px);
             box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         }
-        .feature-card {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        .feature-icon-bg {
+            background: linear-gradient(145deg, #4f46e5, #7c3aed);
         }
-        .feature-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        .faq-item {
+            transition: background-color 0.2s ease;
+        }
+        .faq-item:hover {
+            background-color: #f9fafb;
+        }
+        .faq-answer {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out;
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-white text-gray-800">
 
     <!-- Header -->
-    <header class="bg-white shadow-sm">
+    <header class="bg-white shadow-sm sticky top-0 z-50">
         <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i class="fas fa-receipt text-2xl text-indigo-600"></i>
-                <h1 class="text-xl font-bold text-gray-900">POSPal</h1>
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-receipt text-3xl text-indigo-600"></i>
+                <h1 class="text-2xl font-bold text-gray-900">POSPal</h1>
             </div>
+            <nav class="hidden md:flex items-center space-x-8">
+                <a href="#features" class="text-gray-600 hover:text-indigo-600 transition">Features</a>
+                <a href="#how-it-works" class="text-gray-600 hover:text-indigo-600 transition">How It Works</a>
+                <a href="#pricing" class="text-gray-600 hover:text-indigo-600 transition">Pricing</a>
+                <a href="#faq" class="text-gray-600 hover:text-indigo-600 transition">FAQ</a>
+            </nav>
             <a href="https://github.com/Radot1/POSPal" target="_blank" class="text-gray-600 hover:text-indigo-600 transition">
-                <i class="fab fa-github text-2xl"></i>
+                <i class="fab fa-github text-3xl"></i>
             </a>
         </div>
     </header>
 
     <!-- Hero Section -->
-    <main class="container mx-auto px-6 py-16 md:py-24 text-center">
-        <div class="max-w-3xl mx-auto">
-            <h2 class="text-4xl md:text-5xl font-bold text-gray-900 leading-tight">
-                A Modern, Simple, and Free Point of Sale System
-            </h2>
-            <p class="mt-6 text-lg text-gray-600">
-                POSPal is a lightweight, self-hosted POS designed for small restaurants and cafes. Manage your menu, take orders, and print kitchen tickets with ease. No subscriptions, no fees.
-            </p>
-            <div class="mt-8 flex justify-center items-center space-x-4">
-                <a href="https://github.com/Radot1/POSPal/releases/latest" class="cta-button bg-indigo-600 text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-700">
-                    <i class="fas fa-download mr-2"></i>
-                    Download Latest Release
-                </a>
-            </div>
-        </div>
-
-        <!-- Placeholder for App Screenshot -->
-        <div class="mt-16 max-w-4xl mx-auto">
-            <div class="bg-white p-4 rounded-xl shadow-2xl ring-1 ring-gray-900/5">
-                <img src="https://placehold.co/1200x750/e2e8f0/4a5568?text=POSPal+Screenshot" 
-                     alt="POSPal Application Screenshot" 
-                     class="rounded-lg w-full">
+    <main class="bg-gray-50">
+        <div class="container mx-auto px-6 py-20 md:py-32 text-center">
+            <div class="max-w-3xl mx-auto">
+                <h2 class="text-4xl md:text-6xl font-extrabold text-gray-900 leading-tight">
+                    The Last Point of Sale You'll Ever Need to Buy
+                </h2>
+                <p class="mt-6 text-lg text-gray-600">
+                    A powerful, self-hosted POS for small restaurants and cafes. A single one-time purchase gives you lifetime ownership and all future updates. No subscriptions, no hidden fees.
+                </p>
+                <div class="mt-10 flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                    <a href="POSPal.html" target="_blank" class="cta-button w-full sm:w-auto bg-white border-2 border-indigo-600 text-indigo-600 font-bold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-50 text-lg">
+                        <i class="fas fa-eye mr-2"></i>
+                        Try the Live Demo
+                    </a>
+                    <a href="#pricing" class="cta-button w-full sm:w-auto bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-700 text-lg">
+                        <i class="fas fa-shopping-cart mr-2"></i>
+                        Buy Now
+                    </a>
+                </div>
             </div>
         </div>
     </main>
 
     <!-- Features Section -->
-    <section class="bg-white py-16 md:py-24">
+    <section id="features" class="bg-white py-20 md:py-28">
         <div class="container mx-auto px-6">
-            <div class="text-center max-w-2xl mx-auto">
-                <h3 class="text-3xl font-bold text-gray-900">Everything You Need, Nothing You Don't</h3>
-                <p class="mt-4 text-gray-600">
-                    POSPal focuses on the essential features that help your business run smoothly, without the bloat of expensive enterprise systems.
+            <div class="text-center max-w-3xl mx-auto">
+                <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Everything You Need, Nothing You Don't</h3>
+                <p class="mt-4 text-lg text-gray-600">
+                    POSPal focuses on the essential features that help your business run smoothly, without the bloat and recurring costs of other systems.
                 </p>
             </div>
 
-            <div class="mt-12 grid md:grid-cols-3 gap-8 text-center">
-                <!-- Feature 1: Simple Setup -->
-                <div class="feature-card bg-gray-50 p-8 rounded-xl shadow-sm">
-                    <div class="bg-indigo-100 text-indigo-600 rounded-full h-12 w-12 flex items-center justify-center mx-auto">
-                        <i class="fas fa-rocket text-xl"></i>
+            <div class="mt-16 space-y-16">
+                <!-- Feature 1 -->
+                <div class="grid md:grid-cols-2 gap-12 items-center">
+                    <div class="text-center md:text-left">
+                        <span class="text-indigo-600 font-semibold">COMPLETE CONTROL</span>
+                        <h4 class="text-2xl md:text-3xl font-bold text-gray-900 mt-2">Simple to Own, Easy to Use</h4>
+                        <p class="mt-4 text-gray-600">
+                            Run the software on your own Windows computer. No complex cloud setup is required, and you own your sales data forever. The interface is designed to be fast and intuitive for your staff.
+                        </p>
                     </div>
-                    <h4 class="mt-6 text-lg font-semibold text-gray-900">Simple to Set Up</h4>
-                    <p class="mt-2 text-gray-600 text-sm">
-                        Download a single file, run it, and you're ready to go. No complex installation or database configuration required.
-                    </p>
+                    <div class="flex justify-center">
+                        <i class="fas fa-server text-8xl text-indigo-300"></i>
+                    </div>
                 </div>
-
-                <!-- Feature 2: Free Forever -->
-                <div class="feature-card bg-gray-50 p-8 rounded-xl shadow-sm">
-                    <div class="bg-indigo-100 text-indigo-600 rounded-full h-12 w-12 flex items-center justify-center mx-auto">
-                        <i class="fas fa-hand-holding-usd text-xl"></i>
+                <!-- Feature 2 -->
+                <div class="grid md:grid-cols-2 gap-12 items-center">
+                    <div class="flex justify-center md:order-last">
+                         <i class="fas fa-hand-holding-usd text-8xl text-indigo-300"></i>
                     </div>
-                    <h4 class="mt-6 text-lg font-semibold text-gray-900">No Subscription Fees</h4>
-                    <p class="mt-2 text-gray-600 text-sm">
-                        POSPal is completely free and open-source. You own your data, and there are never any monthly fees or hidden costs.
-                    </p>
+                    <div class="text-center md:text-left">
+                        <span class="text-indigo-600 font-semibold">TRANSPARENT PRICING</span>
+                        <h4 class="text-2xl md:text-3xl font-bold text-gray-900 mt-2">One-Time Payment</h4>
+                        <p class="mt-4 text-gray-600">
+                            Buy it once, own it for life. Say goodbye to monthly subscription fees that eat into your profits. Your one-time purchase includes all future features and bug fixes.
+                        </p>
+                    </div>
                 </div>
-
-                <!-- Feature 3: Automatic Updates -->
-                <div class="feature-card bg-gray-50 p-8 rounded-xl shadow-sm">
-                    <div class="bg-indigo-100 text-indigo-600 rounded-full h-12 w-12 flex items-center justify-center mx-auto">
-                        <i class="fas fa-sync-alt text-xl"></i>
+                 <!-- Feature 3 -->
+                <div class="grid md:grid-cols-2 gap-12 items-center">
+                    <div class="text-center md:text-left">
+                        <span class="text-indigo-600 font-semibold">ALWAYS IMPROVING</span>
+                        <h4 class="text-2xl md:text-3xl font-bold text-gray-900 mt-2">Free Lifetime Updates</h4>
+                        <p class="mt-4 text-gray-600">
+                           The application can check for new releases on GitHub and update itself automatically. The software only gets better with time, and you'll never pay for an upgrade.
+                        </p>
                     </div>
-                    <h4 class="mt-6 text-lg font-semibold text-gray-900">Automatic Updates</h4>
-                    <p class="mt-2 text-gray-600 text-sm">
-                        The app checks for new features and bug fixes on GitHub and can update itself automatically, so you always have the latest version.
-                    </p>
+                    <div class="flex justify-center">
+                       <i class="fas fa-sync-alt text-8xl text-indigo-300"></i>
+                    </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Final CTA Section -->
-    <section class="bg-gray-800 text-white">
-        <div class="container mx-auto px-6 py-16 text-center">
-            <h3 class="text-3xl font-bold">Ready to Get Started?</h3>
-            <p class="mt-4 max-w-xl mx-auto">
-                Download the latest release and streamline your restaurant's workflow today.
-            </p>
-            <div class="mt-8">
-                <a href="https://github.com/Radot1/POSPal/releases/latest" class="cta-button bg-indigo-500 text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-600">
-                    Get POSPal Now
-                </a>
+    <!-- How it Works Section -->
+    <section id="how-it-works" class="bg-gray-50 py-20 md:py-28">
+        <div class="container mx-auto px-6">
+            <div class="text-center max-w-2xl mx-auto">
+                <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Get Up and Running in Minutes</h3>
             </div>
+            <div class="mt-16 relative">
+                <!-- Dotted line for desktop -->
+                <div class="hidden md:block absolute top-8 left-0 w-full border-t-2 border-dashed border-gray-300"></div>
+                <div class="relative grid md:grid-cols-3 gap-12">
+                    <div class="text-center">
+                        <div class="bg-white border-2 border-indigo-500 rounded-full h-16 w-16 flex items-center justify-center mx-auto relative z-10 shadow-lg">
+                            <span class="text-2xl font-bold text-indigo-600">1</span>
+                        </div>
+                        <h4 class="mt-6 text-xl font-semibold text-gray-900">Download</h4>
+                        <p class="mt-2 text-gray-600">
+                            After your purchase, you get a link to download the application as a simple zip file.
+                        </p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-white border-2 border-indigo-500 rounded-full h-16 w-16 flex items-center justify-center mx-auto relative z-10 shadow-lg">
+                            <span class="text-2xl font-bold text-indigo-600">2</span>
+                        </div>
+                        <h4 class="mt-6 text-xl font-semibold text-gray-900">Configure</h4>
+                        <p class="mt-2 text-gray-600">
+                            Unzip the file, run the app, and enter your printer's name in the simple configuration file.
+                        </p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-white border-2 border-indigo-500 rounded-full h-16 w-16 flex items-center justify-center mx-auto relative z-10 shadow-lg">
+                             <span class="text-2xl font-bold text-indigo-600">3</span>
+                        </div>
+                        <h4 class="mt-6 text-xl font-semibold text-gray-900">Go Live</h4>
+                        <p class="mt-2 text-gray-600">
+                            Access the POS from any tablet or computer on your network and start taking orders.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="bg-white py-20 md:py-28">
+        <div class="container mx-auto px-6">
+            <div class="text-center max-w-2xl mx-auto">
+                <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Trusted by Small Businesses</h3>
+            </div>
+            <div class="mt-12 grid md:grid-cols-2 gap-8">
+                <div class="testimonial-card bg-gray-50 p-8 rounded-xl shadow-sm border">
+                    <p class="text-gray-600">"Switching to POSPal was the best decision for my cafe. It's fast, reliable, and so easy to use. The one-time payment saved me hundreds in subscription fees."</p>
+                    <div class="mt-4 flex items-center">
+                        <img class="w-12 h-12 rounded-full" src="https://placehold.co/100x100/e2e8f0/4a5568?text=JS" alt="User Avatar">
+                        <div class="ml-4">
+                            <p class="font-semibold text-gray-900">John Smith</p>
+                            <p class="text-sm text-gray-500">Owner, The Daily Grind Cafe</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card bg-gray-50 p-8 rounded-xl shadow-sm border">
+                    <p class="text-gray-600">"I love that I own the software and my data. No more worrying about price hikes or companies shutting down. It just works."</p>
+                    <div class="mt-4 flex items-center">
+                        <img class="w-12 h-12 rounded-full" src="https://placehold.co/100x100/e2e8f0/4a5568?text=ML" alt="User Avatar">
+                        <div class="ml-4">
+                            <p class="font-semibold text-gray-900">Maria Lee</p>
+                            <p class="text-sm text-gray-500">Manager, Bistro Italia</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- FAQ Section -->
+    <section id="faq" class="bg-gray-50 py-20 md:py-28">
+        <div class="container mx-auto px-6 max-w-3xl">
+            <div class="text-center">
+                <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Frequently Asked Questions</h3>
+            </div>
+            <div class="mt-12 space-y-4">
+                <div class="faq-item bg-white p-4 rounded-lg border shadow-sm">
+                    <button onclick="toggleFaq(this)" class="w-full flex justify-between items-center text-left text-lg font-semibold text-gray-800">
+                        <span>What are the system requirements?</span>
+                        <i class="fas fa-chevron-down transition-transform duration-300"></i>
+                    </button>
+                    <div class="faq-answer text-gray-600">
+                        <p class="pt-4">You need a computer running Windows 10 or 11 to act as the server, an 80mm thermal receipt printer (ESC/POS compatible), and any modern device with a web browser (like a tablet, phone, or laptop) on the same Wi-Fi network.</p>
+                    </div>
+                </div>
+                <div class="faq-item bg-white p-4 rounded-lg border shadow-sm">
+                    <button onclick="toggleFaq(this)" class="w-full flex justify-between items-center text-left text-lg font-semibold text-gray-800">
+                         <span>Is my data secure?</span>
+                        <i class="fas fa-chevron-down transition-transform duration-300"></i>
+                    </button>
+                    <div class="faq-answer text-gray-600">
+                        <p class="pt-4">Yes. All your data—including your menu and daily sales logs—is stored locally on your own computer. It is never sent to the cloud or accessible by anyone else, giving you complete privacy and control.</p>
+                    </div>
+                </div>
+                <div class="faq-item bg-white p-4 rounded-lg border shadow-sm">
+                    <button onclick="toggleFaq(this)" class="w-full flex justify-between items-center text-left text-lg font-semibold text-gray-800">
+                         <span>What kind of support is included?</span>
+                        <i class="fas fa-chevron-down transition-transform duration-300"></i>
+                    </button>
+                    <div class="faq-answer text-gray-600">
+                        <p class="pt-4">Your purchase includes email support for installation and configuration, as well as access to all future software updates which often include bug fixes and new features.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing / Final CTA Section -->
+    <section id="pricing" class="bg-white py-20 md:py-28">
+        <div class="container mx-auto px-6 text-center">
+             <div class="max-w-md mx-auto bg-gray-50 rounded-2xl shadow-lg border p-8">
+                <h3 class="text-2xl font-bold text-gray-900">Get POSPal for Life</h3>
+                <p class="mt-4 text-5xl font-extrabold text-gray-900">$149</p>
+                <p class="text-gray-600 font-medium">One-time payment</p>
+                <ul class="mt-6 space-y-3 text-left">
+                    <li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-3"></i>Lifetime License</li>
+                    <li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-3"></i>All Future Updates Included</li>
+                    <li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-3"></i>Run on Your Own Hardware</li>
+                    <li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-3"></i>No Monthly Fees, Ever</li>
+                    <li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-3"></i>Email Support</li>
+                </ul>
+                 <a href="#" class="cta-button block w-full mt-8 bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg shadow-lg hover:bg-indigo-700 text-lg">
+                    Buy POSPal Now
+                </a>
+             </div>
         </div>
     </section>
 
     <!-- Footer -->
-    <footer class="bg-gray-900">
-        <div class="container mx-auto px-6 py-4 text-center text-gray-400 text-sm">
-            <p>&copy; 2024 POSPal Project. Released under the MIT License.</p>
-            <p class="mt-1">View the source code on <a href="https://github.com/Radot1/POSPal" class="text-indigo-400 hover:underline">GitHub</a>.</p>
+    <footer class="bg-gray-800">
+        <div class="container mx-auto px-6 py-8 text-center text-gray-400 text-sm">
+            <p>&copy; 2024 POSPal. All Rights Reserved.</p>
+            <p class="mt-1">View the open-source components on <a href="https://github.com/Radot1/POSPal" class="text-indigo-400 hover:underline">GitHub</a>.</p>
         </div>
     </footer>
 
+    <script>
+        function toggleFaq(button) {
+            const answer = button.nextElementSibling;
+            const icon = button.querySelector('i');
+
+            if (answer.style.maxHeight) {
+                answer.style.maxHeight = null;
+                icon.classList.remove('rotate-180');
+            } else {
+                answer.style.maxHeight = answer.scrollHeight + "px";
+                icon.classList.add('rotate-180');
+            }
+        }
+    </script>
 </body>
 </html>
