@@ -3,424 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POSPal</title>
+    <title>POSPal Demo Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        /* Custom scrollbar for a cleaner look */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-thumb {
-            background-color: #6b7280;
-            border-radius: 3px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        .product-card h3 {
-            display: -webkit-box;
-            -webkit-box-orient: vertical;
-            -webkit-line-clamp: 2;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            min-height: 2.5em; /* Roughly 2 lines for text-sm */
-        }
-        .category-tab.active {
-            background-color: #1f2937;
-            color: white;
-        }
-        .category-tab:not(.active) {
-            background-color: #f3f4f6;
-            color: #1f2937;
-        }
-         .category-tab:not(.active):hover {
-            background-color: #e5e7eb;
-         }
-
-        .options-badge {
-            font-weight: 500;
-            color: white;
-            border-radius: 3px; 
-            white-space: nowrap;
-            background-color: #4b5563; 
-        }
-
-        .option-pill {
-            display: inline-flex;
-            align-items: center;
-            background-color: #4b5563;
-            color: white;
-            padding: 0.4rem 0.8rem;
-            border-radius: 16px;
-            font-size: 0.9em;
-            line-height: 1;
-        }
-        .option-pill .remove-option-btn {
-            background: none;
-            border: none;
-            color: white;
-            margin-left: 0.6rem;
-            cursor: pointer;
-            font-size: 1.2em;
-            padding: 0;
-            line-height: 0.5;
-            font-weight: bold;
-        }
-         .option-pill .remove-option-btn:hover {
-            color: #d1d5db;
-        }
-
-        .order-item.selected-for-numpad {
-            background-color: #e5e7eb;
-            border-left: 3px solid #374151;
-        }
-
-        input:focus, select:focus, textarea:focus {
-            border-color: #111827;
-            box-shadow: 0 0 0 2px #9ca3af;
-            outline: none;
-        }
-        .management-form input:focus, .management-form select:focus, .management-form textarea:focus {
-             border-color: #111827;
-            box-shadow: 0 0 0 2px #9ca3af;
-        }
-
-        .btn-primary {
-            background-color: #111827;
-            color: white;
-        }
-        .btn-primary:hover {
-            background-color: #1f2937;
-        }
-        .btn-primary:disabled {
-            background-color: #6b7280;
-            cursor: not-allowed;
-        }
-        .btn-secondary {
-            background-color: #e5e7eb;
-            color: #1f2937;
-            border: 1px solid #d1d5db;
-        }
-        .btn-secondary:hover {
-            background-color: #d1d5db;
-        }
-        .btn-danger {
-            background-color: #ef4444;
-            color: white;
-        }
-        .btn-danger:hover {
-            background-color: #dc2626;
-        }
-        .btn-warning {
-             background-color: #f59e0b;
-             color: white;
-        }
-        .btn-warning:hover {
-            background-color: #d97706;
-        }
-        .btn-success {
-            background-color: #16a34a;
-            color: white;
-        }
-        .btn-success:hover {
-            background-color: #15803d;
-        }
-
-        .management-tab-container {
-            position: relative;
-            z-index: 10;
-        }
-        .management-content {
-            position: relative;
-            z-index: 1;
-        }
-        .option-selectable.selected {
-            border-color: #111827 !important; 
-            background-color: #f3f4f6; 
-        }
-    </style>
 </head>
-<body class="bg-white text-gray-800 font-sans">
-
-    <div id="main-content" class="pb-28"> <header class="bg-black text-white shadow-md sticky top-0 z-40">
-			<div class="container mx-auto px-4 py-3 flex justify-end items-center">
-				<div class="text-sm text-gray-300 flex flex-col items-end">
-					<div>
-						Order #<span id="header-order-number" class="font-semibold">...</span>
-					</div>
-					<div class="mt-0.5">
-						Table: <input type="text" id="header-table-number-input" class="w-16 bg-gray-700 text-white text-center rounded-sm focus:ring-1 focus:ring-gray-400 focus:outline-none px-1 py-0.5 text-sm" placeholder="No.">
-					</div>
-				</div>
-			</div>
-		</header>
-
-        <section id="category-section" class="py-3 bg-white border-b border-gray-300 sticky top-[61px] z-30"> <div class="container mx-auto px-4">
-                <div id="categories" class="flex space-x-2 overflow-x-auto pb-2"> <p class="text-gray-500 italic">Loading categories...</p>
-                </div>
-            </div>
-        </section>
-
-        <section id="product-section" class="py-4 bg-gray-50">
-            <div class="container mx-auto px-4">
-                <div id="products" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    <p class="text-gray-500 italic col-span-full text-center">Select a category to see items.</p>
-                </div>
-            </div>
-        </section>
-    </div>
-
-    <button id="mobile-order-toggle" onclick="toggleMobileOrderPanel()" class="fixed bottom-4 right-4 bg-black text-white p-4 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-gray-800 active:bg-gray-700">
-        <i class="fas fa-receipt text-xl"></i>
-        <span id="mobile-order-count-badge" class="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
-    </button>
-
-    <div id="order-panel-backdrop" class="fixed inset-0 bg-black bg-opacity-60 z-40 hidden" onclick="toggleMobileOrderPanel()"></div>
-    <aside id="order-panel" class="fixed bottom-0 left-0 right-0 bg-white shadow-2xl border-t-2 border-black transform translate-y-full transition-transform duration-300 ease-in-out z-50 flex flex-col" style="max-height: 85vh;">
-        <div class="p-3 border-b border-gray-300 flex justify-between items-center bg-gray-100">
-            <h2 class="text-lg font-semibold text-gray-800">Your Order</h2>
-            <button onclick="toggleMobileOrderPanel()" class="text-gray-600 hover:text-black">
-                <i class="fas fa-times text-xl"></i>
-            </button>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen font-sans">
+    <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-lg">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">POSPal Demo Generator</h1>
+        <p class="text-gray-600 mb-6">Upload your main `POSPal.html` file to generate a demo version with offline capabilities and mock data.</p>
+        
+        <div class="mb-4">
+            <label for="fileInput" class="block text-sm font-medium text-gray-700 mb-2">1. Upload your live POSPal.html file:</label>
+            <input type="file" id="fileInput" accept=".html" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
         </div>
 
-        <div id="order-items-container" class="flex-grow overflow-y-auto p-3 space-y-2 bg-white">
-            <p id="empty-order-message" class="text-gray-600 text-center py-4">Your order is empty.</p>
-            </div>
-
-        <div id="numpad-container" class="p-3 border-t border-gray-300 bg-gray-100 hidden">
-            <p id="numpad-item-name" class="text-sm text-center font-medium text-gray-700 mb-2">Quantity for: <span class="font-bold">Item</span></p>
-            <div class="grid grid-cols-3 gap-2">
-                <button onclick="handleNumpadInput('1')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">1</button>
-                <button onclick="handleNumpadInput('2')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">2</button>
-                <button onclick="handleNumpadInput('3')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">3</button>
-                <button onclick="handleNumpadInput('4')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">4</button>
-                <button onclick="handleNumpadInput('5')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">5</button>
-                <button onclick="handleNumpadInput('6')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">6</button>
-                <button onclick="handleNumpadInput('7')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">7</button>
-                <button onclick="handleNumpadInput('8')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">8</button>
-                <button onclick="handleNumpadInput('9')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">9</button>
-                <button onclick="handleNumpadInput('clear')" class="py-3 bg-gray-300 text-black rounded-md font-semibold hover:bg-gray-400 active:bg-gray-500">C</button>
-                <button onclick="handleNumpadInput('0')" class="py-3 bg-white border border-gray-400 rounded-md text-gray-800 font-semibold hover:bg-gray-200 active:bg-gray-300">0</button>
-                <button onclick="handleNumpadInput('backspace')" class="py-3 bg-gray-300 text-black rounded-md font-semibold hover:bg-gray-400 active:bg-gray-500"><i class="fas fa-backspace"></i></button>
-            </div>
-            <button onclick="confirmNumpadInput()" class="mt-2 w-full py-2 bg-black text-white rounded-md font-semibold hover:bg-gray-800 active:bg-gray-700">Done</button>
-        </div>
-
-        <div class="p-3 border-t border-gray-300 bg-gray-100 space-y-3">
-            <div>
-                <label for="universalOrderCommentInput" class="block text-xs font-medium text-gray-700 mb-1">Order Notes:</label>
-                <textarea id="universalOrderCommentInput" rows="2" class="w-full p-2 border border-gray-400 rounded-md text-sm focus:ring-black focus:border-black" placeholder="Any special requests for the whole order?"></textarea>
-            </div>
-            <div class="flex justify-between items-center">
-                <span class="text-lg font-semibold text-gray-800">Total:</span>
-                <span id="order-total" class="text-lg font-bold text-black">€0.00</span>
-            </div>
-            <div class="flex justify-between items-center">
-                <label for="paidByCardCheckbox" class="flex items-center space-x-2 cursor-pointer">
-                    <input type="checkbox" id="paidByCardCheckbox" class="h-5 w-5 text-black border-gray-400 rounded focus:ring-black accent-black">
-                    <span class="text-sm font-medium text-gray-700">Pay by Card</span>
-                </label>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-                <button onclick="newOrder()" class="w-full py-3 btn-secondary transition">
-                    <i class="fas fa-eraser mr-1"></i> New Order
-                </button>
-                <button id="sendOrderBtn" onclick="sendOrder()" class="w-full py-3 btn-primary transition">
-                    <i class="fas fa-paper-plane mr-1"></i> Send Order
-                </button>
-            </div>
-        </div>
-    </aside>
-
-    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40"> <button onclick="toggleManagementModal()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
-            <i class="fas fa-cog text-xl"></i>
+        <button id="generateBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 transition disabled:bg-gray-400">
+            2. Generate Demo Version
         </button>
-    </div>
 
-    <div id="itemOptionSelectModal" class="fixed inset-0 bg-black bg-opacity-70 z-[60] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl p-5 w-full max-w-md max-h-[80vh] flex flex-col text-gray-800">
-            <h3 id="optionModalItemName" class="text-lg font-semibold mb-1">Select Option</h3>
-            <p id="optionModalItemDescription" class="text-sm text-gray-600 mb-3">Please choose an option for the selected item:</p>
-            <div id="optionModalOptionsContainer" class="flex-grow overflow-y-auto space-y-2 mb-4 pr-1">
-                </div>
-            <div class="flex gap-2 mt-auto">
-                <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="cancelOptionSelection()">Cancel</button>
-                <button type="button" id="confirmOptionBtn" class="w-full py-2 px-4 btn-primary" onclick="confirmOptionSelection()">Confirm</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-70 z-[70] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col text-gray-800">
-            <div class="p-4 border-b border-gray-300 flex justify-between items-center">
-                <h2 class="text-xl font-semibold">Management</h2>
-                <button onclick="toggleManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
-            </div>
-
-            <div class="p-4 border-b border-gray-300 management-tab-container">
-                <div class="flex flex-wrap gap-2 rounded-md bg-gray-200 p-1">
-                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
-                    <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Manage Categories</button>
-                    <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Order History</button>
-                    <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300 bg-blue-100">Day Summary</button>
-                </div>
-            </div>
-
-            <div class="flex-grow overflow-y-auto p-4 management-content">
-                <div id="itemsManagement">
-                    <form id="itemManagementForm" class="space-y-4 management-form">
-                        <input type="hidden" id="itemId" name="itemId"> 
-                        <div class="grid gap-4 md:grid-cols-2">
-                            <div>
-                                <label for="itemName" class="block text-sm font-medium text-gray-700">Item Name</label>
-                                <input type="text" id="itemName" name="itemName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
-                            </div>
-                            <div>
-                                <label for="itemPrice" class="block text-sm font-medium text-gray-700">Base Price (€)</label>
-                                <input type="number" step="0.01" id="itemPrice" name="itemPrice" inputmode="decimal" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label for="itemCategory" class="block text-sm font-medium text-gray-700">Category</label>
-                            <select id="itemCategory" name="itemCategory" class="mt-1 block w-full px-3 py-2 border border-gray-400 bg-white rounded-md shadow-sm sm:text-sm" required>
-                            </select>
-                        </div>
-
-                        <div class="space-y-4">
-                            <div class="flex items-center space-x-4">
-                                <div class="flex items-center">
-                                    <input type="checkbox" id="itemHasOptionsModal" name="itemHasOptionsModal" onchange="toggleItemOptionsUIInModal()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black">
-                                    <label for="itemHasOptionsModal" class="ml-2 block text-sm text-gray-800">Has General Options</label>
-                                </div>
-                            </div>
-
-                            <div id="itemOptionsModalContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
-                                <label class="block text-sm font-medium text-gray-700">General Item Options:</label>
-                                <div id="itemOptionsListDisplayModal" class="flex flex-wrap gap-2 mb-2 min-h-[40px] border border-gray-200 p-2 rounded-md bg-white">
-                                    <p class="text-xs text-gray-500 italic w-full">No general options added</p>
-                                </div>
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
-                                    <div class="md:col-span-2">
-                                        <label for="newOptionNameInputModal" class="block text-xs font-medium text-gray-600">Option Name</label>
-                                        <input type="text" id="newOptionNameInputModal" placeholder="e.g., Peppercorn Sauce" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm">
-                                    </div>
-                                    <div>
-                                        <label for="newOptionPriceInputModal" class="block text-xs font-medium text-gray-600">Price Change (€)</label>
-                                        <input type="number" step="0.01" id="newOptionPriceInputModal" placeholder="e.g., 2.00 or -0.50" inputmode="decimal" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm">
-                                    </div>
-                                </div>
-                                <button type="button" onclick="addOptionToItemFormTempModal()" class="mt-2 px-4 py-2 btn-secondary text-sm w-full md:w-auto">Add Option</button>
-                            </div>
-                        </div>
-
-                        <div class="flex gap-2">
-                            <button type="button" id="saveItemBtn" onclick="saveItem()" class="w-full py-2 px-4 btn-success">💾 Save Item</button>
-                            <button type="button" id="cancelEditBtn" onclick="cancelEditItem()" class="w-full py-2 px-4 btn-secondary hidden">✖️ Cancel</button>
-                        </div>
-                    </form>
-
-                    <div class="mt-6">
-                        <h4 class="text-md font-medium text-gray-800 mb-2">Existing Items</h4>
-                        <div id="existingItemsListModal" class="space-y-2 max-h-60 overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50">
-                           <p class="text-xs text-gray-500 italic">No items found.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="categoriesManagement" class="hidden">
-                    <form id="categoryManagementForm" class="space-y-4 management-form">
-                        <div>
-                            <label for="categoryName" class="block text-sm font-medium text-gray-700">Category Name</label>
-                            <input type="text" id="categoryName" name="categoryName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
-                        </div>
-                        <button type="button" onclick="saveCategory()" class="w-full py-2 px-4 btn-success">📁 Save Category</button>
-                    </form>
-                     <div class="mt-6">
-                        <h4 class="text-md font-medium text-gray-800 mb-2">Existing Categories</h4>
-                        <div id="existingCategoriesListModal" class="space-y-2 max-h-72 overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50">
-                            <p class="text-xs text-gray-500 italic">No categories found.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="orderHistoryManagement" class="hidden">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Today's Orders</h3>
-                    <button onclick="loadTodaysOrdersForReprint()" class="mb-4 px-4 py-2 btn-secondary text-sm">
-                        <i class="fas fa-sync-alt mr-1"></i> Refresh List
-                    </button>
-                    <div id="todaysOrdersList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50">
-                        <p class="text-xs text-gray-500 italic">Loading today's orders...</p>
-                    </div>
-                </div>
-
-            </div>
-            <!-- Version Display Area -->
-            <div id="appVersionContainer" class="p-3 border-t border-gray-200 text-center text-xs text-gray-400">
-                POSPal Version: <span id="appVersion">...</span>
-            </div>
-        </div>
-		
-		<div id="systemSettings" class="hidden p-4 border rounded-lg bg-gray-50 mt-4">
-			<h3 class="font-bold mb-2">System Configuration</h3>
-			<div class="space-y-3">
-				<div>
-					<label class="flex items-center">
-						<input type="checkbox" id="autoUpdateToggle" class="mr-2">
-						Enable Automatic Updates
-					</label>
-				</div>
-				<div>
-					<label>Printer Name:</label>
-					<input type="text" id="printerNameInput" class="w-full p-2 border rounded">
-				</div>
-				<button onclick="saveSystemConfig()" class="btn-primary py-2 px-4">
-					Save Configuration
-				</button>
-			</div>
-		</div>
-		
-    </div>
-
-    <!-- Day Summary Modal -->
-    <div id="daySummaryModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col text-gray-800">
-            <div class="p-4 border-b border-gray-300 flex justify-between items-center">
-                <h2 class="text-xl font-semibold">Day Summary</h2>
-                <button onclick="closeDaySummaryModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
-            </div>
-            <div id="daySummaryContent" class="p-6 space-y-4">
-                <p class="text-center italic">Loading summary...</p>
-            </div>
-        </div>
-    </div>
-
-
-    <div id="toast" class="fixed top-5 right-5 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] hidden opacity-0 transition-opacity duration-300">
-        <span id="toast-message">Toast message here</span>
-    </div>
-
-    <div id="kitchenTicket" class="hidden print-section">
-        <h2>Order #<span id="ticket-order-number"></span></h2>
-        <div id="ticket-items"></div>
-        <div id="ticket-notes">Notes: <span id="ticket-notes-content"></span></div>
-        <div id="ticket-time"></div>
+        <div id="status" class="mt-4 text-center text-sm text-green-700 font-medium"></div>
     </div>
 
     <script>
+        const fileInput = document.getElementById('fileInput');
+        const generateBtn = document.getElementById('generateBtn');
+        const statusDiv = document.getElementById('status');
+        let liveHtmlContent = '';
+
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file && file.type === 'text/html') {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    liveHtmlContent = e.target.result;
+                    statusDiv.textContent = `✅ File "${file.name}" loaded successfully.`;
+                };
+                reader.onerror = () => {
+                    statusDiv.textContent = `❌ Error reading file.`;
+                    liveHtmlContent = '';
+                };
+                reader.readAsText(file);
+            } else {
+                statusDiv.textContent = 'Please upload a valid .html file.';
+                liveHtmlContent = '';
+            }
+        });
+
+        generateBtn.addEventListener('click', () => {
+            if (!liveHtmlContent) {
+                statusDiv.textContent = '❌ Please upload a file first.';
+                return;
+            }
+            try {
+                // --- Transformation Logic ---
+                let demoHtml = liveHtmlContent;
+
+                // 1. Add the demo banner
+                const banner = `
+    <div id="demo-mode-banner" class="hidden bg-yellow-400 text-yellow-900 text-center text-sm font-semibold p-2 sticky top-0 z-[100]">
+        DEMO MODE: Saving and printing are disabled.
+    </div>`;
+                demoHtml = demoHtml.replace(/<body(.*?)>/, `<body$1>${banner}`);
+
+                // 2. Replace the entire script block with the demo-aware version
+                const newScript = getDemoScript();
+                demoHtml = demoHtml.replace(/<script>([\s\S]*?)<\/script>/, `<script>${newScript}<\/script>`);
+
+                // --- Download Logic ---
+                const blob = new Blob([demoHtml], { type: 'text/html' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'POSPal_Demo.html';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                statusDiv.textContent = '✅ Demo version generated and download started!';
+
+            } catch (error) {
+                statusDiv.textContent = `❌ An error occurred: ${error.message}`;
+                console.error(error);
+            }
+        });
+
+        // This function contains the entire JavaScript block for the demo version.
+        function getDemoScript() {
+            return `
         // --- Global State & Configuration ---
+        let demoMode = false;
         let menu = {}; 
         let selectedCategory = null; 
         let editingItem = null; 
-        let currentOrder = JSON.parse(localStorage.getItem('sushakiSteakhouseCurrentOrder')) || [];
-        let currentOrderLineItemCounter = parseInt(localStorage.getItem('sushakiSteakhouseOrderLineItemCounter')) || 0; 
+        let currentOrder = JSON.parse(localStorage.getItem('pospalCurrentOrder')) || [];
+        let currentOrderLineItemCounter = parseInt(localStorage.getItem('pospalOrderLineItemCounter')) || 0; 
         let orderNumber = 1; 
-        let universalOrderComment = localStorage.getItem('sushakiSteakhouseUniversalOrderComment') || "";
-        let selectedTableNumber = localStorage.getItem('sushakiSteakhouseSelectedTable') || "";
+        let universalOrderComment = localStorage.getItem('pospalUniversalOrderComment') || "";
+        let selectedTableNumber = localStorage.getItem('pospalSelectedTable') || "";
         let isPaidByCard = false;
 
         let isMobileOrderPanelOpen = false;
@@ -430,8 +106,7 @@
         let itemBeingConfigured = null; 
         let currentOptionSelectionStep = null; 
 
-        // Removed localStorage constants for order number
-        const SELECTED_TABLE_KEY = 'sushakiSteakhouseSelectedTable';
+        const SELECTED_TABLE_KEY = 'pospalSelectedTable';
 
         const elements = {}; 
 
@@ -478,20 +153,70 @@
             elements.numpadContainer = document.getElementById('numpad-container');
             elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
             elements.todaysOrdersList = document.getElementById('todaysOrdersList');
-            elements.appVersionContainer = document.getElementById('appVersionContainer'); // Added
-            elements.appVersion = document.getElementById('appVersion'); // Added
+            elements.appVersionContainer = document.getElementById('appVersionContainer');
+            elements.appVersion = document.getElementById('appVersion');
+            elements.demoModeBanner = document.getElementById('demo-mode-banner');
+            elements.mainHeader = document.getElementById('main-header');
+            elements.categorySection = document.getElementById('category-section');
+        }
+        
+        const mockMenu = {
+            "Appetizers": [
+                {"id": 1, "name": "Garlic Bread", "price": 4.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 2, "name": "Bruschetta", "price": 6.00, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Main Courses": [
+                {"id": 3, "name": "Spaghetti Carbonara", "price": 12.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Bacon", "priceChange": 2.00}, {"name": "Gluten-Free Pasta", "priceChange": 1.50}]},
+                {"id": 4, "name": "Margherita Pizza", "price": 10.00, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Drinks": [
+                {"id": 5, "name": "Coca-Cola", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 6, "name": "Water", "price": 1.50, "hasGeneralOptions": false, "generalOptions": []}
+            ]
+        };
+
+        function showDemoModeBanner() {
+            if(elements.demoModeBanner) {
+                elements.demoModeBanner.classList.remove('hidden');
+                elements.mainHeader.style.top = elements.demoModeBanner.offsetHeight + 'px';
+                elements.categorySection.style.top = (elements.demoModeBanner.offsetHeight + 61) + 'px';
+            }
+        }
+
+        async function initializeAppState() {
+            try {
+                const response = await fetch('/api/order_status', { method: 'GET', signal: AbortSignal.timeout(2000) });
+                if (!response.ok) throw new Error('Server not found');
+                const data = await response.json();
+                orderNumber = data.next_order_number;
+                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+                loadMenu(); // Load from server
+            } catch (error) {
+                console.warn("Could not connect to server, entering DEMO MODE.");
+                demoMode = true;
+                showDemoModeBanner();
+                menu = mockMenu; // Load mock menu
+                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = "1";
+                // Manually set selectedCategory and render
+                if (Object.keys(menu).length > 0) {
+                    selectedCategory = Object.keys(menu)[0];
+                }
+                renderCategories();
+                populateManagementCategorySelect();
+            }
+            selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
+            if(elements.headerTableNumberInput) elements.headerTableNumberInput.value = selectedTableNumber;
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             cacheDOMElements();
             initializeAppState();
-            loadMenu();
-
+            
             if(elements.universalOrderCommentInput) {
                 elements.universalOrderCommentInput.value = universalOrderComment;
                 elements.universalOrderCommentInput.addEventListener('input', (e) => {
                     universalOrderComment = e.target.value;
-                    localStorage.setItem('sushakiSteakhouseUniversalOrderComment', universalOrderComment);
+                    localStorage.setItem('pospalUniversalOrderComment', universalOrderComment);
                 });
             }
             
@@ -511,12 +236,16 @@
             updateOrderDisplay();
         });
 
-        // --- NEW --- Centralized function to fetch the next order number from the server
         async function fetchAndUpdateOrderNumber() {
+            if (demoMode) {
+                orderNumber++;
+                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+                return;
+            }
             try {
                 const response = await fetch('/api/order_status');
                 if (!response.ok) {
-                    throw new Error(`Server responded with status ${response.status}`);
+                    throw new Error(\`Server responded with status \${response.status}\`);
                 }
                 const data = await response.json();
                 if (data && typeof data.next_order_number !== 'undefined') {
@@ -529,19 +258,12 @@
                 showToast("Could not sync order number with server.", "error");
             }
         }
-        
-        // --- REVISED --- Initializer function
-        function initializeAppState() {
-            fetchAndUpdateOrderNumber(); // Fetch number from server on load
-            selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
-            if(elements.headerTableNumberInput) elements.headerTableNumberInput.value = selectedTableNumber;
-        }
-
 
         async function loadMenu() {
+            if (demoMode) return; // Already handled in initializeAppState
             try {
                 const response = await fetch('/api/menu');
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
                 menu = await response.json() || {};
 
                 if (Object.keys(menu).length > 0 && (!selectedCategory || !menu[selectedCategory])) {
@@ -552,7 +274,7 @@
                 renderCategories();
                 populateManagementCategorySelect();
             } catch (error) {
-                showToast(`Error loading menu: ${error.message}`, 'error');
+                showToast(\`Error loading menu: \${error.message}\`, 'error');
                 console.error("Load menu error:", error);
                 if(elements.categoriesContainer) elements.categoriesContainer.innerHTML = '<p class="text-gray-500 italic">Could not load categories.</p>';
                 if(elements.productsContainer) elements.productsContainer.innerHTML = '<p class="text-gray-500 italic col-span-full text-center">Could not load items.</p>';
@@ -560,6 +282,10 @@
         }
 
         async function saveMenuToServer() {
+            if (demoMode) {
+                showToast("Saving is disabled in Demo Mode.", "info");
+                return Promise.resolve(true);
+            }
             try {
                 const response = await fetch('/api/menu', {
                     method: 'POST',
@@ -567,8 +293,8 @@
                     body: JSON.stringify(menu)
                 });
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({message: `HTTP ${response.status} - ${response.statusText}`}));
-                    throw new Error(`Failed to save menu: ${errorData.message}`);
+                    const errorData = await response.json().catch(() => ({message: \`HTTP \${response.status} - \${response.statusText}\`}));
+                    throw new Error(\`Failed to save menu: \${errorData.message}\`);
                 }
                 return true;
             } catch (error) {
@@ -625,7 +351,7 @@
             if (!elements.productsContainer) return;
             elements.productsContainer.innerHTML = '';
             if (!selectedCategory || !menu[selectedCategory] || menu[selectedCategory].length === 0) {
-                elements.productsContainer.innerHTML = `<p class="text-gray-600 italic col-span-full text-center py-8">No items in "${selectedCategory || 'this'}" category.</p>`;
+                elements.productsContainer.innerHTML = \`<p class="text-gray-600 italic col-span-full text-center py-8">No items in "\${selectedCategory || 'this'}" category.</p>\`;
                 return;
             }
 
@@ -639,30 +365,30 @@
 
                 let actualBadgeElements = [];
                 if (hasGenOptions) {
-                    actualBadgeElements.push(`<span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span>`);
+                    actualBadgeElements.push(\`<span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span>\`);
                 }
 
                 if (actualBadgeElements.length > 0) {
-                    badgeIconsHTML = `
+                    badgeIconsHTML = \`
                         <div class="absolute bottom-2 right-2 flex flex-col space-y-1">
-                            ${actualBadgeElements.join('')}
+                            \${actualBadgeElements.join('')}
                         </div>
-                    `;
+                    \`;
                 }
 
-                card.innerHTML = `
+                card.innerHTML = \`
                     <div class="relative p-3 flex-grow flex flex-col h-full">
                         <div class="flex-grow flex flex-col pr-8"> 
                             <div class="flex-grow">
-                                <h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
+                                <h3 class="text-sm font-semibold text-gray-800 mb-1">\${item.name}</h3>
                             </div>
                             <div class="mt-auto">
-                               <p class="text-lg font-bold text-black">€${(item.price || 0).toFixed(2)}</p>
+                               <p class="text-lg font-bold text-black">€\${(item.price || 0).toFixed(2)}</p>
                             </div>
                         </div>
-                        ${badgeIconsHTML}
+                        \${badgeIconsHTML}
                     </div>
-                `;
+                \`;
                 elements.productsContainer.appendChild(card);
             });
         }
@@ -696,15 +422,15 @@
 
         function finalizeAndAddOrderItem(baseItem, generalChoicesWithOptions) { 
             currentOrderLineItemCounter++;
-            localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', currentOrderLineItemCounter.toString());
+            localStorage.setItem('pospalOrderLineItemCounter', currentOrderLineItemCounter.toString());
 
             let uniqueSuffixParts = [];
             if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
-                 uniqueSuffixParts.push(...generalChoicesWithOptions.map(opt => opt.name.replace(/\s+/g, '_')));
+                 uniqueSuffixParts.push(...generalChoicesWithOptions.map(opt => opt.name.replace(/\\s+/g, '_')));
             }
             
             const uniqueLineIdSuffix = uniqueSuffixParts.length > 0 ? uniqueSuffixParts.join('-') : 'noopts';
-            const uniqueLineId = `${baseItem.id}-${uniqueLineIdSuffix}-line-${currentOrderLineItemCounter}`;
+            const uniqueLineId = \`\${baseItem.id}-\${uniqueLineIdSuffix}-line-\${currentOrderLineItemCounter}\`;
 
             let itemPriceWithModifiers = parseFloat(baseItem.price || 0);
             if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
@@ -746,41 +472,41 @@
                     total += itemTotal;
 
                     const div = document.createElement('div');
-                    div.className = `order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm ${item.orderId === itemForNumpad?.orderId ? 'selected-for-numpad' : ''}`;
+                    div.className = \`order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm \${item.orderId === itemForNumpad?.orderId ? 'selected-for-numpad' : ''}\`;
 
                     let optionDisplayHTML = '';
                     if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                         item.generalSelectedOptions.forEach(opt => {
-                            const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
-                            optionDisplayHTML += `<span class="block text-xs text-gray-600 ml-4">↳ ${opt.name}${priceChangeDisplay}</span>`;
+                            const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? \` (\${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€\${parseFloat(opt.priceChange || 0).toFixed(2)})\` : '';
+                            optionDisplayHTML += \`<span class="block text-xs text-gray-600 ml-4">↳ \${opt.name}\${priceChangeDisplay}</span>\`;
                         });
                     }
-                    let commentText = item.comment ? `<span class="block text-xs text-gray-600 ml-4 break-all"><em>Note: ${item.comment}</em></span>` : '';
+                    let commentText = item.comment ? \`<span class="block text-xs text-gray-600 ml-4 break-all"><em>Note: \${item.comment}</em></span>\` : '';
 
-                    div.innerHTML = `
+                    div.innerHTML = \`
                         <div class="flex-grow pr-2">
-                            <span class="font-medium text-gray-800">${item.name}</span>
-                            <span class="text-xs text-gray-500 ml-1">(Base: €${parseFloat(item.price || 0).toFixed(2)})</span>
-                            ${optionDisplayHTML}
-                            ${commentText}
+                            <span class="font-medium text-gray-800">\${item.name}</span>
+                            <span class="text-xs text-gray-500 ml-1">(Base: €\${parseFloat(item.price || 0).toFixed(2)})</span>
+                            \${optionDisplayHTML}
+                            \${commentText}
                         </div>
                         <div class="flex flex-col items-end space-y-1 flex-shrink-0">
-                             <span class="font-semibold text-gray-800">€${pricePerUnit.toFixed(2)} x ${item.quantity} = €${itemTotal.toFixed(2)}</span>
+                             <span class="font-semibold text-gray-800">€\${pricePerUnit.toFixed(2)} x \${item.quantity} = €\${itemTotal.toFixed(2)}</span>
                             <div class="flex items-center space-x-1">
-                                <button onclick="decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600"><i class="fas fa-minus-circle"></i></button>
-                                <span class="font-semibold text-gray-800 w-6 text-center cursor-pointer" onclick="openNumpadForOrderItem('${item.orderId}', ${item.quantity}, '${item.name.replace(/'/g, "\\'")}')">${item.quantity}</span>
-                                <button onclick="incrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-green-600"><i class="fas fa-plus-circle"></i></button>
-                                <button onclick="promptForItemComment('${item.orderId}')" class="p-1 text-gray-500 hover:text-black" title="Add Note"><i class="fas fa-comment-dots"></i></button>
-                                <button onclick="removeItemByOrderId('${item.orderId}')" class="p-1 text-red-500 hover:text-red-700" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
+                                <button onclick="decrementQuantity('\${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600"><i class="fas fa-minus-circle"></i></button>
+                                <span class="font-semibold text-gray-800 w-6 text-center cursor-pointer" onclick="openNumpadForOrderItem('\${item.orderId}', \${item.quantity}, '\${item.name.replace(/'/g, "\\\\'")}')">\${item.quantity}</span>
+                                <button onclick="incrementQuantity('\${item.orderId}')" class="p-1 text-gray-500 hover:text-green-600"><i class="fas fa-plus-circle"></i></button>
+                                <button onclick="promptForItemComment('\${item.orderId}')" class="p-1 text-gray-500 hover:text-black" title="Add Note"><i class="fas fa-comment-dots"></i></button>
+                                <button onclick="removeItemByOrderId('\${item.orderId}')" class="p-1 text-red-500 hover:text-red-700" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
                             </div>
                         </div>
-                    `;
+                    \`;
                     elements.orderItemsContainer.appendChild(div);
                 });
             }
 
-            if(elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = `€${total.toFixed(2)}`;
-            localStorage.setItem('sushakiSteakhouseCurrentOrder', JSON.stringify(currentOrder));
+            if(elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = \`€\${total.toFixed(2)}\`;
+            localStorage.setItem('pospalCurrentOrder', JSON.stringify(currentOrder));
             updateMobileOrderBadge();
         }
 
@@ -810,7 +536,7 @@
             if (item) {
                 let currentSelectionDisplay = "";
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
-                     currentSelectionDisplay += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name + (parseFloat(opt.priceChange || 0) !== 0 ? ` ${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)}` : '')).join(', ')})`;
+                     currentSelectionDisplay += \` (Opt: \${item.generalSelectedOptions.map(opt => opt.name + (parseFloat(opt.priceChange || 0) !== 0 ? \` \${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€\${parseFloat(opt.priceChange || 0).toFixed(2)}\` : '')).join(', ')})\`;
                 }
                 const newComment = prompt("Enter note for " + item.name + currentSelectionDisplay.trim() + ":", item.comment || "");
                 if (newComment !== null) {
@@ -820,29 +546,28 @@
             }
         }
 
-        /**
-         * Clears the current order data from the state and local storage.
-         * This function does NOT include a confirmation prompt.
-         */
         function clearOrderData() {
             currentOrder = [];
             universalOrderComment = "";
             if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
-            localStorage.removeItem('sushakiSteakhouseUniversalOrderComment');
+            localStorage.removeItem('pospalUniversalOrderComment');
             currentOrderLineItemCounter = 0;
-            localStorage.setItem('sushakiSteakhouseOrderLineItemCounter', '0');
+            localStorage.setItem('pospalOrderLineItemCounter', '0');
             isPaidByCard = false;
             if(elements.paidByCardCheckbox) elements.paidByCardCheckbox.checked = false;
 
             hideNumpad();
             updateOrderDisplay();
-            fetchAndUpdateOrderNumber(); // Refresh the number from server after clearing
+            
+            if (!demoMode) {
+                fetchAndUpdateOrderNumber();
+            } else {
+                // In demo mode, just reset the number locally, don't increment
+                orderNumber = 1; 
+                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+            }
         }
         
-        /**
-         * Initiates a new order. If the current order is not empty, it will
-         * prompt the user for confirmation before clearing the data.
-         */
         function newOrder() {
             if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) {
                 return;
@@ -853,6 +578,22 @@
         }
 
     async function sendOrder() {
+        if(demoMode) {
+            if (!currentOrder.length) {
+                showToast('Order is empty!', 'warning');
+                return;
+            }
+            if (!selectedTableNumber || selectedTableNumber.trim() === "") {
+                showToast('Please enter a table number.', 'warning');
+                return;
+            }
+            showToast(\`Order #\${orderNumber} Sent! (Demo Mode)\`, "success");
+            clearOrderData();
+            orderNumber++; // Increment for the next demo order
+            if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+            return;
+        }
+
         if (!elements.sendOrderBtn) return;
 
         if (!currentOrder.length) {
@@ -899,36 +640,33 @@
             const result = await response.json();
 
             if (response.ok) {
-                 // Handle new multi-copy print statuses
                 if (result.status === "success") {
-                    showToast(result.message || `Order #${result.order_number} sent, all copies printed, and logged!`, 'success');
+                    showToast(result.message || \`Order #\${result.order_number} sent, all copies printed, and logged!\`, 'success');
                 } else if (result.status === "warning_print_copy2_failed") {
-                    showToast(result.message || `Order #${result.order_number}: Copy 1 PRINTED & LOGGED. Copy 2 FAILED.`, 'warning', 7000);
+                    showToast(result.message || \`Order #\${result.order_number}: Copy 1 PRINTED & LOGGED. Copy 2 FAILED.\`, 'warning', 7000);
                 } else if (result.status === "error_print_failed_copy1") {
-                    showToast(result.message || `Order #${result.order_number} - COPY 1 FAILED. Order NOT saved.`, 'error', 7000);
+                    showToast(result.message || \`Order #\${result.order_number} - COPY 1 FAILED. Order NOT saved.\`, 'error', 7000);
                 } else if (result.status === "error_log_failed_after_print") {
-                    showToast(result.message || `Order #${result.order_number} - PRINTED but LOGGING FAILED. Notify staff!`, 'error', 10000);
-                } else { // Generic error from server but response was OK
-                    showToast(result.message || `Order #${result.order_number} processed with issues: ${result.status}`, 'warning', 7000);
+                    showToast(result.message || \`Order #\${result.order_number} - PRINTED but LOGGING FAILED. Notify staff!\`, 'error', 10000);
+                } else { 
+                    showToast(result.message || \`Order #\${result.order_number} processed with issues: \${result.status}\`, 'warning', 7000);
                 }
 
-                // Common logic for successful or partially successful processing
                 if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "error_log_failed_after_print") {
-                    clearOrderData(); // MODIFIED: Reset everything without confirmation
+                    clearOrderData();
                 }
 
-            } else { // HTTP error (e.g., 500, 400)
-                let errorMsg = `Server error: ${response.status}.`;
+            } else {
+                let errorMsg = \`Server error: \${response.status}.\`;
                 if (result && result.message) {
                    errorMsg = result.message;
                 } else {
                    try {
                        const errorText = await response.text();
-                       errorMsg = `Server error: ${response.status}${errorText ? ' - ' + errorText.substring(0,100) : ''}.`;
+                       errorMsg = \`Server error: \${response.status}\${errorText ? ' - ' + errorText.substring(0,100) : ''}.\`;
                    } catch (textError) { /* Ignore, use original errorMsg */ }
                 }
                 showToast(errorMsg + ' Order remains on screen.', 'error', 7000);
-                 // Even on failure, try to re-sync the order number
                 fetchAndUpdateOrderNumber();
             }
         } catch (error) {
@@ -937,10 +675,10 @@
             if (error instanceof TypeError) {
                  detailedErrorMsg = 'Server returned an unexpected response format. Check server logs.';
             } else if (error.message) {
-                detailedErrorMsg = `Error: ${error.message}. Could not send order.`;
+                detailedErrorMsg = \`Error: \${error.message}. Could not send order.\`;
             }
             showToast(detailedErrorMsg + ' Order remains on screen.', 'error', 7000);
-            fetchAndUpdateOrderNumber(); // Re-sync on network error
+            fetchAndUpdateOrderNumber();
         } finally {
             if(elements.sendOrderBtn) {
                 elements.sendOrderBtn.disabled = false;
@@ -948,6 +686,8 @@
             }
         }
     }
+    // ... all other functions (toggleMobileOrderPanel, updateMobileOrderBadge, numpad functions, etc.) remain here, but with demo checks for server functions
+    // For brevity, I'll paste the remaining functions with their demo checks included.
 
         function toggleMobileOrderPanel() {
             isMobileOrderPanelOpen = !isMobileOrderPanelOpen;
@@ -980,7 +720,7 @@
         function openNumpadForOrderItem(orderId, currentQuantity, itemName) {
             itemForNumpad = { orderId, currentQuantity, itemName };
             numpadCurrentInput = currentQuantity.toString();
-            if (elements.numpadItemNameDisplay) elements.numpadItemNameDisplay.innerHTML = `Quantity for: <span class="font-bold">${itemName}</span>`;
+            if (elements.numpadItemNameDisplay) elements.numpadItemNameDisplay.innerHTML = \`Quantity for: <span class="font-bold">\${itemName}</span>\`;
             if (elements.numpadContainer) elements.numpadContainer.classList.remove('hidden');
             updateOrderDisplay();
         }
@@ -1031,7 +771,7 @@
             currentItemOptionContext = context; 
             if (!elements.itemOptionSelectModal || !elements.optionModalItemName || !elements.optionModalOptionsContainer) return;
 
-            elements.optionModalItemName.textContent = `Options for: ${itemForModal.name}`;
+            elements.optionModalItemName.textContent = \`Options for: \${itemForModal.name}\`;
             elements.optionModalOptionsContainer.innerHTML = '';
             elements.confirmOptionBtn.disabled = true;
 
@@ -1041,11 +781,11 @@
 
             if (context === 'general_item_option') {
                 optionsToShow = itemForModal.generalOptions || [];
-                description = `Select option(s) for ${itemForModal.name}. (Multiple selections allowed)`;
+                description = \`Select option(s) for \${itemForModal.name}. (Multiple selections allowed)\`;
                 inputType = 'checkbox';
             } else {
                 console.warn("Modal opened with unexpected context or item structure:", itemForModal, context);
-                elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No suitable options for this step.</p>`;
+                elements.optionModalOptionsContainer.innerHTML = \`<p class="text-sm text-gray-500">No suitable options for this step.</p>\`;
                 elements.itemOptionSelectModal.classList.remove('hidden');
                 elements.itemOptionSelectModal.classList.add('flex');
                 return;
@@ -1058,24 +798,24 @@
                     const optionName = (typeof optionData === 'object' && optionData.name) ? optionData.name : optionData;
                     const priceChange = (typeof optionData === 'object' && typeof optionData.priceChange === 'number') ? optionData.priceChange : 0;
 
-                    const optionId = `modal_item_opt_${itemForModal.id}_${context}_${optionName.replace(/\s+/g, '_')}_${index}`;
+                    const optionId = \`modal_item_opt_\${itemForModal.id}_\${context}_\${optionName.replace(/\\s+/g, '_')}_\${index}\`;
                     const div = document.createElement('div');
                     div.className = "option-selectable p-3 border border-gray-300 rounded-md hover:bg-gray-100 cursor-pointer group focus-within:ring-2 focus-within:ring-black";
 
                     const inputElement = document.createElement('input');
                     inputElement.type = inputType;
-                    inputElement.name = `item_option_for_${itemForModal.id}_${context}`; 
+                    inputElement.name = \`item_option_for_\${itemForModal.id}_\${context}\`; 
                     if (inputType === 'checkbox') {
                         inputElement.name = optionId; 
                     }
                     inputElement.id = optionId;
                     inputElement.value = optionName; 
                     inputElement.dataset.priceChange = priceChange; 
-                    inputElement.className = `form-${inputType} h-4 w-4 text-black border-gray-300 focus:ring-black accent-black`;
+                    inputElement.className = \`form-\${inputType} h-4 w-4 text-black border-gray-300 focus:ring-black accent-black\`;
 
                     let labelText = optionName;
                     if (inputType === 'checkbox' && priceChange !== 0) {
-                        labelText += ` (${priceChange > 0 ? '+' : ''}€${priceChange.toFixed(2)})`;
+                        labelText += \` (\${priceChange > 0 ? '+' : ''}€\${priceChange.toFixed(2)})\`;
                     }
 
                     const label = document.createElement('label');
@@ -1131,7 +871,7 @@
                     elements.optionModalOptionsContainer.appendChild(div);
                 });
             } else {
-                elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No specific options defined for this item.</p>`;
+                elements.optionModalOptionsContainer.innerHTML = \`<p class="text-sm text-gray-500">No specific options defined for this item.</p>\`;
             }
             elements.itemOptionSelectModal.classList.remove('hidden');
             elements.itemOptionSelectModal.classList.add('flex');
@@ -1171,6 +911,10 @@
         let tempItemOptionsModal = []; 
 
         async function loadAppVersion() {
+            if (demoMode) {
+                if(elements.appVersion) elements.appVersion.textContent = 'Demo Version';
+                return;
+            }
             if (!elements.appVersion) return;
             try {
                 const response = await fetch('/api/version');
@@ -1193,8 +937,8 @@
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
                 loadManagementData();
-                loadAppVersion(); // Fetch and display the version when modal opens
-                switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]')); 
+                loadAppVersion();
+                switchManagementTab('items', document.querySelector('.management-tab[onclick*="\\'items\\'"]')); 
             }
         }
 
@@ -1235,7 +979,7 @@
             if (!elements.itemCategorySelect) return;
             const currentCategoryValue = elements.itemCategorySelect.value;
             elements.itemCategorySelect.innerHTML = Object.keys(menu)
-                .map(c => `<option value="${c}">${c}</option>`)
+                .map(c => \`<option value="\${c}">\${c}</option>\`)
                 .join('');
             if (Object.keys(menu).length === 0) {
                 elements.itemCategorySelect.innerHTML = '<option value="">Create a category first</option>';
@@ -1260,25 +1004,25 @@
                 (items || []).forEach(item => {
                     itemCount++;
                     const div = document.createElement('div');
-                    div.className = `p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm ${editingItem && editingItem.id === item.id ? 'bg-gray-200 border-gray-500' : 'bg-white hover:bg-gray-50'}`;
+                    div.className = \`p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm \${editingItem && editingItem.id === item.id ? 'bg-gray-200 border-gray-500' : 'bg-white hover:bg-gray-50'}\`;
 
-                    let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
-                                       <span class="text-xs text-gray-500 ml-1">(${category}) - €${(item.price || 0).toFixed(2)}</span>`;
+                    let itemDetails = \`<span class="font-medium text-gray-800">\${item.name}</span>
+                                       <span class="text-xs text-gray-500 ml-1">(\${category}) - €\${(item.price || 0).toFixed(2)}</span>\`;
 
                     const hasGeneralOpts = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
 
                     if (hasGeneralOpts) { 
-                        itemDetails += `<span class="text-xs text-blue-600 ml-1">(Gen Opts: ${item.generalOptions.length})</span>`;
+                        itemDetails += \`<span class="text-xs text-blue-600 ml-1">(Gen Opts: \${item.generalOptions.length})</span>\`;
                     }
 
 
-                    div.innerHTML = `
-                        <div>${itemDetails}</div>
+                    div.innerHTML = \`
+                        <div>\${itemDetails}</div>
                         <div class="space-x-1 flex-shrink-0">
-                            <button onclick="editItemModal(${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
-                            <button onclick="deleteItem(${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
+                            <button onclick="editItemModal(\${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
+                            <button onclick="deleteItem(\${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
                         </div>
-                    `;
+                    \`;
                     elements.existingItemsListModal.appendChild(div);
                 });
             });
@@ -1297,10 +1041,10 @@
             Object.keys(menu).forEach(categoryName => {
                 const div = document.createElement('div');
                 div.className = "p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
-                div.innerHTML = `
-                    <span class="font-medium text-gray-800">${categoryName}</span>
-                    <button onclick="deleteCategory('${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
-                `;
+                div.innerHTML = \`
+                    <span class="font-medium text-gray-800">\${categoryName}</span>
+                    <button onclick="deleteCategory('\${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
+                \`;
                 elements.existingCategoriesListModal.appendChild(div);
             });
         }
@@ -1371,7 +1115,7 @@
 
         async function saveItem() {
             if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect || !elements.itemHasOptionsCheckboxModal || !elements.itemIdInput) {
-                console.error("A required form element is missing in `elements` cache for saveItem.");
+                console.error("A required form element is missing in \`elements\` cache for saveItem.");
                 showToast('Error: Form elements missing. Cannot save.', 'error');
                 return;
             }
@@ -1467,7 +1211,12 @@
             if (success) {
                 showToast(editingItem ? 'Item updated successfully!' : 'Item saved successfully!', 'success');
                 resetItemFormAndUIModal();
-                loadMenu(); 
+                if (demoMode) {
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu(); 
+                }
             } else {
                 showToast('Failed to save item to server. Reverting local changes.', 'error');
                 loadMenu(); 
@@ -1499,7 +1248,12 @@
             if (success) {
                 showToast('Item deleted successfully.', 'success');
                 if (editingItem && editingItem.id === itemIdToDelete) resetItemFormAndUIModal();
-                loadMenu();
+                if (demoMode) {
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu();
+                }
             } else {
                 showToast('Failed to delete item on server. Reverting local deletion.', 'error');
                 if (originalItemData && originalCategory && menu[originalCategory]) {
@@ -1521,61 +1275,50 @@
 				showToast('Category already exists.', 'warning'); 
 				return; 
 			}
-
-			const newMenu = {...menu};
-			newMenu[categoryName] = [];
+            
+            menu[categoryName] = [];
 			
-			try {
-				const response = await fetch('/api/menu', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify(newMenu)
-				});
-				
-				const contentType = response.headers.get('content-type');
-				if (!contentType || !contentType.includes('application/json')) {
-					const text = await response.text();
-					throw new Error(`Invalid response: ${text.substring(0, 100)}`);
-				}
-				
-				if (!response.ok) {
-					const errorData = await response.json();
-					throw new Error(errorData.message || 'Failed to save category');
-				}
-				
-				menu = newMenu;
-				showToast(`Category "${categoryName}" added successfully.`, 'success');
-				elements.categoryNameInput.value = '';
-				loadMenu();
-				
-				if(elements.itemCategorySelect && elements.itemCategorySelect.querySelector('option[value=""]')) {
-					populateManagementCategorySelect();
-				}
-			} catch (error) {
-				showToast(`Failed to save category: ${error.message}`, 'error');
-			}
-			
+            const success = await saveMenuToServer();
+            if(success) {
+                showToast(\`Category "\${categoryName}" added successfully.\`, 'success');
+                elements.categoryNameInput.value = '';
+                if (demoMode) {
+                    if (Object.keys(menu).length === 1) { selectedCategory = categoryName; }
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu();
+                }
+            } else {
+                showToast(\`Failed to save category: \${error.message}\`, 'error');
+                delete menu[categoryName]; // Revert change
+            }
 		}
 
         async function deleteCategory(categoryNameToDelete) {
             if (menu[categoryNameToDelete] && menu[categoryNameToDelete].length > 0) {
-                if (!confirm(`Category "${categoryNameToDelete}" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.`)) return;
+                if (!confirm(\`Category "\${categoryNameToDelete}" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.\`)) return;
             } else {
-                if (!confirm(`Are you sure you want to delete category "${categoryNameToDelete}"? This cannot be undone.`)) return;
+                if (!confirm(\`Are you sure you want to delete category "\${categoryNameToDelete}"? This cannot be undone.\`)) return;
             }
             const backupCategoryData = menu[categoryNameToDelete] ? [...menu[categoryNameToDelete]] : null;
             delete menu[categoryNameToDelete];
 
             const success = await saveMenuToServer();
             if (success) {
-                showToast(`Category "${categoryNameToDelete}" deleted successfully.`, 'success');
+                showToast(\`Category "\${categoryNameToDelete}" deleted successfully.\`, 'success');
                 if (selectedCategory === categoryNameToDelete) {
                     selectedCategory = Object.keys(menu)[0] || null;
                 }
-                loadMenu();
+                 if (demoMode) {
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu();
+                }
             } else {
                 if(backupCategoryData !== null) menu[categoryNameToDelete] = backupCategoryData;
-                showToast(`Failed to delete category "${categoryNameToDelete}" on server.`, 'error');
+                showToast(\`Failed to delete category "\${categoryNameToDelete}" on server.\`, 'error');
                 loadMenu();
             }
         }
@@ -1631,13 +1374,13 @@
             tempItemOptionsModal.forEach(opt => {
                 const pillSpan = document.createElement('span');
                 pillSpan.className = 'option-pill'; 
-                const priceDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
-                pillSpan.textContent = `${opt.name}${priceDisplay}`;
+                const priceDisplay = parseFloat(opt.priceChange || 0) !== 0 ? \` (\${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€\${parseFloat(opt.priceChange || 0).toFixed(2)})\` : '';
+                pillSpan.textContent = \`\${opt.name}\${priceDisplay}\`;
 
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-option-btn'; 
                 removeBtn.innerHTML = '&times;'; 
-                removeBtn.title = `Remove option: ${opt.name}`;
+                removeBtn.title = \`Remove option: \${opt.name}\`;
                 removeBtn.type = 'button'; 
                 removeBtn.onclick = () => removeTemporaryOptionModal(opt.name);
                 pillSpan.appendChild(removeBtn);
@@ -1686,29 +1429,33 @@
                 ticketItemsEl.innerHTML = currentOrder.map(item => {
                     let optionStr = '';
                     if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
-                        optionStr += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name).join(', ')})`;
+                        optionStr += \` (Opt: \${item.generalSelectedOptions.map(opt => opt.name).join(', ')})\`;
                     }
-                    return `<div>${item.quantity}x ${item.name}${optionStr.trim()}${item.comment ? ` <small><em>(${item.comment})</em></small>` : ''}</div>`
+                    return \`<div>\${item.quantity}x \${item.name}\${optionStr.trim()}\${item.comment ? \` <small><em>(\${item.comment})</em></small>\` : ''}</div>\`
                 }).join('');
             }
             if(ticketNotesEl) ticketNotesEl.textContent = universalOrderComment || "None";
         }
 
         async function loadTodaysOrdersForReprint() {
+            if (demoMode) {
+                elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Order history is disabled in Demo Mode.</p>';
+                return;
+            }
             if (!elements.todaysOrdersList) return;
-            elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Loading today\'s orders...</p>';
+            elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Loading today\\'s orders...</p>';
             try {
                 const response = await fetch('/api/todays_orders_for_reprint');
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
-                    throw new Error(errorData.message || `Failed to load orders: ${response.statusText}`);
+                    const errorData = await response.json().catch(() => ({ message: \`HTTP \${response.status}\` }));
+                    throw new Error(errorData.message || \`Failed to load orders: \${response.statusText}\`);
                 }
                 const orders = await response.json();
                 renderTodaysOrdersList(orders);
             } catch (error) {
                 console.error("Error loading today's orders for reprint:", error);
-                elements.todaysOrdersList.innerHTML = `<p class="text-xs text-red-500 italic">Error loading orders: ${error.message}. Try refreshing.</p>`;
-                showToast(`Error loading orders: ${error.message}`, 'error');
+                elements.todaysOrdersList.innerHTML = \`<p class="text-xs text-red-500 italic">Error loading orders: \${error.message}. Try refreshing.</p>\`;
+                showToast(\`Error loading orders: \${error.message}\`, 'error');
             }
         }
 
@@ -1734,21 +1481,25 @@
                 } catch(e) { /* keep original if parsing fails */ }
 
 
-                div.innerHTML = `
+                div.innerHTML = \`
                     <div>
-                        <span class="font-semibold text-gray-800">Order #${order.order_number}</span>
-                        <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
-                        <span class="text-xs text-gray-500 ml-2">Time: ${formattedTimestamp}</span>
+                        <span class="font-semibold text-gray-800">Order #\${order.order_number}</span>
+                        <span class="text-xs text-gray-600 ml-2">Table: \${order.table_number || 'N/A'}</span>
+                        <span class="text-xs text-gray-500 ml-2">Time: \${formattedTimestamp}</span>
                     </div>
-                    <button onclick="reprintOrder('${order.order_number}')" class="px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition">
+                    <button onclick="reprintOrder('\${order.order_number}')" class="px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition">
                         <i class="fas fa-print mr-1"></i> Reprint
                     </button>
-                `;
+                \`;
                 elements.todaysOrdersList.appendChild(div);
             });
         }
 
         async function reprintOrder(orderNumToReprint) {
+            if(demoMode) {
+                showToast(\`Reprinting Order #\${orderNumToReprint} (Demo Mode)\`, "success");
+                return;
+            }
             if (!orderNumToReprint) {
                 showToast('Invalid order number for reprint.', 'error');
                 return;
@@ -1770,19 +1521,19 @@
 
                 if (response.ok) {
                     if (result.status === "success") {
-                        showToast(result.message || `Order #${orderNumToReprint} REPRINTED successfully!`, 'success');
+                        showToast(result.message || \`Order #\${orderNumToReprint} REPRINTED successfully!\`, 'success');
                     } else if (result.status === "warning_reprint_copy2_failed") {
-                        showToast(result.message || `Order #${orderNumToReprint}: Kitchen REPRINTED. Copy 2 FAILED.`, 'warning', 7000);
+                        showToast(result.message || \`Order #\${orderNumToReprint}: Kitchen REPRINTED. Copy 2 FAILED.\`, 'warning', 7000);
                     } else { 
-                        showToast(result.message || `Failed to reprint Order #${orderNumToReprint}.`, 'error', 7000);
+                        showToast(result.message || \`Failed to reprint Order #\${orderNumToReprint}.\`, 'error', 7000);
                     }
                 } else { 
-                     showToast(result.message || `Server error during reprint of Order #${orderNumToReprint}: ${response.status}.`, 'error', 7000);
+                     showToast(result.message || \`Server error during reprint of Order #\${orderNumToReprint}: \${response.status}.\`, 'error', 7000);
                 }
 
             } catch (error) {
-                console.error(`Error reprinting order ${orderNumToReprint}:`, error);
-                showToast(`Network error or invalid response while reprinting Order #${orderNumToReprint}.`, 'error', 7000);
+                console.error(\`Error reprinting order \${orderNumToReprint}:\`, error);
+                showToast(\`Network error or invalid response while reprinting Order #\${orderNumToReprint}.\`, 'error', 7000);
             } finally {
                  if (reprintButton) {
                     reprintButton.disabled = false;
@@ -1791,23 +1542,34 @@
             }
         }
 
-        // --- Day Summary Modal Functions ---
         async function openDaySummaryModal() {
             if (!elements.daySummaryModal || !elements.daySummaryContent) return;
             elements.daySummaryModal.classList.remove('hidden');
             elements.daySummaryModal.classList.add('flex');
+            
+            if (demoMode) {
+                renderDaySummary({
+                    status: 'success',
+                    total_orders: 15,
+                    cash_total: 157.50,
+                    card_total: 242.00,
+                    grand_total: 399.50
+                });
+                return;
+            }
+
             elements.daySummaryContent.innerHTML = '<p class="text-center italic">Loading summary...</p>';
 
             try {
                 const response = await fetch('/api/daily_summary');
                 if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(errorText || `Server error: ${response.status}`);
+                    throw new Error(errorText || \`Server error: \${response.status}\`);
                 }
                 const summary = await response.json();
                 renderDaySummary(summary);
             } catch (error) {
-                elements.daySummaryContent.innerHTML = `<p class="text-center text-red-500">Error loading summary: ${error.message}</p>`;
+                elements.daySummaryContent.innerHTML = \`<p class="text-center text-red-500">Error loading summary: \${error.message}</p>\`;
             }
         }
 
@@ -1821,32 +1583,33 @@
             if (!elements.daySummaryContent) return;
             
             if (summary.status === 'error') {
-                elements.daySummaryContent.innerHTML = `<p class="text-center text-red-500">${summary.message}</p>`;
+                elements.daySummaryContent.innerHTML = \`<p class="text-center text-red-500">\${summary.message}</p>\`;
                 return;
             }
 
-            elements.daySummaryContent.innerHTML = `
+            elements.daySummaryContent.innerHTML = \`
                 <div class="space-y-3 text-base">
                     <div class="flex justify-between items-center py-2 border-b">
                         <span class="font-medium text-gray-600">Total Orders:</span>
-                        <span class="font-semibold text-gray-800">${summary.total_orders}</span>
+                        <span class="font-semibold text-gray-800">\${summary.total_orders}</span>
                     </div>
                     <div class="flex justify-between items-center py-2 border-b">
                         <span class="font-medium text-gray-600">Total Cash Payments:</span>
-                        <span class="font-semibold text-green-600">€${summary.cash_total.toFixed(2)}</span>
+                        <span class="font-semibold text-green-600">€\${summary.cash_total.toFixed(2)}</span>
                     </div>
                     <div class="flex justify-between items-center py-2 border-b">
                         <span class="font-medium text-gray-600">Total Card Payments:</span>
-                        <span class="font-semibold text-blue-600">€${summary.card_total.toFixed(2)}</span>
+                        <span class="font-semibold text-blue-600">€\${summary.card_total.toFixed(2)}</span>
                     </div>
                     <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black">
                         <span class="text-lg font-bold text-gray-900">Grand Total:</span>
-                        <span class="text-lg font-bold text-gray-900">€${summary.grand_total.toFixed(2)}</span>
+                        <span class="text-lg font-bold text-gray-900">€\${summary.grand_total.toFixed(2)}</span>
                     </div>
                 </div>
+            \`;
+        }
             `;
         }
-
     </script>
 </body>
-</ht
+</html>

@@ -144,13 +144,11 @@
     </style>
 </head>
 <body class="bg-white text-gray-800 font-sans">
-    
     <div id="demo-mode-banner" class="hidden bg-yellow-400 text-yellow-900 text-center text-sm font-semibold p-2 sticky top-0 z-[100]">
         DEMO MODE: Saving and printing are disabled.
     </div>
 
-    <div id="main-content" class="pb-28"> 
-        <header class="bg-black text-white shadow-md sticky top-0 z-40" id="main-header">
+    <div id="main-content" class="pb-28"> <header class="bg-black text-white shadow-md sticky top-0 z-40">
 			<div class="container mx-auto px-4 py-3 flex justify-end items-center">
 				<div class="text-sm text-gray-300 flex flex-col items-end">
 					<div>
@@ -267,7 +265,7 @@
             </div>
 
             <div class="p-4 border-b border-gray-300 management-tab-container">
-                <div class="flex space-x-1 rounded-md bg-gray-200 p-1">
+                <div class="flex flex-wrap gap-2 rounded-md bg-gray-200 p-1">
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Manage Categories</button>
                     <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Order History</button>
@@ -364,6 +362,7 @@
                 </div>
 
             </div>
+            <!-- Version Display Area -->
             <div id="appVersionContainer" class="p-3 border-t border-gray-200 text-center text-xs text-gray-400">
                 POSPal Version: <span id="appVersion">...</span>
             </div>
@@ -390,6 +389,7 @@
 		
     </div>
 
+    <!-- Day Summary Modal -->
     <div id="daySummaryModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col text-gray-800">
             <div class="p-4 border-b border-gray-300 flex justify-between items-center">
@@ -434,7 +434,6 @@
         let itemBeingConfigured = null; 
         let currentOptionSelectionStep = null; 
 
-        // Removed localStorage constants for order number
         const SELECTED_TABLE_KEY = 'pospalSelectedTable';
 
         const elements = {}; 
@@ -565,6 +564,28 @@
             updateOrderDisplay();
         });
 
+        async function fetchAndUpdateOrderNumber() {
+            if (demoMode) {
+                orderNumber++;
+                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+                return;
+            }
+            try {
+                const response = await fetch('/api/order_status');
+                if (!response.ok) {
+                    throw new Error(`Server responded with status ${response.status}`);
+                }
+                const data = await response.json();
+                if (data && typeof data.next_order_number !== 'undefined') {
+                    orderNumber = data.next_order_number;
+                    if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+                }
+            } catch (error) {
+                console.error("Could not fetch next order number:", error);
+                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = "Err";
+                showToast("Could not sync order number with server.", "error");
+            }
+        }
 
         async function loadMenu() {
             if (demoMode) return; // Already handled in initializeAppState
@@ -869,7 +890,8 @@
             if (!demoMode) {
                 fetchAndUpdateOrderNumber();
             } else {
-                orderNumber = 1;
+                // In demo mode, just reset the number locally, don't increment
+                orderNumber = 1; 
                 if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
             }
         }
@@ -885,9 +907,17 @@
 
     async function sendOrder() {
         if(demoMode) {
-            showToast("Order Sent! (Demo Mode)", "success");
+            if (!currentOrder.length) {
+                showToast('Order is empty!', 'warning');
+                return;
+            }
+            if (!selectedTableNumber || selectedTableNumber.trim() === "") {
+                showToast('Please enter a table number.', 'warning');
+                return;
+            }
+            showToast(`Order #${orderNumber} Sent! (Demo Mode)`, "success");
             clearOrderData();
-            orderNumber++;
+            orderNumber++; // Increment for the next demo order
             if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
             return;
         }
@@ -984,6 +1014,8 @@
             }
         }
     }
+    // ... all other functions (toggleMobileOrderPanel, updateMobileOrderBadge, numpad functions, etc.) remain here, but with demo checks for server functions
+    // For brevity, I'll paste the remaining functions with their demo checks included.
 
         function toggleMobileOrderPanel() {
             isMobileOrderPanelOpen = !isMobileOrderPanelOpen;
@@ -1233,7 +1265,7 @@
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
                 loadManagementData();
-                loadAppVersion(); // Fetch and display the version when modal opens
+                loadAppVersion();
                 switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]')); 
             }
         }
@@ -1507,7 +1539,12 @@
             if (success) {
                 showToast(editingItem ? 'Item updated successfully!' : 'Item saved successfully!', 'success');
                 resetItemFormAndUIModal();
-                loadMenu(); 
+                if (demoMode) {
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu(); 
+                }
             } else {
                 showToast('Failed to save item to server. Reverting local changes.', 'error');
                 loadMenu(); 
@@ -1539,7 +1576,12 @@
             if (success) {
                 showToast('Item deleted successfully.', 'success');
                 if (editingItem && editingItem.id === itemIdToDelete) resetItemFormAndUIModal();
-                loadMenu();
+                if (demoMode) {
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu();
+                }
             } else {
                 showToast('Failed to delete item on server. Reverting local deletion.', 'error');
                 if (originalItemData && originalCategory && menu[originalCategory]) {
@@ -1561,40 +1603,24 @@
 				showToast('Category already exists.', 'warning'); 
 				return; 
 			}
-
-			const newMenu = {...menu};
-			newMenu[categoryName] = [];
+            
+            menu[categoryName] = [];
 			
-			try {
-				const response = await fetch('/api/menu', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify(newMenu)
-				});
-				
-				const contentType = response.headers.get('content-type');
-				if (!contentType || !contentType.includes('application/json')) {
-					const text = await response.text();
-					throw new Error(`Invalid response: ${text.substring(0, 100)}`);
-				}
-				
-				if (!response.ok) {
-					const errorData = await response.json();
-					throw new Error(errorData.message || 'Failed to save category');
-				}
-				
-				menu = newMenu;
-				showToast(`Category "${categoryName}" added successfully.`, 'success');
-				elements.categoryNameInput.value = '';
-				loadMenu();
-				
-				if(elements.itemCategorySelect && elements.itemCategorySelect.querySelector('option[value=""]')) {
-					populateManagementCategorySelect();
-				}
-			} catch (error) {
-				showToast(`Failed to save category: ${error.message}`, 'error');
-			}
-			
+            const success = await saveMenuToServer();
+            if(success) {
+                showToast(`Category "${categoryName}" added successfully.`, 'success');
+                elements.categoryNameInput.value = '';
+                if (demoMode) {
+                    if (Object.keys(menu).length === 1) { selectedCategory = categoryName; }
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu();
+                }
+            } else {
+                showToast(`Failed to save category: ${error.message}`, 'error');
+                delete menu[categoryName]; // Revert change
+            }
 		}
 
         async function deleteCategory(categoryNameToDelete) {
@@ -1612,7 +1638,12 @@
                 if (selectedCategory === categoryNameToDelete) {
                     selectedCategory = Object.keys(menu)[0] || null;
                 }
-                loadMenu();
+                 if (demoMode) {
+                    renderCategories();
+                    populateManagementCategorySelect();
+                } else {
+                    loadMenu();
+                }
             } else {
                 if(backupCategoryData !== null) menu[categoryNameToDelete] = backupCategoryData;
                 showToast(`Failed to delete category "${categoryNameToDelete}" on server.`, 'error');
@@ -1839,7 +1870,6 @@
             }
         }
 
-        // --- Day Summary Modal Functions ---
         async function openDaySummaryModal() {
             if (!elements.daySummaryModal || !elements.daySummaryContent) return;
             elements.daySummaryModal.classList.remove('hidden');
@@ -1906,7 +1936,6 @@
                 </div>
             `;
         }
-
-    </script>
+            </script>
 </body>
-</html>
+</ht
