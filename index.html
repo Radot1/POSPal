@@ -42,27 +42,48 @@
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-50">
         <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-3">
+            <a href="#" class="flex items-center space-x-3">
                 <i class="fas fa-receipt text-3xl text-indigo-600"></i>
                 <h1 class="text-2xl font-bold text-gray-900">POSPal</h1>
-            </div>
+            </a>
             <nav class="hidden md:flex items-center space-x-8">
                 <a href="#features" class="text-gray-600 hover:text-indigo-600 transition">Features</a>
                 <a href="#how-it-works" class="text-gray-600 hover:text-indigo-600 transition">How It Works</a>
                 <a href="#pricing" class="text-gray-600 hover:text-indigo-600 transition">Pricing</a>
                 <a href="#faq" class="text-gray-600 hover:text-indigo-600 transition">FAQ</a>
             </nav>
-            <a href="https://github.com/Radot1/POSPal" target="_blank" class="text-gray-600 hover:text-indigo-600 transition">
-                <i class="fab fa-github text-3xl"></i>
-            </a>
+            <div class="flex items-center space-x-4">
+                 <a href="https://github.com/Radot1/POSPal" target="_blank" class="text-gray-600 hover:text-indigo-600 transition">
+                    <i class="fab fa-github text-3xl"></i>
+                </a>
+                <button id="mobile-menu-button" class="md:hidden text-gray-600 hover:text-indigo-600 focus:outline-none">
+                    <i class="fas fa-bars text-2xl"></i>
+                </button>
+            </div>
         </div>
     </header>
+
+    <!-- Mobile Menu -->
+    <div id="mobile-menu" class="hidden fixed inset-0 bg-white z-50">
+        <div class="flex justify-end p-6">
+            <button id="close-menu-button">
+                <i class="fas fa-times text-3xl text-gray-600"></i>
+            </button>
+        </div>
+        <div class="flex flex-col items-center justify-center h-full -mt-12 space-y-8">
+            <a href="#features" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-indigo-600">Features</a>
+            <a href="#how-it-works" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-indigo-600">How It Works</a>
+            <a href="#pricing" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-indigo-600">Pricing</a>
+            <a href="#faq" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-indigo-600">FAQ</a>
+        </div>
+    </div>
+
 
     <!-- Hero Section -->
     <main class="bg-gray-50">
         <div class="container mx-auto px-6 py-20 md:py-32 text-center">
             <div class="max-w-3xl mx-auto">
-                <h2 class="text-4xl md:text-6xl font-extrabold text-gray-900 leading-tight">
+                <h2 class="text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-900 leading-tight">
                     The Last Point of Sale You'll Ever Need to Buy
                 </h2>
                 <p class="mt-6 text-lg text-gray-600">
@@ -103,15 +124,15 @@
                         </p>
                     </div>
                     <div class="flex justify-center">
-                        <i class="fas fa-server text-8xl text-indigo-300"></i>
+                        <i class="fas fa-server text-6xl md:text-8xl text-indigo-300"></i>
                     </div>
                 </div>
                 <!-- Feature 2 -->
                 <div class="grid md:grid-cols-2 gap-12 items-center">
                     <div class="flex justify-center md:order-last">
-                         <i class="fas fa-hand-holding-usd text-8xl text-indigo-300"></i>
+                         <i class="fas fa-hand-holding-usd text-6xl md:text-8xl text-indigo-300"></i>
                     </div>
-                    <div class="text-center md:text-left">
+                    <div class="text-center md:text-left md:order-first">
                         <span class="text-indigo-600 font-semibold">TRANSPARENT PRICING</span>
                         <h4 class="text-2xl md:text-3xl font-bold text-gray-900 mt-2">One-Time Payment</h4>
                         <p class="mt-4 text-gray-600">
@@ -129,7 +150,7 @@
                         </p>
                     </div>
                     <div class="flex justify-center">
-                       <i class="fas fa-sync-alt text-8xl text-indigo-300"></i>
+                       <i class="fas fa-sync-alt text-6xl md:text-8xl text-indigo-300"></i>
                     </div>
                 </div>
             </div>
@@ -145,7 +166,7 @@
             <div class="mt-16 relative">
                 <!-- Dotted line for desktop -->
                 <div class="hidden md:block absolute top-8 left-0 w-full border-t-2 border-dashed border-gray-300"></div>
-                <div class="relative grid md:grid-cols-3 gap-12">
+                <div class="relative grid md:grid-cols-3 gap-y-12 md:gap-x-12">
                     <div class="text-center">
                         <div class="bg-white border-2 border-indigo-500 rounded-full h-16 w-16 flex items-center justify-center mx-auto relative z-10 shadow-lg">
                             <span class="text-2xl font-bold text-indigo-600">1</span>
@@ -188,7 +209,7 @@
                 <div class="testimonial-card bg-gray-50 p-8 rounded-xl shadow-sm border">
                     <p class="text-gray-600">"Switching to POSPal was the best decision for my cafe. It's fast, reliable, and so easy to use. The one-time payment saved me hundreds in subscription fees."</p>
                     <div class="mt-4 flex items-center">
-                        <img class="w-12 h-12 rounded-full" src="https://placehold.co/100x100/e2e8f0/4a5568?text=JS" alt="User Avatar">
+                        <img class="w-12 h-12 rounded-full" src="https://placehold.co/100x100/e2e8f0/4a5568?text=JS" alt="User Avatar" onerror="this.onerror=null;this.src='https://placehold.co/100x100/e2e8f0/4a5568?text=??';">
                         <div class="ml-4">
                             <p class="font-semibold text-gray-900">John Smith</p>
                             <p class="text-sm text-gray-500">Owner, The Daily Grind Cafe</p>
@@ -198,7 +219,7 @@
                 <div class="testimonial-card bg-gray-50 p-8 rounded-xl shadow-sm border">
                     <p class="text-gray-600">"I love that I own the software and my data. No more worrying about price hikes or companies shutting down. It just works."</p>
                     <div class="mt-4 flex items-center">
-                        <img class="w-12 h-12 rounded-full" src="https://placehold.co/100x100/e2e8f0/4a5568?text=ML" alt="User Avatar">
+                        <img class="w-12 h-12 rounded-full" src="https://placehold.co/100x100/e2e8f0/4a5568?text=ML" alt="User Avatar" onerror="this.onerror=null;this.src='https://placehold.co/100x100/e2e8f0/4a5568?text=??';">
                         <div class="ml-4">
                             <p class="font-semibold text-gray-900">Maria Lee</p>
                             <p class="text-sm text-gray-500">Manager, Bistro Italia</p>
@@ -216,31 +237,31 @@
                 <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Frequently Asked Questions</h3>
             </div>
             <div class="mt-12 space-y-4">
-                <div class="faq-item bg-white p-4 rounded-lg border shadow-sm">
-                    <button onclick="toggleFaq(this)" class="w-full flex justify-between items-center text-left text-lg font-semibold text-gray-800">
+                <div class="faq-item bg-white rounded-lg border shadow-sm cursor-pointer" onclick="toggleFaq(this)">
+                    <div class="p-4 flex justify-between items-center text-left text-lg font-semibold text-gray-800">
                         <span>What are the system requirements?</span>
                         <i class="fas fa-chevron-down transition-transform duration-300"></i>
-                    </button>
-                    <div class="faq-answer text-gray-600">
-                        <p class="pt-4">You need a computer running Windows 10 or 11 to act as the server, an 80mm thermal receipt printer (ESC/POS compatible), and any modern device with a web browser (like a tablet, phone, or laptop) on the same Wi-Fi network.</p>
+                    </div>
+                    <div class="faq-answer text-gray-600 px-4">
+                        <p class="pt-2 pb-4 border-t border-gray-200">You need a computer running Windows 10 or 11 to act as the server, an 80mm thermal receipt printer (ESC/POS compatible), and any modern device with a web browser (like a tablet, phone, or laptop) on the same Wi-Fi network.</p>
                     </div>
                 </div>
-                <div class="faq-item bg-white p-4 rounded-lg border shadow-sm">
-                    <button onclick="toggleFaq(this)" class="w-full flex justify-between items-center text-left text-lg font-semibold text-gray-800">
+                <div class="faq-item bg-white rounded-lg border shadow-sm cursor-pointer" onclick="toggleFaq(this)">
+                     <div class="p-4 flex justify-between items-center text-left text-lg font-semibold text-gray-800">
                          <span>Is my data secure?</span>
                         <i class="fas fa-chevron-down transition-transform duration-300"></i>
-                    </button>
-                    <div class="faq-answer text-gray-600">
-                        <p class="pt-4">Yes. All your data—including your menu and daily sales logs—is stored locally on your own computer. It is never sent to the cloud or accessible by anyone else, giving you complete privacy and control.</p>
+                    </div>
+                    <div class="faq-answer text-gray-600 px-4">
+                        <p class="pt-2 pb-4 border-t border-gray-200">Yes. All your data—including your menu and daily sales logs—is stored locally on your own computer. It is never sent to the cloud or accessible by anyone else, giving you complete privacy and control.</p>
                     </div>
                 </div>
-                <div class="faq-item bg-white p-4 rounded-lg border shadow-sm">
-                    <button onclick="toggleFaq(this)" class="w-full flex justify-between items-center text-left text-lg font-semibold text-gray-800">
+                <div class="faq-item bg-white rounded-lg border shadow-sm cursor-pointer" onclick="toggleFaq(this)">
+                     <div class="p-4 flex justify-between items-center text-left text-lg font-semibold text-gray-800">
                          <span>What kind of support is included?</span>
                         <i class="fas fa-chevron-down transition-transform duration-300"></i>
-                    </button>
-                    <div class="faq-answer text-gray-600">
-                        <p class="pt-4">Your purchase includes email support for installation and configuration, as well as access to all future software updates which often include bug fixes and new features.</p>
+                    </div>
+                    <div class="faq-answer text-gray-600 px-4">
+                        <p class="pt-2 pb-4 border-t border-gray-200">Your purchase includes email support for installation and configuration, as well as access to all future software updates which often include bug fixes and new features.</p>
                     </div>
                 </div>
             </div>
@@ -252,7 +273,7 @@
         <div class="container mx-auto px-6 text-center">
              <div class="max-w-md mx-auto bg-gray-50 rounded-2xl shadow-lg border p-8">
                 <h3 class="text-2xl font-bold text-gray-900">Get POSPal for Life</h3>
-                <p class="mt-4 text-5xl font-extrabold text-gray-900">200</p>
+                <p class="mt-4 text-4xl sm:text-5xl font-extrabold text-gray-900">200</p>
                 <p class="text-gray-600 font-medium">One-time payment</p>
                 <ul class="mt-6 space-y-3 text-left">
                     <li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-3"></i>Lifetime License</li>
@@ -277,18 +298,48 @@
     </footer>
 
     <script>
-        function toggleFaq(button) {
-            const answer = button.nextElementSibling;
-            const icon = button.querySelector('i');
+        function toggleFaq(container) {
+            const answer = container.querySelector('.faq-answer');
+            const icon = container.querySelector('i.fa-chevron-down');
 
             if (answer.style.maxHeight) {
                 answer.style.maxHeight = null;
                 icon.classList.remove('rotate-180');
             } else {
+                // Close any other open FAQ items first
+                document.querySelectorAll('.faq-answer').forEach(openAnswer => {
+                    if (openAnswer.style.maxHeight) {
+                        openAnswer.style.maxHeight = null;
+                        openAnswer.parentElement.querySelector('i.fa-chevron-down').classList.remove('rotate-180');
+                    }
+                });
                 answer.style.maxHeight = answer.scrollHeight + "px";
                 icon.classList.add('rotate-180');
             }
         }
+
+        const mobileMenuButton = document.getElementById('mobile-menu-button');
+        const closeMenuButton = document.getElementById('close-menu-button');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const mobileMenuLinks = document.querySelectorAll('.mobile-menu-link');
+
+        mobileMenuButton.addEventListener('click', () => {
+            mobileMenu.classList.remove('hidden');
+            document.body.style.overflow = 'hidden'; // Prevent scrolling background
+        });
+
+        closeMenuButton.addEventListener('click', () => {
+            mobileMenu.classList.add('hidden');
+            document.body.style.overflow = '';
+        });
+
+        mobileMenuLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                mobileMenu.classList.add('hidden');
+                document.body.style.overflow = '';
+            });
+        });
+
     </script>
 </body>
 </html>
