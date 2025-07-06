@@ -161,17 +161,49 @@
         }
         
         const mockMenu = {
-            "Appetizers": [
-                {"id": 1, "name": "Garlic Bread", "price": 4.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 2, "name": "Bruschetta", "price": 6.00, "hasGeneralOptions": false, "generalOptions": []}
+            "Starters": [
+                {"id": 1, "name": "Garlic Bread", "price": 4.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cheese", "priceChange": 1.00}]},
+                {"id": 2, "name": "Bruschetta", "price": 6.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 3, "name": "Soup of the Day", "price": 5.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 4, "name": "Spring Rolls", "price": 5.50, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Salads": [
+                {"id": 10, "name": "Caesar Salad", "price": 9.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Chicken", "priceChange": 3.00}, {"name": "Add Bacon", "priceChange": 2.00}]},
+                {"id": 11, "name": "Greek Salad", "price": 8.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 12, "name": "Garden Salad", "price": 7.00, "hasGeneralOptions": false, "generalOptions": []}
             ],
             "Main Courses": [
-                {"id": 3, "name": "Spaghetti Carbonara", "price": 12.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Bacon", "priceChange": 2.00}, {"name": "Gluten-Free Pasta", "priceChange": 1.50}]},
-                {"id": 4, "name": "Margherita Pizza", "price": 10.00, "hasGeneralOptions": false, "generalOptions": []}
+                {"id": 20, "name": "Spaghetti Carbonara", "price": 12.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Bacon", "priceChange": 2.00}, {"name": "Gluten-Free Pasta", "priceChange": 1.50}]},
+                {"id": 21, "name": "Margherita Pizza", "price": 10.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Topping", "priceChange": 1.50}, {"name": "Stuffed Crust", "priceChange": 2.50}]},
+                {"id": 22, "name": "Grilled Salmon", "price": 16.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 23, "name": "Classic Burger", "price": 11.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cheese", "priceChange": 1.00}, {"name": "Add Bacon", "priceChange": 1.50}]},
+                {"id": 24, "name": "Chicken Curry", "price": 13.00, "hasGeneralOptions": false, "generalOptions": []}
             ],
-            "Drinks": [
-                {"id": 5, "name": "Coca-Cola", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 6, "name": "Water", "price": 1.50, "hasGeneralOptions": false, "generalOptions": []}
+            "Sandwiches": [
+                {"id": 30, "name": "Club Sandwich", "price": 8.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 31, "name": "BLT", "price": 7.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 32, "name": "Tuna Melt", "price": 7.50, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Desserts": [
+                {"id": 40, "name": "Chocolate Cake", "price": 5.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Ice Cream", "priceChange": 1.50}]},
+                {"id": 41, "name": "Apple Pie", "price": 5.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cream", "priceChange": 1.00}]},
+                {"id": 42, "name": "Cheesecake", "price": 6.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 43, "name": "Ice Cream Scoop", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Soft Drinks": [
+                {"id": 50, "name": "Coca-Cola", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 51, "name": "Sprite", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 52, "name": "Fanta", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 53, "name": "Still Water", "price": 1.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 54, "name": "Sparkling Water", "price": 2.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 55, "name": "Orange Juice", "price": 3.00, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Coffee & Tea": [
+                {"id": 60, "name": "Espresso", "price": 2.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 61, "name": "Cappuccino", "price": 3.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Oat Milk", "priceChange": 0.50}, {"name": "Extra Shot", "priceChange": 0.75}]},
+                {"id": 62, "name": "Latte", "price": 3.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Soy Milk", "priceChange": 0.50}, {"name": "Caramel Syrup", "priceChange": 0.50}]},
+                {"id": 63, "name": "Black Tea", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 64, "name": "Green Tea", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []}
             ]
         };
 
