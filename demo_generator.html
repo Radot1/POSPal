@@ -86,6 +86,8 @@
 
         // This function contains the entire JavaScript block for the demo version.
         function getDemoScript() {
+            // NOTE: This script is a self-contained, offline-first version.
+            // It replaces all server-side calls with local mock data and logic.
             return `
         // --- Global State & Configuration ---
         let demoMode = false;
@@ -110,56 +112,6 @@
 
         const elements = {}; 
 
-        function cacheDOMElements() {
-            elements.headerOrderNumber = document.getElementById('header-order-number');
-            elements.headerTableNumberInput = document.getElementById('header-table-number-input');
-            elements.categoriesContainer = document.getElementById('categories');
-            elements.productsContainer = document.getElementById('products');
-            elements.orderItemsContainer = document.getElementById('order-items-container');
-            elements.emptyOrderMessage = document.getElementById('empty-order-message');
-            elements.orderTotalDisplay = document.getElementById('order-total');
-            elements.universalOrderCommentInput = document.getElementById('universalOrderCommentInput');
-            elements.paidByCardCheckbox = document.getElementById('paidByCardCheckbox');
-            elements.mobileOrderToggle = document.getElementById('mobile-order-toggle');
-            elements.mobileOrderCountBadge = document.getElementById('mobile-order-count-badge');
-            elements.orderPanel = document.getElementById('order-panel');
-            elements.orderPanelBackdrop = document.getElementById('order-panel-backdrop');
-            elements.sendOrderBtn = document.getElementById('sendOrderBtn');
-            elements.settingsGearContainer = document.getElementById('settings-gear-container');
-            elements.managementModal = document.getElementById('managementModal');
-            elements.daySummaryModal = document.getElementById('daySummaryModal');
-            elements.daySummaryContent = document.getElementById('daySummaryContent');
-            elements.itemOptionSelectModal = document.getElementById('itemOptionSelectModal');
-            elements.optionModalItemName = document.getElementById('optionModalItemName');
-            elements.optionModalItemDescription = document.getElementById('optionModalItemDescription');
-            elements.optionModalOptionsContainer = document.getElementById('optionModalOptionsContainer');
-            elements.confirmOptionBtn = document.getElementById('confirmOptionBtn');
-            elements.itemNameInput = document.getElementById('itemName');
-            elements.itemPriceInput = document.getElementById('itemPrice');
-            elements.itemCategorySelect = document.getElementById('itemCategory');
-            elements.itemIdInput = document.getElementById('itemId'); 
-            elements.saveItemBtn = document.getElementById('saveItemBtn');
-            elements.cancelEditBtn = document.getElementById('cancelEditBtn');
-            elements.existingItemsListModal = document.getElementById('existingItemsListModal');
-            elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); 
-            elements.itemOptionsModalContainer = document.getElementById('itemOptionsModalContainer');
-            elements.itemOptionsListDisplayModal = document.getElementById('itemOptionsListDisplayModal');
-            elements.newOptionNameInputModal = document.getElementById('newOptionNameInputModal');
-            elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal'); 
-            elements.categoryNameInput = document.getElementById('categoryName');
-            elements.existingCategoriesListModal = document.getElementById('existingCategoriesListModal');
-            elements.toast = document.getElementById('toast');
-            elements.toastMessage = document.getElementById('toast-message');
-            elements.numpadContainer = document.getElementById('numpad-container');
-            elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
-            elements.todaysOrdersList = document.getElementById('todaysOrdersList');
-            elements.appVersionContainer = document.getElementById('appVersionContainer');
-            elements.appVersion = document.getElementById('appVersion');
-            elements.demoModeBanner = document.getElementById('demo-mode-banner');
-            elements.mainHeader = document.getElementById('main-header');
-            elements.categorySection = document.getElementById('category-section');
-        }
-        
         const mockMenu = {
             "Starters": [
                 {"id": 1, "name": "Garlic Bread", "price": 4.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cheese", "priceChange": 1.00}]},
@@ -179,74 +131,85 @@
                 {"id": 23, "name": "Classic Burger", "price": 11.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cheese", "priceChange": 1.00}, {"name": "Add Bacon", "priceChange": 1.50}]},
                 {"id": 24, "name": "Chicken Curry", "price": 13.00, "hasGeneralOptions": false, "generalOptions": []}
             ],
-            "Sandwiches": [
-                {"id": 30, "name": "Club Sandwich", "price": 8.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 31, "name": "BLT", "price": 7.00, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 32, "name": "Tuna Melt", "price": 7.50, "hasGeneralOptions": false, "generalOptions": []}
-            ],
             "Desserts": [
                 {"id": 40, "name": "Chocolate Cake", "price": 5.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Ice Cream", "priceChange": 1.50}]},
                 {"id": 41, "name": "Apple Pie", "price": 5.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cream", "priceChange": 1.00}]},
-                {"id": 42, "name": "Cheesecake", "price": 6.00, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 43, "name": "Ice Cream Scoop", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []}
+                {"id": 42, "name": "Cheesecake", "price": 6.00, "hasGeneralOptions": false, "generalOptions": []}
             ],
             "Soft Drinks": [
                 {"id": 50, "name": "Coca-Cola", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
                 {"id": 51, "name": "Sprite", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 52, "name": "Fanta", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 53, "name": "Still Water", "price": 1.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 54, "name": "Sparkling Water", "price": 2.00, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 55, "name": "Orange Juice", "price": 3.00, "hasGeneralOptions": false, "generalOptions": []}
-            ],
-            "Coffee & Tea": [
-                {"id": 60, "name": "Espresso", "price": 2.00, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 61, "name": "Cappuccino", "price": 3.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Oat Milk", "priceChange": 0.50}, {"name": "Extra Shot", "priceChange": 0.75}]},
-                {"id": 62, "name": "Latte", "price": 3.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Soy Milk", "priceChange": 0.50}, {"name": "Caramel Syrup", "priceChange": 0.50}]},
-                {"id": 63, "name": "Black Tea", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 64, "name": "Green Tea", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []}
+                {"id": 52, "name": "Fanta", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []}
             ]
         };
+
+        function cacheDOMElements() {
+            elements.headerOrderNumber = document.getElementById('header-order-number');
+            elements.headerTableNumberInput = document.getElementById('header-table-number-input');
+            elements.categoriesContainer = document.getElementById('categories');
+            elements.productsContainer = document.getElementById('products');
+            elements.orderItemsContainer = document.getElementById('order-items-container');
+            elements.emptyOrderMessage = document.getElementById('empty-order-message');
+            elements.orderTotalDisplay = document.getElementById('order-total');
+            elements.universalOrderCommentInput = document.getElementById('universalOrderCommentInput');
+            elements.paidByCardCheckbox = document.getElementById('paidByCardCheckbox');
+            elements.mobileOrderToggle = document.getElementById('mobile-order-toggle');
+            elements.mobileOrderCountBadge = document.getElementById('mobile-order-count-badge');
+            elements.orderPanel = document.getElementById('order-panel');
+            elements.orderPanelBackdrop = document.getElementById('order-panel-backdrop');
+            elements.sendOrderBtn = document.getElementById('sendOrderBtn');
+            elements.settingsGearContainer = document.getElementById('settings-gear-container');
+            elements.managementModal = document.getElementById('managementModal');
+            elements.itemFormModal = document.getElementById('itemFormModal');
+            elements.itemFormModalTitle = document.getElementById('itemFormModalTitle');
+            elements.daySummaryModal = document.getElementById('daySummaryModal');
+            elements.daySummaryContent = document.getElementById('daySummaryContent');
+            elements.itemOptionSelectModal = document.getElementById('itemOptionSelectModal');
+            elements.optionModalItemName = document.getElementById('optionModalItemName');
+            elements.optionModalItemDescription = document.getElementById('optionModalItemDescription');
+            elements.optionModalOptionsContainer = document.getElementById('optionModalOptionsContainer');
+            elements.confirmOptionBtn = document.getElementById('confirmOptionBtn');
+            elements.itemNameInput = document.getElementById('itemName');
+            elements.itemPriceInput = document.getElementById('itemPrice');
+            elements.itemCategorySelect = document.getElementById('itemCategory');
+            elements.itemIdInput = document.getElementById('itemId'); 
+            elements.saveItemBtn = document.getElementById('saveItemBtn');
+            elements.existingItemsListModal = document.getElementById('existingItemsListModal');
+            elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal'); 
+            elements.itemOptionsModalContainer = document.getElementById('itemOptionsModalContainer');
+            elements.itemOptionsListDisplayModal = document.getElementById('itemOptionsListDisplayModal');
+            elements.newOptionNameInputModal = document.getElementById('newOptionNameInputModal');
+            elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal'); 
+            elements.categoryNameInput = document.getElementById('categoryName');
+            elements.existingCategoriesListModal = document.getElementById('existingCategoriesListModal');
+            elements.toast = document.getElementById('toast');
+            elements.toastMessage = document.getElementById('toast-message');
+            elements.numpadContainer = document.getElementById('numpad-container');
+            elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
+            elements.todaysOrdersList = document.getElementById('todaysOrdersList');
+            elements.appVersionContainer = document.getElementById('appVersionContainer');
+            elements.appVersion = document.getElementById('appVersion');
+            elements.demoModeBanner = document.getElementById('demo-mode-banner');
+            elements.mainHeader = document.querySelector('header');
+            elements.categorySection = document.getElementById('category-section');
+        }
 
         function showDemoModeBanner() {
             if(elements.demoModeBanner) {
                 elements.demoModeBanner.classList.remove('hidden');
-                // Adjust layout to prevent banner from overlapping content
+                const bannerHeight = elements.demoModeBanner.offsetHeight;
                 if (elements.mainHeader) {
-                    elements.mainHeader.style.top = elements.demoModeBanner.offsetHeight + 'px';
+                    elements.mainHeader.style.top = bannerHeight + 'px';
                 }
                  if (elements.categorySection) {
-                    elements.categorySection.style.top = (elements.demoModeBanner.offsetHeight + 61) + 'px'; // 61px is the header height
+                    elements.categorySection.style.top = (bannerHeight + (elements.mainHeader?.offsetHeight || 61)) + 'px';
                 }
             }
-        }
-
-        // --- FIXED INITIALIZE FUNCTION ---
-        // This function now *always* loads the application in demo mode.
-        async function initializeAppState() {
-            // This is a demo, so we immediately enter demo mode without checking for a server.
-            console.log("Forcing DEMO MODE.");
-            demoMode = true;
-            showDemoModeBanner();
-            menu = mockMenu; // Load the mock menu data.
-            orderNumber = 1; // Start with a default order number.
-            
-            if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-            
-            // Set the initial category and render the UI from the mock data.
-            if (Object.keys(menu).length > 0) {
-                selectedCategory = Object.keys(menu)[0];
-            }
-            renderCategories();
-            populateManagementCategorySelect();
-            
-            // Load other state from local storage as before.
-            selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
-            if(elements.headerTableNumberInput) elements.headerTableNumberInput.value = selectedTableNumber;
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             cacheDOMElements();
-            initializeAppState(); // This now correctly initializes in demo mode
+            initializeAppState();
             
             if(elements.universalOrderCommentInput) {
                 elements.universalOrderCommentInput.value = universalOrderComment;
@@ -278,69 +241,41 @@
                 if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
                 return;
             }
-            // This part is for the live version and won't be called in the demo.
-            try {
-                const response = await fetch('/api/order_status');
-                if (!response.ok) {
-                    throw new Error(\`Server responded with status \${response.status}\`);
-                }
-                const data = await response.json();
-                if (data && typeof data.next_order_number !== 'undefined') {
-                    orderNumber = data.next_order_number;
-                    if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-                }
-            } catch (error) {
-                console.error("Could not fetch next order number:", error);
-                if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = "Err";
-                showToast("Could not sync order number with server.", "error");
+        }
+        
+        function initializeAppState() {
+            console.log("Forcing DEMO MODE.");
+            demoMode = true;
+            showDemoModeBanner();
+            menu = JSON.parse(localStorage.getItem('pospal_demo_menu')) || JSON.parse(JSON.stringify(mockMenu));
+            orderNumber = 1;
+
+            if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+            
+            if (Object.keys(menu).length > 0) {
+                selectedCategory = Object.keys(menu)[0];
             }
+            loadMenu();
+            
+            selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
+            if(elements.headerTableNumberInput) elements.headerTableNumberInput.value = selectedTableNumber;
         }
 
         async function loadMenu() {
-            // This function is now only for the live version. 
-            // In demo mode, initializeAppState handles loading the mockMenu.
-            if (demoMode) return;
-            try {
-                const response = await fetch('/api/menu');
-                if (!response.ok) throw new Error(\`HTTP error! status: \${response.status}\`);
-                menu = await response.json() || {};
-
-                if (Object.keys(menu).length > 0 && (!selectedCategory || !menu[selectedCategory])) {
-                    selectedCategory = Object.keys(menu)[0];
-                } else if (Object.keys(menu).length === 0) {
-                    selectedCategory = null;
-                }
-                renderCategories();
-                populateManagementCategorySelect();
-            } catch (error) {
-                showToast(\`Error loading menu: \${error.message}\`, 'error');
-                console.error("Load menu error:", error);
-                if(elements.categoriesContainer) elements.categoriesContainer.innerHTML = '<p class="text-gray-500 italic">Could not load categories.</p>';
-                if(elements.productsContainer) elements.productsContainer.innerHTML = '<p class="text-gray-500 italic col-span-full text-center">Could not load items.</p>';
+            if (Object.keys(menu).length > 0 && (!selectedCategory || !menu[selectedCategory])) {
+                selectedCategory = Object.keys(menu)[0];
+            } else if (Object.keys(menu).length === 0) {
+                selectedCategory = null;
             }
+            renderCategories();
+            populateManagementCategorySelect();
         }
 
         async function saveMenuToServer() {
             if (demoMode) {
-                showToast("Saving is disabled in Demo Mode.", "info");
-                return Promise.resolve(true); // Pretend it saved successfully
-            }
-            // This part is for the live version.
-            try {
-                const response = await fetch('/api/menu', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(menu)
-                });
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({message: \`HTTP \${response.status} - \${response.statusText}\`}));
-                    throw new Error(\`Failed to save menu: \${errorData.message}\`);
-                }
-                return true;
-            } catch (error) {
-                showToast(error.message, 'error');
-                console.error("Save menu error:", error);
-                return false;
+                localStorage.setItem('pospal_demo_menu', JSON.stringify(menu));
+                showToast("Saving is disabled in Demo Mode. Changes are saved locally.", "info");
+                return Promise.resolve(true);
             }
         }
 
@@ -599,7 +534,6 @@
             hideNumpad();
             updateOrderDisplay();
             
-            // In demo mode, just reset the number locally
             orderNumber = 1; 
             if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
         }
@@ -614,7 +548,6 @@
         }
 
     async function sendOrder() {
-        // This function is demo-aware.
         if (!currentOrder.length) {
             showToast('Order is empty!', 'warning');
             return;
@@ -625,8 +558,7 @@
         }
         showToast(\`Order #\${orderNumber} Sent! (Demo Mode)\`, "success");
         clearOrderData();
-        orderNumber++; // Increment for the next demo order
-        if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+        fetchAndUpdateOrderNumber();
         return;
     }
     
@@ -852,7 +784,6 @@
         let tempItemOptionsModal = []; 
 
         async function loadAppVersion() {
-            // In demo mode, just show a static version.
             if(elements.appVersion) elements.appVersion.textContent = 'Demo Version';
         }
 
@@ -894,7 +825,6 @@
 
             if (tabName === 'items') {
                 itemsView.style.display = 'block';
-                resetItemFormAndUIModal();
             } else if (tabName === 'categories') {
                 categoriesView.style.display = 'block';
                 if (elements.categoryNameInput) elements.categoryNameInput.value = '';
@@ -929,26 +859,48 @@
             if (!elements.existingItemsListModal) return;
             elements.existingItemsListModal.innerHTML = '';
             let itemCount = 0;
+
             Object.entries(menu).forEach(([category, items]) => {
-                (items || []).forEach(item => {
+                if (!items || items.length === 0) return;
+
+                const categoryHeader = document.createElement('h5');
+                categoryHeader.className = "font-bold text-gray-700 mt-3 mb-1 pb-1 border-b border-gray-300";
+                categoryHeader.textContent = category;
+                elements.existingItemsListModal.appendChild(categoryHeader);
+
+                (items || []).forEach((item, index) => {
                     itemCount++;
                     const div = document.createElement('div');
-                    div.className = \`p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm \${editingItem && editingItem.id === item.id ? 'bg-gray-200 border-gray-500' : 'bg-white hover:bg-gray-50'}\`;
+                    div.className = \`p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50\`;
 
                     let itemDetails = \`<span class="font-medium text-gray-800">\${item.name}</span>
-                                       <span class="text-xs text-gray-500 ml-1">(\${category}) - €\${(item.price || 0).toFixed(2)}</span>\`;
+                                       <span class="text-xs text-gray-500 ml-1">- €\${(item.price || 0).toFixed(2)}</span>\`;
 
                     const hasGeneralOpts = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
-
                     if (hasGeneralOpts) { 
-                        itemDetails += \`<span class="text-xs text-blue-600 ml-1">(Gen Opts: \${item.generalOptions.length})</span>\`;
+                        itemDetails += \`<span class="text-xs text-blue-600 ml-2">(+ Options)</span>\`;
                     }
 
+                    const isFirst = index === 0;
+                    const isLast = index === items.length - 1;
+                    const reorderButtons = \`
+                        <div class="flex items-center">
+                            <button onclick="moveItemPosition(\${item.id}, 'up')" class="px-2 py-1 text-gray-500 hover:text-black \${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" \${isFirst ? 'disabled' : ''} title="Move Up">
+                                <i class="fas fa-arrow-up"></i>
+                            </button>
+                            <button onclick="moveItemPosition(\${item.id}, 'down')" class="px-2 py-1 text-gray-500 hover:text-black \${isLast ? 'opacity-25 cursor-not-allowed' : ''}" \${isLast ? 'disabled' : ''} title="Move Down">
+                                <i class="fas fa-arrow-down"></i>
+                            </button>
+                        </div>
+                    \`;
 
                     div.innerHTML = \`
-                        <div>\${itemDetails}</div>
+                        <div class="flex items-center">
+                            \${reorderButtons}
+                            <div class="ml-2">\${itemDetails}</div>
+                        </div>
                         <div class="space-x-1 flex-shrink-0">
-                            <button onclick="editItemModal(\${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
+                            <button onclick="openItemFormModal(\${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
                             <button onclick="deleteItem(\${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
                         </div>
                     \`;
@@ -960,22 +912,123 @@
             }
         }
 
+        async function moveItemPosition(itemIdToMove, direction) {
+            let categoryKey = null;
+            let itemIndex = -1;
+
+            for (const cat in menu) {
+                const index = (menu[cat] || []).findIndex(i => i.id === itemIdToMove);
+                if (index !== -1) {
+                    categoryKey = cat;
+                    itemIndex = index;
+                    break;
+                }
+            }
+
+            if (categoryKey === null || itemIndex === -1) {
+                showToast("Could not find item to move.", "error");
+                return;
+            }
+
+            const itemsArray = menu[categoryKey];
+            const itemToMove = itemsArray[itemIndex];
+
+            if (direction === 'up' && itemIndex > 0) {
+                itemsArray.splice(itemIndex, 1);
+                itemsArray.splice(itemIndex - 1, 0, itemToMove);
+            } else if (direction === 'down' && itemIndex < itemsArray.length - 1) {
+                itemsArray.splice(itemIndex, 1);
+                itemsArray.splice(itemIndex + 1, 0, itemToMove);
+            } else {
+                return;
+            }
+
+            const success = await saveMenuToServer();
+            if (success) {
+                showToast('Item order updated.', 'success');
+                await loadMenu();
+                loadManagementData();
+            } else {
+                showToast('Failed to save new item order. Reverting.', 'error');
+                await loadMenu();
+                loadManagementData();
+            }
+        }
+
         function renderExistingCategoriesInModal() {
             if (!elements.existingCategoriesListModal) return;
             elements.existingCategoriesListModal.innerHTML = '';
-            if (Object.keys(menu).length === 0) {
+            const categoryKeys = Object.keys(menu);
+
+            if (categoryKeys.length === 0) {
                 elements.existingCategoriesListModal.innerHTML = '<p class="text-xs text-gray-500 italic">No categories created yet.</p>';
                 return;
             }
-            Object.keys(menu).forEach(categoryName => {
+
+            categoryKeys.forEach((categoryName, index) => {
+                const isFirst = index === 0;
+                const isLast = index === categoryKeys.length - 1;
+
+                const reorderButtons = \`
+                    <div class="flex items-center">
+                        <button onclick="moveCategoryPosition('\${categoryName}', 'up')" class="px-2 py-1 text-gray-500 hover:text-black \${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" \${isFirst ? 'disabled' : ''} title="Move Up">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button onclick="moveCategoryPosition('\${categoryName}', 'down')" class="px-2 py-1 text-gray-500 hover:text-black \${isLast ? 'opacity-25 cursor-not-allowed' : ''}" \${isLast ? 'disabled' : ''} title="Move Down">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
+                    </div>
+                \`;
+
                 const div = document.createElement('div');
                 div.className = "p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
                 div.innerHTML = \`
-                    <span class="font-medium text-gray-800">\${categoryName}</span>
+                    <div class="flex items-center">
+                        \${reorderButtons}
+                        <span class="font-medium text-gray-800 ml-2">\${categoryName}</span>
+                    </div>
                     <button onclick="deleteCategory('\${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
                 \`;
                 elements.existingCategoriesListModal.appendChild(div);
             });
+        }
+        
+        async function moveCategoryPosition(categoryNameToMove, direction) {
+            const keys = Object.keys(menu);
+            const index = keys.indexOf(categoryNameToMove);
+
+            if (index === -1) {
+                showToast("Could not find category to move.", "error");
+                return;
+            }
+
+            let newIndex;
+            if (direction === 'up') {
+                if (index === 0) return;
+                newIndex = index - 1;
+            } else {
+                if (index === keys.length - 1) return;
+                newIndex = index + 1;
+            }
+
+            [keys[index], keys[newIndex]] = [keys[newIndex], keys[index]];
+
+            const newMenu = {};
+            keys.forEach(key => {
+                newMenu[key] = menu[key];
+            });
+            menu = newMenu;
+
+            const success = await saveMenuToServer();
+            if (success) {
+                showToast('Category order updated.', 'success');
+                await loadMenu();
+                loadManagementData();
+            } else {
+                showToast('Failed to save new category order. Reverting.', 'error');
+                await loadMenu();
+                loadManagementData();
+            }
         }
 
         function generateItemId() {
@@ -983,7 +1036,8 @@
             return allItems.length > 0 ? Math.max(0, ...allItems.map(i => i.id || 0)) + 1 : 1;
         }
 
-        function resetItemFormAndUIModal() {
+        function resetItemForm() {
+            editingItem = null;
             if(elements.itemNameInput) elements.itemNameInput.value = '';
             if(elements.itemPriceInput) elements.itemPriceInput.value = '';
             if(elements.itemIdInput) elements.itemIdInput.value = ''; 
@@ -996,14 +1050,28 @@
             if (elements.newOptionPriceInputModal) elements.newOptionPriceInputModal.value = '';
 
             toggleItemOptionsUIInModal(); 
-
-            if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save Item';
-            if(elements.cancelEditBtn) elements.cancelEditBtn.classList.add('hidden');
-            editingItem = null;
-            renderExistingItemsInModal(); 
         }
 
-        function editItemModal(itemIdToEdit) {
+        function openItemFormModal(itemIdToEdit = null) {
+            resetItemForm();
+            if (itemIdToEdit !== null) {
+                elements.itemFormModalTitle.textContent = 'Edit Item';
+                populateItemFormForEdit(itemIdToEdit);
+            } else {
+                elements.itemFormModalTitle.textContent = 'Add New Item';
+                if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save New Item';
+            }
+            elements.itemFormModal.classList.remove('hidden');
+            elements.itemFormModal.classList.add('flex');
+        }
+
+        function closeItemFormModal() {
+            elements.itemFormModal.classList.add('hidden');
+            elements.itemFormModal.classList.remove('flex');
+            resetItemForm();
+        }
+
+        function populateItemFormForEdit(itemIdToEdit) {
             let foundItem;
             let itemCategoryName;
             Object.entries(menu).forEach(([category, items]) => {
@@ -1026,60 +1094,31 @@
                 if(elements.itemHasOptionsCheckboxModal) {
                      elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0);
                 }
-
-
                 toggleItemOptionsUIInModal(); 
-
                 if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
-                if(elements.cancelEditBtn) elements.cancelEditBtn.classList.remove('hidden');
-                renderExistingItemsInModal(); 
-                if(elements.itemNameInput) elements.itemNameInput.focus();
             }
-        }
-
-        function cancelEditItem() {
-            resetItemFormAndUIModal();
-            showToast('Edit cancelled.', 'info');
         }
 
         async function saveItem() {
-            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect || !elements.itemHasOptionsCheckboxModal || !elements.itemIdInput) {
-                console.error("A required form element is missing in \`elements\` cache for saveItem.");
-                showToast('Error: Form elements missing. Cannot save.', 'error');
-                return;
-            }
+            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect) return;
 
             const itemName = elements.itemNameInput.value.trim();
             const itemPrice = parseFloat(elements.itemPriceInput.value); 
             const itemCategory = elements.itemCategorySelect.value;
             
-            let itemIdVal;
-            if (editingItem && elements.itemIdInput.value) {
-                itemIdVal = parseInt(elements.itemIdInput.value);
-                 if (isNaN(itemIdVal) || itemIdVal !== editingItem.id) { 
-                    console.error("Item ID mismatch or invalid during edit. Expected:", editingItem.id, "Got:", elements.itemIdInput.value);
-                    showToast('Error: Item ID conflict during update.', 'error');
-                    return;
-                 }
-            } else if (editingItem) { 
-                itemIdVal = editingItem.id;
-            } else { 
-                itemIdVal = generateItemId();
-            }
+            let itemIdVal = editingItem ? editingItem.id : generateItemId();
             
             if (isNaN(itemIdVal)) {
-                showToast('Error: Invalid Item ID. Cannot save.', 'error');
-                return;
+                showToast('Error: Invalid Item ID.', 'error'); return;
             }
-
             if (!itemName || isNaN(itemPrice) || itemPrice < 0) {
-                showToast('Item Name and Base Price are required and Price must be valid.', 'warning'); return;
+                showToast('Item Name and a valid Base Price are required.', 'warning'); return;
             }
-             if (!itemCategory && Object.keys(menu).length > 0) {
-                showToast('Please select a category for the item.', 'warning'); return;
+            if (!itemCategory && Object.keys(menu).length > 0) {
+                showToast('Please select a category.', 'warning'); return;
             }
-             if (Object.keys(menu).length === 0 && !itemCategory) {
-                showToast('Please create a category first, then select it for the item.', 'warning'); return;
+            if (Object.keys(menu).length === 0 && !itemCategory) {
+                showToast('Please create a category first.', 'warning'); return;
             }
 
             const itemData = {
@@ -1087,66 +1126,42 @@
                 name: itemName,
                 price: itemPrice, 
                 hasGeneralOptions: elements.itemHasOptionsCheckboxModal.checked,
-                generalOptions: [] 
+                generalOptions: (elements.itemHasOptionsCheckboxModal.checked && tempItemOptionsModal.length > 0) ? [...tempItemOptionsModal] : []
             };
 
-            if (itemData.hasGeneralOptions) {
-                if (tempItemOptionsModal.length === 0) {
-                    showToast('If "Has General Options" is checked, please add at least one option.', 'warning'); return;
-                }
-                itemData.generalOptions = [...tempItemOptionsModal]; 
-            } else {
-                itemData.generalOptions = []; 
+            if (itemData.hasGeneralOptions && itemData.generalOptions.length === 0) {
+                showToast('If "Has General Options" is checked, please add at least one option.', 'warning'); return;
             }
             
-            let oldCategoryOfItem = null;
             if (editingItem) { 
                 Object.keys(menu).forEach(cat => {
                     const itemIndex = (menu[cat] || []).findIndex(i => i.id === editingItem.id);
                     if (itemIndex > -1) {
-                        oldCategoryOfItem = cat;
-                        if (cat !== itemCategory) { 
+                       if (cat !== itemCategory) { 
                            menu[cat].splice(itemIndex, 1); 
-                        }
+                       }
                     }
                 });
             }
 
             if (!menu[itemCategory]) menu[itemCategory] = [];
 
-            const existingItemIndexInTargetCategory = menu[itemCategory].findIndex(i => i.id === itemData.id);
-
-            if (existingItemIndexInTargetCategory > -1) { 
-                if (editingItem && editingItem.id === itemData.id) { 
-                    menu[itemCategory][existingItemIndexInTargetCategory] = itemData; 
-                } else if (!editingItem) { 
-                     showToast('Error: Item ID conflict for new item. Please try again.', 'error');
-                     return;
-                }
-                 else { 
-                    showToast('Error: An item with this ID already exists in the target category.', 'error');
-                    if (editingItem && oldCategoryOfItem && oldCategoryOfItem !== itemCategory && menu[oldCategoryOfItem]) {
-                        menu[oldCategoryOfItem].push({...editingItem}); 
-                    }
-                    return; 
-                }
+            const existingItemIndex = menu[itemCategory].findIndex(i => i.id === itemData.id);
+            if (existingItemIndex > -1) {
+                menu[itemCategory][existingItemIndex] = itemData; 
             } else { 
                 menu[itemCategory].push(itemData);
             }
 
-            menu[itemCategory].sort((a, b) => a.name.localeCompare(b.name));
-
             const success = await saveMenuToServer();
             if (success) {
                 showToast(editingItem ? 'Item updated successfully!' : 'Item saved successfully!', 'success');
-                resetItemFormAndUIModal();
-                // In demo mode, just re-render from the local 'menu' object
-                renderCategories();
-                populateManagementCategorySelect();
+                closeItemFormModal();
+                await loadMenu();
+                loadManagementData();
             } else {
-                showToast('Failed to save item. Reverting local changes.', 'error');
-                // In a real app you might reload from server, here we just log it.
-                console.error("Demo save failed, this shouldn't happen in demo mode unless there's a logic bug.");
+                showToast('Failed to save item. Reverting.', 'error');
+                await loadMenu();
             }
         }
 
@@ -1169,11 +1184,11 @@
             const success = await saveMenuToServer();
             if (success) {
                 showToast('Item deleted successfully.', 'success');
-                if (editingItem && editingItem.id === itemIdToDelete) resetItemFormAndUIModal();
-                renderCategories();
-                populateManagementCategorySelect();
+                await loadMenu();
+                loadManagementData();
             } else {
-                 showToast('Failed to delete item.', 'error');
+                showToast('Failed to delete item. Reverting.', 'error');
+                await loadMenu();
             }
         }
 
@@ -1188,19 +1203,18 @@
 				showToast('Category already exists.', 'warning'); 
 				return; 
 			}
-            
-            menu[categoryName] = [];
+
+			menu[categoryName] = [];
 			
             const success = await saveMenuToServer();
             if(success) {
                 showToast(\`Category "\${categoryName}" added successfully.\`, 'success');
                 elements.categoryNameInput.value = '';
-                if (Object.keys(menu).length === 1) { selectedCategory = categoryName; }
-                renderCategories();
-                populateManagementCategorySelect();
+                await loadMenu();
+                loadManagementData();
             } else {
                 showToast(\`Failed to save category.\`, 'error');
-                delete menu[categoryName]; // Revert change
+                delete menu[categoryName]; 
             }
 		}
 
@@ -1210,7 +1224,8 @@
             } else {
                 if (!confirm(\`Are you sure you want to delete category "\${categoryNameToDelete}"? This cannot be undone.\`)) return;
             }
-            
+
+            const backupMenu = JSON.parse(JSON.stringify(menu));
             delete menu[categoryNameToDelete];
 
             const success = await saveMenuToServer();
@@ -1219,10 +1234,13 @@
                 if (selectedCategory === categoryNameToDelete) {
                     selectedCategory = Object.keys(menu)[0] || null;
                 }
-                renderCategories();
-                populateManagementCategorySelect();
+                await loadMenu();
+                loadManagementData();
             } else {
-                showToast(\`Failed to delete category.\`, 'error');
+                menu = backupMenu;
+                showToast(\`Failed to delete category on server. Reverting.\`, 'error');
+                await loadMenu();
+                loadManagementData();
             }
         }
 
@@ -1341,17 +1359,15 @@
         }
 
         async function loadTodaysOrdersForReprint() {
-            // In demo mode, this feature is disabled.
             if (!elements.todaysOrdersList) return;
             elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Order history is disabled in Demo Mode.</p>';
         }
 
         function renderTodaysOrdersList(orders) {
-            // This function is not called in demo mode.
+            // Not used in demo
         }
 
         async function reprintOrder(orderNumToReprint) {
-            // In demo mode, just show a toast.
             showToast(\`Reprinting Order #\${orderNumToReprint} (Demo Mode)\`, "success");
         }
 
@@ -1360,7 +1376,6 @@
             elements.daySummaryModal.classList.remove('hidden');
             elements.daySummaryModal.classList.add('flex');
             
-            // In demo mode, show static summary data.
             renderDaySummary({
                 status: 'success',
                 total_orders: 15,
@@ -1400,7 +1415,7 @@
                     </div>
                     <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black">
                         <span class="text-lg font-bold text-gray-900">Grand Total:</span>
-                        <span class="text-lg font-bold text-gray-900">€\${summary.grand_total.toFixed(2)}</span>
+                        <span class="font-semibold text-gray-900">€\${summary.grand_total.toFixed(2)}</span>
                     </div>
                 </div>
             \`;
