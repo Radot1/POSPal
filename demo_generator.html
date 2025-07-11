@@ -793,12 +793,18 @@
             if (isActive) {
                 elements.managementModal.classList.add('hidden');
                 elements.managementModal.classList.remove('flex');
+                document.body.style.overflow = ''; // Allow scrolling on the body again
             } else {
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
+                document.body.style.overflow = 'hidden'; // Prevent body scrolling
                 loadManagementData();
                 loadAppVersion();
-                switchManagementTab('items', document.querySelector('.management-tab[onclick*="\\'items\\'"]')); 
+                // Reset to the main tab when opening, and find the button to pass to the function
+                const itemsTabButton = document.querySelector('.management-tab[onclick*="\\'items\\'"]');
+                if (itemsTabButton) {
+                    switchManagementTab('items', itemsTabButton); 
+                }
             }
         }
 
@@ -806,11 +812,11 @@
             currentManagementTab = tabName;
             document.querySelectorAll('.management-tab').forEach(btn => {
                 btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
-                btn.classList.add('text-gray-600', 'hover:bg-gray-300');
+                btn.classList.add('text-gray-600', 'hover:bg-gray-200');
             });
             if (clickedButton) {
                 clickedButton.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-                clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-300');
+                clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
             }
 
             const itemsView = document.getElementById('itemsManagement');

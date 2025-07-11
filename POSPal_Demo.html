@@ -246,23 +246,26 @@
         </div>
     </div>
 
-    <!-- Main Management Modal -->
-    <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-70 z-[70] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col text-gray-800">
-            <div class="p-4 border-b border-gray-300 flex justify-between items-center">
+    <!-- Main Management Modal (IMPROVED) -->
+    <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] hidden flex flex-col justify-end sm:justify-center sm:items-center">
+        <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-5xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
+            <!-- Header -->
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
                 <h2 class="text-xl font-semibold">Management</h2>
                 <button onclick="toggleManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
             </div>
 
-            <div class="p-4 border-b border-gray-300 management-tab-container">
-                <div class="flex flex-wrap gap-2 rounded-md bg-gray-200 p-1">
-                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Manage Items</button>
-                    <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Manage Categories</button>
-                    <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300">Order History</button>
-                    <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:bg-gray-300 bg-blue-100">Day Summary</button>
+            <!-- Tabs -->
+            <div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
+                <div class="flex flex-wrap gap-1 rounded-md bg-gray-100 p-1">
+                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Items</button>
+                    <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
+                    <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
+                    <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
                 </div>
             </div>
 
+            <!-- Content -->
             <div class="flex-grow overflow-y-auto p-4 management-content">
                 <!-- Items Management View -->
                 <div id="itemsManagement">
@@ -272,7 +275,7 @@
                         </button>
                     </div>
                     <h4 class="text-md font-medium text-gray-800 mb-2">Existing Items</h4>
-                    <div id="existingItemsListModal" class="space-y-3 max-h-[calc(90vh-300px)] overflow-y-auto pr-2 border border-gray-200 rounded-md p-2 bg-gray-50">
+                    <div id="existingItemsListModal" class="space-y-3 pr-2 border border-gray-200 rounded-md p-2 bg-gray-50">
                        <p class="text-xs text-gray-500 italic">No items found.</p>
                     </div>
                 </div>
@@ -307,7 +310,7 @@
 
             </div>
             <!-- Version Display Area -->
-            <div id="appVersionContainer" class="p-3 border-t border-gray-200 text-center text-xs text-gray-400">
+            <div id="appVersionContainer" class="p-3 border-t border-gray-200 text-center text-xs text-gray-400 flex-shrink-0">
                 POSPal Version: <span id="appVersion">...</span>
             </div>
         </div>
@@ -1107,12 +1110,18 @@
             if (isActive) {
                 elements.managementModal.classList.add('hidden');
                 elements.managementModal.classList.remove('flex');
+                document.body.style.overflow = ''; // Allow scrolling on the body again
             } else {
                 elements.managementModal.classList.remove('hidden');
                 elements.managementModal.classList.add('flex');
+                document.body.style.overflow = 'hidden'; // Prevent body scrolling
                 loadManagementData();
                 loadAppVersion();
-                switchManagementTab('items', document.querySelector('.management-tab[onclick*="\'items\'"]')); 
+                // Reset to the main tab when opening, and find the button to pass to the function
+                const itemsTabButton = document.querySelector('.management-tab[onclick*="\'items\'"]');
+                if (itemsTabButton) {
+                    switchManagementTab('items', itemsTabButton); 
+                }
             }
         }
 
@@ -1120,11 +1129,11 @@
             currentManagementTab = tabName;
             document.querySelectorAll('.management-tab').forEach(btn => {
                 btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
-                btn.classList.add('text-gray-600', 'hover:bg-gray-300');
+                btn.classList.add('text-gray-600', 'hover:bg-gray-200');
             });
             if (clickedButton) {
                 clickedButton.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-                clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-300');
+                clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
             }
 
             const itemsView = document.getElementById('itemsManagement');
