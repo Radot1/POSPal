@@ -137,23 +137,11 @@
             border-color: #111827 !important; 
             background-color: #f3f4f6; 
         }
-        
-        /* Styles for the new seat selection */
-        .seat-btn {
-            transition: all 0.2s ease-in-out;
-            aspect-ratio: 1 / 1;
-        }
-        .seat-btn.selected {
-            background-color: #111827;
-            color: white;
-            transform: scale(1.05);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
     </style>
 </head>
 <body class="bg-white text-gray-800">
     <div id="demo-mode-banner" class="hidden bg-yellow-400 text-yellow-900 text-center text-sm font-semibold p-2 sticky top-0 z-[100]">
-        DEMO MODE: Saving and printing are disabled.
+        DEMO MODE: Saving and printing are disabled. Data is stored locally.
     </div>
 
     <div id="main-content" class="pb-28"> 
@@ -165,15 +153,18 @@
                     <h1 class="text-2xl font-bold tracking-wider">POS<span class="text-green-400">Pal</span></h1>
                 </div>
 
-                <!-- Right Side: Clock, Order Info, Seat Selection -->
+                <!-- Right Side: Clock, Order Info, Table Selection -->
                 <div class="flex items-center space-x-4">
                     <div id="realtime-clock" class="hidden sm:block text-sm text-gray-300 font-mono"></div>
                     <div class="text-right">
                         <div class="text-xs text-gray-400">Order #<span id="header-order-number" class="font-semibold">...</span></div>
-                        <button onclick="openSeatSelectionModal()" id="header-seat-selection-btn" class="mt-1 text-sm font-semibold bg-gray-700 hover:bg-gray-600 transition-colors px-3 py-1 rounded-md">
-                            <i class="fas fa-chair mr-1.5"></i>
-                            <span id="header-table-number-display">Select Seat</span>
-                        </button>
+                        <!-- EFFICIENT TABLE INPUT -->
+                        <div id="header-table-container" class="mt-1 flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 transition-colors px-3 py-1 rounded-md">
+                            <label for="header-table-input" class="cursor-pointer">
+                                <i class="fas fa-chair text-white"></i>
+                            </label>
+                            <input type="text" id="header-table-input" class="bg-transparent text-white font-semibold w-24 focus:outline-none placeholder-gray-400" placeholder="Table #">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -260,40 +251,6 @@
     <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40"> <button onclick="toggleManagementModal()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
             <i class="fas fa-cog text-xl"></i>
         </button>
-    </div>
-
-    <!-- NEW: Seat Selection Modal -->
-    <div id="seatSelectionModal" class="fixed inset-0 bg-black bg-opacity-70 z-[60] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl p-5 w-full max-w-lg max-h-[80vh] flex flex-col text-gray-800">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Select a Seat or Service</h3>
-                <button onclick="closeSeatSelectionModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
-            </div>
-            <div class="flex-grow overflow-y-auto space-y-4 pr-2">
-                <div>
-                    <h4 class="font-semibold text-gray-700 mb-2">Tables</h4>
-                    <div id="seat-grid-container" class="grid grid-cols-4 sm:grid-cols-5 gap-3">
-                        <!-- Seat buttons will be generated here by JS -->
-                    </div>
-                </div>
-                <div>
-                    <h4 class="font-semibold text-gray-700 mb-2">Other</h4>
-                    <div class="grid grid-cols-2 gap-3">
-                         <button onclick="selectSeat('Takeaway')" class="seat-btn flex flex-col items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-lg p-2 font-semibold">
-                            <i class="fas fa-shopping-bag text-2xl mb-1"></i>
-                            Takeaway
-                        </button>
-                        <button onclick="selectSeat('Delivery')" class="seat-btn flex flex-col items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-lg p-2 font-semibold">
-                            <i class="fas fa-motorcycle text-2xl mb-1"></i>
-                            Delivery
-                        </button>
-                    </div>
-                </div>
-            </div>
-             <div class="mt-4 pt-4 border-t border-gray-200">
-                <button onclick="closeSeatSelectionModal()" class="w-full py-2 px-4 btn-primary">Done</button>
-            </div>
-        </div>
     </div>
 
     <div id="itemOptionSelectModal" class="fixed inset-0 bg-black bg-opacity-70 z-[60] hidden items-center justify-center p-4">
@@ -470,33 +427,37 @@
 
     <script>
         // --- Demo-specific additions ---
-        let demoMode = false;
-        const mockMenu = {
-            "Starters": [
-                {"id": 1, "name": "Garlic Bread", "price": 4.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Add Cheese", "priceChange": 1.00}]},
-                {"id": 2, "name": "Bruschetta", "price": 6.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 3, "name": "Soup of the Day", "price": 5.00, "hasGeneralOptions": false, "generalOptions": []}
+        const DEMO_MODE = true;
+        const MOCK_MENU_DATA = {
+            "Steaks": [
+                {"id": 1, "name": "Ribeye Steak (300g)", "price": 28.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Peppercorn Sauce", "priceChange": 2.00}, {"name": "Mushroom Sauce", "priceChange": 2.00}]},
+                {"id": 2, "name": "Filet Mignon (250g)", "price": 34.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Red Wine Jus", "priceChange": 2.50}]},
+                {"id": 3, "name": "T-Bone Steak (500g)", "price": 45.00, "hasGeneralOptions": false, "generalOptions": []}
             ],
-            "Main Courses": [
-                {"id": 20, "name": "Spaghetti Carbonara", "price": 12.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Bacon", "priceChange": 2.00}, {"name": "Gluten-Free Pasta", "priceChange": 1.50}]},
-                {"id": 21, "name": "Margherita Pizza", "price": 10.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Topping", "priceChange": 1.50}, {"name": "Stuffed Crust", "priceChange": 2.50}]},
-                {"id": 22, "name": "Grilled Salmon", "price": 16.00, "hasGeneralOptions": false, "generalOptions": []}
+            "Burgers": [
+                {"id": 10, "name": "Classic Cheeseburger", "price": 14.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Bacon", "priceChange": 2.00}, {"name": "Double Patty", "priceChange": 4.00}]},
+                {"id": 11, "name": "Spicy Chicken Burger", "price": 13.00, "hasGeneralOptions": false, "generalOptions": []}
             ],
-            "Soft Drinks": [
-                {"id": 50, "name": "Coca-Cola", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []},
-                {"id": 51, "name": "Sprite", "price": 2.50, "hasGeneralOptions": false, "generalOptions": []}
+            "Sides": [
+                {"id": 20, "name": "French Fries", "price": 4.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 21, "name": "Onion Rings", "price": 5.50, "hasGeneralOptions": false, "generalOptions": []}
+            ],
+            "Drinks": [
+                {"id": 30, "name": "Coca-Cola", "price": 3.00, "hasGeneralOptions": false, "generalOptions": []},
+                {"id": 31, "name": "Craft Beer", "price": 6.50, "hasGeneralOptions": false, "generalOptions": []}
             ]
         };
+        const LOCAL_STORAGE_PREFIX = 'pospalDemoSteakhouse';
 
-        // --- Global State & Configuration ---
+        // --- Global State & Configuration (Modified for Demo) ---
         let menu = {}; 
         let selectedCategory = null; 
         let editingItem = null; 
-        let currentOrder = JSON.parse(localStorage.getItem('pospalDemoCurrentOrder')) || [];
-        let currentOrderLineItemCounter = parseInt(localStorage.getItem('pospalDemoOrderLineItemCounter')) || 0; 
-        let orderNumber = 1; 
-        let universalOrderComment = localStorage.getItem('pospalDemoUniversalOrderComment') || "";
-        let selectedTableNumber = localStorage.getItem('pospalDemoSelectedTable') || "";
+        let currentOrder = JSON.parse(localStorage.getItem(LOCAL_STORAGE_PREFIX + 'CurrentOrder')) || [];
+        let currentOrderLineItemCounter = parseInt(localStorage.getItem(LOCAL_STORAGE_PREFIX + 'OrderLineItemCounter')) || 0; 
+        let orderNumber = parseInt(localStorage.getItem(LOCAL_STORAGE_PREFIX + 'OrderNumber')) || 1; 
+        let universalOrderComment = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'UniversalOrderComment') || "";
+        let selectedTableNumber = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'SelectedTable') || "";
         let isPaidByCard = false;
 
         let isMobileOrderPanelOpen = false;
@@ -506,17 +467,16 @@
         let itemBeingConfigured = null; 
         let currentOptionSelectionStep = null; 
 
-        const SELECTED_TABLE_KEY = 'pospalDemoSelectedTable';
-        const NUMBER_OF_TABLES = 20;
+        const SELECTED_TABLE_KEY = LOCAL_STORAGE_PREFIX + 'SelectedTable';
 
         const elements = {}; 
 
         function cacheDOMElements() {
+            // Cache all original elements
             elements.headerOrderNumber = document.getElementById('header-order-number');
-            elements.headerTableNumberDisplay = document.getElementById('header-table-number-display');
+            elements.headerTableInput = document.getElementById('header-table-input');
+            elements.headerTableContainer = document.getElementById('header-table-container');
             elements.realtimeClock = document.getElementById('realtime-clock');
-            elements.seatSelectionModal = document.getElementById('seatSelectionModal');
-            elements.seatGridContainer = document.getElementById('seat-grid-container');
             elements.categoriesContainer = document.getElementById('categories');
             elements.productsContainer = document.getElementById('products');
             elements.orderItemsContainer = document.getElementById('order-items-container');
@@ -579,24 +539,32 @@
                 }
             }
         }
-        
+
         document.addEventListener('DOMContentLoaded', () => {
             cacheDOMElements();
-            initializeAppState();
+            initializeAppState(); // This is our new demo initializer
             startClock();
-            generateSeatButtons();
 
             if(elements.universalOrderCommentInput) {
-                elements.universalOrderCommentInput.value = universalOrderComment;
                 elements.universalOrderCommentInput.addEventListener('input', (e) => {
                     universalOrderComment = e.target.value;
-                    localStorage.setItem('pospalDemoUniversalOrderComment', universalOrderComment);
+                    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'UniversalOrderComment', universalOrderComment);
                 });
             }
             
             if(elements.paidByCardCheckbox) {
                 elements.paidByCardCheckbox.addEventListener('change', (e) => {
                     isPaidByCard = e.target.checked;
+                });
+            }
+            
+            if(elements.headerTableInput) {
+                elements.headerTableInput.addEventListener('change', handleTableNumberChange);
+                elements.headerTableInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        handleTableNumberChange(e);
+                        e.target.blur();
+                    }
                 });
             }
 
@@ -613,26 +581,33 @@
         }
 
         // --- MOCKED/DEMO FUNCTIONS ---
+
         function initializeAppState() {
-            console.log("Forcing DEMO MODE.");
-            demoMode = true;
             showDemoModeBanner();
-            menu = JSON.parse(localStorage.getItem('pospal_demo_menu')) || JSON.parse(JSON.stringify(mockMenu));
-            orderNumber = 1;
-            if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
+            fetchAndUpdateOrderNumber(); // To display the initial order number
             
-            loadMenu();
+            // Load menu from local storage, or use mock data if not present
+            const savedMenu = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'Menu');
+            menu = savedMenu ? JSON.parse(savedMenu) : JSON.parse(JSON.stringify(MOCK_MENU_DATA));
+            
+            loadMenu(); // This will now use the local 'menu' object
             
             selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
-            updateSeatDisplay();
+            if(elements.headerTableInput) {
+                elements.headerTableInput.value = selectedTableNumber;
+            }
+            if(elements.universalOrderCommentInput) {
+                elements.universalOrderCommentInput.value = localStorage.getItem(LOCAL_STORAGE_PREFIX + 'UniversalOrderComment') || "";
+            }
         }
 
         async function fetchAndUpdateOrderNumber() {
-            orderNumber++;
+            // Mocked: just display the current number
             if(elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
         }
-
+        
         async function loadMenu() {
+            // Mocked: This function now just renders the in-memory menu
             if (Object.keys(menu).length > 0 && (!selectedCategory || !menu[selectedCategory])) {
                 selectedCategory = Object.keys(menu)[0];
             } else if (Object.keys(menu).length === 0) {
@@ -643,22 +618,47 @@
         }
 
         async function saveMenuToServer() {
-            localStorage.setItem('pospal_demo_menu', JSON.stringify(menu));
-            showToast("Saving is disabled in Demo Mode. Changes are saved locally.", "info");
+            // Mocked: Save to local storage instead of server
+            localStorage.setItem(LOCAL_STORAGE_PREFIX + 'Menu', JSON.stringify(menu));
+            showToast("Menu saved to local storage (Demo Mode).", "info");
             return true;
         }
 
         async function sendOrder() {
+            if (!elements.sendOrderBtn) return;
+
             if (!currentOrder.length) {
                 showToast('Order is empty!', 'warning');
                 return;
             }
             if (!selectedTableNumber || selectedTableNumber.trim() === "") {
-                showToast('Please select a seat.', 'warning');
+                showToast('Please select a table.', 'warning');
+                if (elements.headerTableContainer) {
+                    elements.headerTableContainer.classList.add('ring-2', 'ring-red-500');
+                    setTimeout(() => {
+                         elements.headerTableContainer.classList.remove('ring-2', 'ring-red-500');
+                    }, 2000);
+                }
                 return;
             }
-            showToast(`Order #${orderNumber} Sent! (Demo Mode)`, "success");
-            clearOrderData();
+
+            elements.sendOrderBtn.disabled = true;
+            elements.sendOrderBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Sending...';
+
+            setTimeout(() => {
+                showToast(`Order #${orderNumber} Sent! (Demo Mode)`, "success");
+                
+                // Increment and save the next order number for the demo
+                orderNumber++;
+                localStorage.setItem(LOCAL_STORAGE_PREFIX + 'OrderNumber', orderNumber.toString());
+
+                clearOrderData(); // This also calls fetchAndUpdateOrderNumber to update the UI
+                
+                if(elements.sendOrderBtn) {
+                    elements.sendOrderBtn.disabled = false;
+                    elements.sendOrderBtn.innerHTML = '<i class="fas fa-paper-plane mr-1"></i> Send Order';
+                }
+            }, 1000);
         }
 
         async function loadTodaysOrdersForReprint() {
@@ -675,21 +675,25 @@
             elements.daySummaryModal.classList.remove('hidden');
             elements.daySummaryModal.classList.add('flex');
             
+            // Provide a mock summary
             renderDaySummary({
                 status: 'success',
-                total_orders: 15,
-                cash_total: 157.50,
-                card_total: 242.00,
-                grand_total: 399.50
+                total_orders: 42,
+                cash_total: 857.50,
+                card_total: 1242.00,
+                grand_total: 2099.50
             });
         }
 
         async function loadAppVersion() {
             if(elements.appVersion) elements.appVersion.textContent = 'Demo Version';
         }
+
         // --- END MOCKED/DEMO FUNCTIONS ---
 
-        // --- UI & State Functions (from original file) ---
+        // --- ALL OTHER FUNCTIONS from POSPal.html are copied below without modification ---
+        // This ensures the UI logic remains identical to the live version.
+        
         function renderCategories() {
             if (!elements.categoriesContainer) return;
             elements.categoriesContainer.innerHTML = '';
@@ -749,8 +753,17 @@
                 let badgeIconsHTML = '';
                 const hasGenOptions = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
 
+                let actualBadgeElements = [];
                 if (hasGenOptions) {
-                    badgeIconsHTML = `<div class="absolute bottom-2 right-2 flex flex-col space-y-1"><span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span></div>`;
+                    actualBadgeElements.push(`<span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span>`);
+                }
+
+                if (actualBadgeElements.length > 0) {
+                    badgeIconsHTML = `
+                        <div class="absolute bottom-2 right-2 flex flex-col space-y-1">
+                            ${actualBadgeElements.join('')}
+                        </div>
+                    `;
                 }
 
                 card.innerHTML = `
@@ -799,16 +812,22 @@
 
         function finalizeAndAddOrderItem(baseItem, generalChoicesWithOptions) { 
             currentOrderLineItemCounter++;
-            localStorage.setItem('pospalDemoOrderLineItemCounter', currentOrderLineItemCounter.toString());
+            localStorage.setItem(LOCAL_STORAGE_PREFIX + 'OrderLineItemCounter', currentOrderLineItemCounter.toString());
 
-            let uniqueSuffixParts = (generalChoicesWithOptions || []).map(opt => opt.name.replace(/\s+/g, '_'));
+            let uniqueSuffixParts = [];
+            if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
+                 uniqueSuffixParts.push(...generalChoicesWithOptions.map(opt => opt.name.replace(/\s+/g, '_')));
+            }
+            
             const uniqueLineIdSuffix = uniqueSuffixParts.length > 0 ? uniqueSuffixParts.join('-') : 'noopts';
             const uniqueLineId = `${baseItem.id}-${uniqueLineIdSuffix}-line-${currentOrderLineItemCounter}`;
 
             let itemPriceWithModifiers = parseFloat(baseItem.price || 0);
-            (generalChoicesWithOptions || []).forEach(opt => {
-                itemPriceWithModifiers += parseFloat(opt.priceChange || 0);
-            });
+            if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
+                generalChoicesWithOptions.forEach(opt => {
+                    itemPriceWithModifiers += parseFloat(opt.priceChange || 0);
+                });
+            }
 
             const orderItem = {
                 ...baseItem, 
@@ -826,6 +845,7 @@
             itemBeingConfigured = null;
             currentOptionSelectionStep = null;
         }
+
 
         function updateOrderDisplay() {
             if (!elements.orderItemsContainer || !elements.emptyOrderMessage) return;
@@ -876,7 +896,7 @@
             }
 
             if(elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = `€${total.toFixed(2)}`;
-            localStorage.setItem('pospalDemoCurrentOrder', JSON.stringify(currentOrder));
+            localStorage.setItem(LOCAL_STORAGE_PREFIX + 'CurrentOrder', JSON.stringify(currentOrder));
             updateMobileOrderBadge();
         }
 
@@ -920,9 +940,9 @@
             currentOrder = [];
             universalOrderComment = "";
             if(elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
-            localStorage.removeItem('pospalDemoUniversalOrderComment');
+            localStorage.removeItem(LOCAL_STORAGE_PREFIX + 'UniversalOrderComment');
             currentOrderLineItemCounter = 0;
-            localStorage.setItem('pospalDemoOrderLineItemCounter', '0');
+            localStorage.setItem(LOCAL_STORAGE_PREFIX + 'OrderLineItemCounter', '0');
             isPaidByCard = false;
             if(elements.paidByCardCheckbox) elements.paidByCardCheckbox.checked = false;
 
@@ -935,10 +955,11 @@
             if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) {
                 return;
             }
+            
             clearOrderData();
             showToast('Order cleared. Ready for the next order.', 'info');
         }
-    
+
         function toggleMobileOrderPanel() {
             isMobileOrderPanelOpen = !isMobileOrderPanelOpen;
             if (isMobileOrderPanelOpen) {
@@ -1010,57 +1031,15 @@
             hideNumpad();
         }
 
-        function openSeatSelectionModal() {
-            if (!elements.seatSelectionModal) return;
-            elements.seatSelectionModal.classList.remove('hidden');
-            elements.seatSelectionModal.classList.add('flex');
-            updateSeatSelectionUI();
-        }
-
-        function closeSeatSelectionModal() {
-            if (!elements.seatSelectionModal) return;
-            elements.seatSelectionModal.classList.add('hidden');
-            elements.seatSelectionModal.classList.remove('flex');
-        }
-
-        function generateSeatButtons() {
-            if (!elements.seatGridContainer) return;
-            elements.seatGridContainer.innerHTML = '';
-            for (let i = 1; i <= NUMBER_OF_TABLES; i++) {
-                const button = document.createElement('button');
-                button.className = 'seat-btn flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-lg p-2 font-semibold text-lg';
-                button.textContent = i;
-                button.dataset.seatNumber = i;
-                button.onclick = () => selectSeat(i.toString());
-                elements.seatGridContainer.appendChild(button);
+        function handleTableNumberChange(event) {
+            const newTableNumber = event.target.value.trim();
+            if (selectedTableNumber !== newTableNumber) {
+                selectedTableNumber = newTableNumber;
+                localStorage.setItem(SELECTED_TABLE_KEY, selectedTableNumber);
             }
         }
 
-        function selectSeat(seatNumber) {
-            selectedTableNumber = seatNumber;
-            localStorage.setItem(SELECTED_TABLE_KEY, selectedTableNumber);
-            updateSeatDisplay();
-            updateSeatSelectionUI();
-        }
-
-        function updateSeatDisplay() {
-            if (!elements.headerTableNumberDisplay) return;
-            if (selectedTableNumber) {
-                elements.headerTableNumberDisplay.textContent = `Seat: ${selectedTableNumber}`;
-            } else {
-                elements.headerTableNumberDisplay.textContent = 'Select Seat';
-            }
-        }
-
-        function updateSeatSelectionUI() {
-            document.querySelectorAll('.seat-btn').forEach(btn => {
-                if (btn.dataset.seatNumber === selectedTableNumber || btn.textContent === selectedTableNumber) {
-                    btn.classList.add('selected');
-                } else {
-                    btn.classList.remove('selected');
-                }
-            });
-        }
+        let currentItemOptionContext = null; 
 
         function openItemOptionSelectModal(itemForModal, context) { 
             document.querySelectorAll('#optionModalOptionsContainer input').forEach(input => {
@@ -1084,6 +1063,7 @@
                 description = `Select option(s) for ${itemForModal.name}. (Multiple selections allowed)`;
                 inputType = 'checkbox';
             } else {
+                console.warn("Modal opened with unexpected context or item structure:", itemForModal, context);
                 elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No suitable options for this step.</p>`;
                 elements.itemOptionSelectModal.classList.remove('hidden');
                 elements.itemOptionSelectModal.classList.add('flex');
@@ -1096,44 +1076,77 @@
                 optionsToShow.forEach((optionData, index) => { 
                     const optionName = (typeof optionData === 'object' && optionData.name) ? optionData.name : optionData;
                     const priceChange = (typeof optionData === 'object' && typeof optionData.priceChange === 'number') ? optionData.priceChange : 0;
+
                     const optionId = `modal_item_opt_${itemForModal.id}_${context}_${optionName.replace(/\s+/g, '_')}_${index}`;
                     const div = document.createElement('div');
                     div.className = "option-selectable p-3 border border-gray-300 rounded-md hover:bg-gray-100 cursor-pointer group focus-within:ring-2";
+
                     const inputElement = document.createElement('input');
                     inputElement.type = inputType;
                     inputElement.name = `item_option_for_${itemForModal.id}_${context}`; 
-                    if (inputType === 'checkbox') inputElement.name = optionId; 
+                    if (inputType === 'checkbox') {
+                        inputElement.name = optionId; 
+                    }
                     inputElement.id = optionId;
                     inputElement.value = optionName; 
                     inputElement.dataset.priceChange = priceChange; 
                     inputElement.className = `form-${inputType} h-4 w-4 text-black border-gray-300 focus:ring-black accent-black`;
+
                     let labelText = optionName;
                     if (inputType === 'checkbox' && priceChange !== 0) {
                         labelText += ` (${priceChange > 0 ? '+' : ''}€${priceChange.toFixed(2)})`;
                     }
+
                     const label = document.createElement('label');
                     label.htmlFor = optionId;
                     label.textContent = labelText;
                     label.className = "ml-2 text-sm text-gray-700 cursor-pointer flex-grow";
+                    
                     const innerFlex = document.createElement('div');
                     innerFlex.className = "flex items-center w-full";
                     innerFlex.appendChild(inputElement);
                     innerFlex.appendChild(label);
                     div.appendChild(innerFlex);
+                    
                     div.onclick = function(event) {
-                        if (event.target !== inputElement) inputElement.click(); 
+                        if (event.target === inputElement || event.target === label || label.contains(event.target)) {
+                           return; 
+                        }
+                        inputElement.click(); 
                     };
+
                     inputElement.addEventListener('change', function() {
                         const parentDiv = this.closest('.option-selectable');
                         if (!parentDiv) return;
+
                         if (this.type === 'radio') {
-                            document.querySelectorAll('input[name="' + this.name + '"]').forEach(otherRadio => {
-                                otherRadio.closest('.option-selectable').classList.remove('selected', 'border-black', 'bg-gray-100');
-                            });
+                            if (this.checked) {
+                                elements.optionModalOptionsContainer.querySelectorAll('input[type="radio"][name="' + this.name + '"]').forEach(otherRadio => {
+                                    const otherParentDiv = otherRadio.closest('.option-selectable');
+                                    if (otherParentDiv && otherRadio !== this) {
+                                        otherParentDiv.classList.remove('selected', 'border-black', 'bg-gray-100');
+                                    }
+                                });
+                                parentDiv.classList.add('selected', 'border-black', 'bg-gray-100');
+                            }
+                        } else { 
+                            if (this.checked) {
+                                parentDiv.classList.add('selected', 'border-black', 'bg-gray-100');
+                            } else {
+                                parentDiv.classList.remove('selected', 'border-black', 'bg-gray-100');
+                            }
                         }
-                        if (this.checked) parentDiv.classList.add('selected', 'border-black', 'bg-gray-100');
-                        else parentDiv.classList.remove('selected', 'border-black', 'bg-gray-100');
                     });
+                    
+                    if (inputType === 'radio' && index === 0) { 
+                        inputElement.checked = true;
+                         setTimeout(() => { 
+                            const parentDiv = inputElement.closest('.option-selectable');
+                            if(parentDiv && inputElement.checked) { 
+                                parentDiv.classList.add('selected', 'border-black', 'bg-gray-100');
+                            }
+                        }, 0);
+                    }
                     elements.optionModalOptionsContainer.appendChild(div);
                 });
             } else {
@@ -1153,13 +1166,20 @@
         }
 
         function confirmOptionSelection() {
-            if (!itemBeingConfigured || !elements.optionModalOptionsContainer || !currentItemOptionContext) return;
+            if (!itemBeingConfigured || !elements.optionModalOptionsContainer || !currentItemOptionContext) {
+                 console.error("State missing for confirmOptionSelection", itemBeingConfigured, currentItemOptionContext);
+                 return;
+            }
+
             if (currentItemOptionContext === 'general_item_option') {
                 const checkedBoxes = elements.optionModalOptionsContainer.querySelectorAll('input[type="checkbox"]:checked');
-                const generalSelectionsWithOptions = Array.from(checkedBoxes).map(cb => ({
-                    name: cb.value,
-                    priceChange: parseFloat(cb.dataset.priceChange || 0)
-                }));
+                const generalSelectionsWithOptions = Array.from(checkedBoxes).map(cb => {
+                    return {
+                        name: cb.value,
+                        priceChange: parseFloat(cb.dataset.priceChange || 0)
+                    };
+                });
+                
                 finalizeAndAddOrderItem(itemBeingConfigured, generalSelectionsWithOptions);
                 resetMultiStepSelection();
                 cancelOptionSelection(); 
@@ -1183,9 +1203,12 @@
                 loadManagementData();
                 loadAppVersion();
                 const itemsTabButton = document.querySelector('.management-tab[onclick*="\'items\'"]');
-                if (itemsTabButton) switchManagementTab('items', itemsTabButton); 
+                if (itemsTabButton) {
+                    switchManagementTab('items', itemsTabButton); 
+                }
             }
         }
+
 
         function switchManagementTab(tabName, clickedButton) {
             currentManagementTab = tabName;
@@ -1197,23 +1220,40 @@
                 clickedButton.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
                 clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
             }
-            ['itemsManagement', 'categoriesManagement', 'orderHistoryManagement'].forEach(id => {
-                const view = document.getElementById(id);
-                if(view) view.style.display = 'none';
-            });
-            const viewToShow = document.getElementById(tabName + 'Management');
-            if(viewToShow) viewToShow.style.display = 'block';
-            if (tabName === 'orderHistory') loadTodaysOrdersForReprint();
+
+            const itemsView = document.getElementById('itemsManagement');
+            const categoriesView = document.getElementById('categoriesManagement');
+            const orderHistoryView = document.getElementById('orderHistoryManagement');
+
+            if (!itemsView || !categoriesView || !orderHistoryView) return;
+
+            itemsView.style.display = 'none';
+            categoriesView.style.display = 'none';
+            orderHistoryView.style.display = 'none';
+
+            if (tabName === 'items') {
+                itemsView.style.display = 'block';
+            } else if (tabName === 'categories') {
+                categoriesView.style.display = 'block';
+                if (elements.categoryNameInput) elements.categoryNameInput.value = '';
+            } else if (tabName === 'orderHistory') {
+                orderHistoryView.style.display = 'block';
+                loadTodaysOrdersForReprint();
+            }
         }
 
         function populateManagementCategorySelect() {
             if (!elements.itemCategorySelect) return;
             const currentCategoryValue = elements.itemCategorySelect.value;
-            elements.itemCategorySelect.innerHTML = Object.keys(menu).map(c => `<option value="${c}">${c}</option>`).join('');
+            elements.itemCategorySelect.innerHTML = Object.keys(menu)
+                .map(c => `<option value="${c}">${c}</option>`)
+                .join('');
             if (Object.keys(menu).length === 0) {
                 elements.itemCategorySelect.innerHTML = '<option value="">Create a category first</option>';
             } else if (currentCategoryValue && menu[currentCategoryValue]) {
                 elements.itemCategorySelect.value = currentCategoryValue;
+            } else if (elements.itemCategorySelect.options.length > 0) {
+                 elements.itemCategorySelect.selectedIndex = 0;
             }
         }
 
@@ -1227,33 +1267,51 @@
             if (!elements.existingItemsListModal) return;
             elements.existingItemsListModal.innerHTML = '';
             let itemCount = 0;
+
             Object.entries(menu).forEach(([category, items]) => {
                 if (!items || items.length === 0) return;
+
                 const categoryHeader = document.createElement('h5');
                 categoryHeader.className = "font-bold text-gray-700 mt-3 mb-1 pb-1 border-b border-gray-300";
                 categoryHeader.textContent = category;
                 elements.existingItemsListModal.appendChild(categoryHeader);
+
                 (items || []).forEach((item, index) => {
                     itemCount++;
                     const div = document.createElement('div');
                     div.className = `p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50`;
-                    let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span><span class="text-xs text-gray-500 ml-1">- €${(item.price || 0).toFixed(2)}</span>`;
-                    if (item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0) { 
+
+                    let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
+                                       <span class="text-xs text-gray-500 ml-1">- €${(item.price || 0).toFixed(2)}</span>`;
+
+                    const hasGeneralOpts = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
+                    if (hasGeneralOpts) { 
                         itemDetails += `<span class="text-xs text-blue-600 ml-2">(+ Options)</span>`;
                     }
+
                     const isFirst = index === 0;
                     const isLast = index === items.length - 1;
                     const reorderButtons = `
                         <div class="flex items-center">
-                            <button onclick="moveItemPosition(${item.id}, 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
-                            <button onclick="moveItemPosition(${item.id}, 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
-                        </div>`;
+                            <button onclick="moveItemPosition(${item.id}, 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up">
+                                <i class="fas fa-arrow-up"></i>
+                            </button>
+                            <button onclick="moveItemPosition(${item.id}, 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down">
+                                <i class="fas fa-arrow-down"></i>
+                            </button>
+                        </div>
+                    `;
+
                     div.innerHTML = `
-                        <div class="flex items-center">${reorderButtons}<div class="ml-2">${itemDetails}</div></div>
+                        <div class="flex items-center">
+                            ${reorderButtons}
+                            <div class="ml-2">${itemDetails}</div>
+                        </div>
                         <div class="space-x-1 flex-shrink-0">
                             <button onclick="openItemFormModal(${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
                             <button onclick="deleteItem(${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
-                        </div>`;
+                        </div>
+                    `;
                     elements.existingItemsListModal.appendChild(div);
                 });
             });
@@ -1263,25 +1321,45 @@
         }
 
         async function moveItemPosition(itemIdToMove, direction) {
-            let categoryKey = null, itemIndex = -1;
+            let categoryKey = null;
+            let itemIndex = -1;
+
             for (const cat in menu) {
                 const index = (menu[cat] || []).findIndex(i => i.id === itemIdToMove);
-                if (index !== -1) { categoryKey = cat; itemIndex = index; break; }
+                if (index !== -1) {
+                    categoryKey = cat;
+                    itemIndex = index;
+                    break;
+                }
             }
-            if (!categoryKey) return;
+
+            if (categoryKey === null || itemIndex === -1) {
+                showToast("Could not find item to move.", "error");
+                return;
+            }
+
             const itemsArray = menu[categoryKey];
             const itemToMove = itemsArray[itemIndex];
-            if ((direction === 'up' && itemIndex > 0) || (direction === 'down' && itemIndex < itemsArray.length - 1)) {
+
+            if (direction === 'up' && itemIndex > 0) {
                 itemsArray.splice(itemIndex, 1);
-                itemsArray.splice(itemIndex + (direction === 'down' ? 1 : -1), 0, itemToMove);
-                if (await saveMenuToServer()) {
-                    showToast('Item order updated.', 'success');
-                    await loadMenu();
-                    loadManagementData();
-                } else {
-                    showToast('Failed to save new item order. Reverting.', 'error');
-                    await loadMenu();
-                }
+                itemsArray.splice(itemIndex - 1, 0, itemToMove);
+            } else if (direction === 'down' && itemIndex < itemsArray.length - 1) {
+                itemsArray.splice(itemIndex, 1);
+                itemsArray.splice(itemIndex + 1, 0, itemToMove);
+            } else {
+                return;
+            }
+
+            const success = await saveMenuToServer();
+            if (success) {
+                showToast('Item order updated.', 'success');
+                await loadMenu();
+                loadManagementData();
+            } else {
+                showToast('Failed to save new item order. Reverting.', 'error');
+                await loadMenu();
+                loadManagementData();
             }
         }
 
@@ -1289,21 +1367,36 @@
             if (!elements.existingCategoriesListModal) return;
             elements.existingCategoriesListModal.innerHTML = '';
             const categoryKeys = Object.keys(menu);
+
             if (categoryKeys.length === 0) {
                 elements.existingCategoriesListModal.innerHTML = '<p class="text-xs text-gray-500 italic">No categories created yet.</p>';
                 return;
             }
+
             categoryKeys.forEach((categoryName, index) => {
                 const isFirst = index === 0;
                 const isLast = index === categoryKeys.length - 1;
+
                 const reorderButtons = `
                     <div class="flex items-center">
-                        <button onclick="moveCategoryPosition('${categoryName}', 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
-                        <button onclick="moveCategoryPosition('${categoryName}', 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
-                    </div>`;
+                        <button onclick="moveCategoryPosition('${categoryName}', 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button onclick="moveCategoryPosition('${categoryName}', 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
+                    </div>
+                `;
+
                 const div = document.createElement('div');
                 div.className = "p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
-                div.innerHTML = `<div class="flex items-center">${reorderButtons}<span class="font-medium text-gray-800 ml-2">${categoryName}</span></div><button onclick="deleteCategory('${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>`;
+                div.innerHTML = `
+                    <div class="flex items-center">
+                        ${reorderButtons}
+                        <span class="font-medium text-gray-800 ml-2">${categoryName}</span>
+                    </div>
+                    <button onclick="deleteCategory('${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
+                `;
                 elements.existingCategoriesListModal.appendChild(div);
             });
         }
@@ -1311,36 +1404,60 @@
         async function moveCategoryPosition(categoryNameToMove, direction) {
             const keys = Object.keys(menu);
             const index = keys.indexOf(categoryNameToMove);
-            if (index === -1) return;
-            const newIndex = index + (direction === 'down' ? 1 : -1);
-            if (newIndex < 0 || newIndex >= keys.length) return;
+
+            if (index === -1) {
+                showToast("Could not find category to move.", "error");
+                return;
+            }
+
+            let newIndex;
+            if (direction === 'up') {
+                if (index === 0) return;
+                newIndex = index - 1;
+            } else {
+                if (index === keys.length - 1) return;
+                newIndex = index + 1;
+            }
+
             [keys[index], keys[newIndex]] = [keys[newIndex], keys[index]];
+
             const newMenu = {};
-            keys.forEach(key => { newMenu[key] = menu[key]; });
+            keys.forEach(key => {
+                newMenu[key] = menu[key];
+            });
             menu = newMenu;
-            if (await saveMenuToServer()) {
+
+            const success = await saveMenuToServer();
+            if (success) {
                 showToast('Category order updated.', 'success');
                 await loadMenu();
                 loadManagementData();
             } else {
                 showToast('Failed to save new category order. Reverting.', 'error');
                 await loadMenu();
+                loadManagementData();
             }
         }
 
+
         function generateItemId() {
-            const allItems = [].concat(...Object.values(menu).map(cat => cat || []));
+            const allItems = [].concat(...Object.values(menu).map(categoryItems => categoryItems || []));
             return allItems.length > 0 ? Math.max(0, ...allItems.map(i => i.id || 0)) + 1 : 1;
         }
 
         function resetItemForm() {
             editingItem = null;
-            ['itemName', 'itemPrice', 'itemId'].forEach(id => { if(elements[id]) elements[id].value = ''; });
+            if(elements.itemNameInput) elements.itemNameInput.value = '';
+            if(elements.itemPriceInput) elements.itemPriceInput.value = '';
+            if(elements.itemIdInput) elements.itemIdInput.value = ''; 
             if(elements.itemCategorySelect && elements.itemCategorySelect.options.length > 0) elements.itemCategorySelect.selectedIndex = 0;
+            
             if(elements.itemHasOptionsCheckboxModal) elements.itemHasOptionsCheckboxModal.checked = false;
             tempItemOptionsModal = []; 
+
             if (elements.newOptionNameInputModal) elements.newOptionNameInputModal.value = '';
             if (elements.newOptionPriceInputModal) elements.newOptionPriceInputModal.value = '';
+
             toggleItemOptionsUIInModal(); 
         }
 
@@ -1364,124 +1481,208 @@
         }
 
         function populateItemFormForEdit(itemIdToEdit) {
-            let foundItem, itemCategoryName;
+            let foundItem;
+            let itemCategoryName;
             Object.entries(menu).forEach(([category, items]) => {
                 const item = (items || []).find(i => i.id === itemIdToEdit);
                 if (item) { foundItem = item; itemCategoryName = category; }
             });
+
             if (foundItem) {
                 editingItem = { ...foundItem };
-                elements.itemNameInput.value = foundItem.name;
-                elements.itemPriceInput.value = foundItem.price;
-                elements.itemCategorySelect.value = itemCategoryName;
-                elements.itemIdInput.value = foundItem.id; 
-                tempItemOptionsModal = [...(foundItem.generalOptions || [])];
-                elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0);
+                if(elements.itemNameInput) elements.itemNameInput.value = foundItem.name;
+                if(elements.itemPriceInput) elements.itemPriceInput.value = foundItem.price;
+                if(elements.itemCategorySelect) elements.itemCategorySelect.value = itemCategoryName;
+                if(elements.itemIdInput) elements.itemIdInput.value = foundItem.id; 
+
+                if (foundItem.hasGeneralOptions && foundItem.generalOptions && Array.isArray(foundItem.generalOptions)) {
+                    tempItemOptionsModal = [...foundItem.generalOptions];
+                } else {
+                    tempItemOptionsModal = [];
+                }
+                if(elements.itemHasOptionsCheckboxModal) {
+                     elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0);
+                }
                 toggleItemOptionsUIInModal(); 
                 if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
             }
         }
 
         async function saveItem() {
+            if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect) return;
+
             const itemName = elements.itemNameInput.value.trim();
             const itemPrice = parseFloat(elements.itemPriceInput.value); 
             const itemCategory = elements.itemCategorySelect.value;
-            if (!itemName || isNaN(itemPrice) || itemPrice < 0 || !itemCategory) {
-                showToast('Name, valid Price, and Category are required.', 'warning'); return;
+            
+            let itemIdVal = editingItem ? editingItem.id : generateItemId();
+            
+            if (isNaN(itemIdVal)) {
+                showToast('Error: Invalid Item ID.', 'error'); return;
             }
+            if (!itemName || isNaN(itemPrice) || itemPrice < 0) {
+                showToast('Item Name and a valid Base Price are required.', 'warning'); return;
+            }
+            if (!itemCategory && Object.keys(menu).length > 0) {
+                showToast('Please select a category.', 'warning'); return;
+            }
+            if (Object.keys(menu).length === 0 && !itemCategory) {
+                showToast('Please create a category first.', 'warning'); return;
+            }
+
             const itemData = {
-                id: editingItem ? editingItem.id : generateItemId(),
+                id: itemIdVal,
                 name: itemName,
                 price: itemPrice, 
                 hasGeneralOptions: elements.itemHasOptionsCheckboxModal.checked,
                 generalOptions: (elements.itemHasOptionsCheckboxModal.checked && tempItemOptionsModal.length > 0) ? [...tempItemOptionsModal] : []
             };
+
             if (itemData.hasGeneralOptions && itemData.generalOptions.length === 0) {
                 showToast('If "Has General Options" is checked, please add at least one option.', 'warning'); return;
             }
+            
             if (editingItem) { 
                 Object.keys(menu).forEach(cat => {
                     const itemIndex = (menu[cat] || []).findIndex(i => i.id === editingItem.id);
-                    if (itemIndex > -1 && cat !== itemCategory) menu[cat].splice(itemIndex, 1);
+                    if (itemIndex > -1) {
+                       if (cat !== itemCategory) { 
+                           menu[cat].splice(itemIndex, 1); 
+                       }
+                    }
                 });
             }
+
             if (!menu[itemCategory]) menu[itemCategory] = [];
+
             const existingItemIndex = menu[itemCategory].findIndex(i => i.id === itemData.id);
-            if (existingItemIndex > -1) menu[itemCategory][existingItemIndex] = itemData; 
-            else menu[itemCategory].push(itemData);
-            if (await saveMenuToServer()) {
+            if (existingItemIndex > -1) {
+                menu[itemCategory][existingItemIndex] = itemData; 
+            } else { 
+                menu[itemCategory].push(itemData);
+            }
+
+            const success = await saveMenuToServer();
+            if (success) {
                 showToast(editingItem ? 'Item updated successfully!' : 'Item saved successfully!', 'success');
                 closeItemFormModal();
                 await loadMenu();
                 loadManagementData();
             } else {
-                showToast('Failed to save item. Reverting.', 'error');
+                showToast('Failed to save item to server. Reverting.', 'error');
                 await loadMenu();
             }
         }
 
         async function deleteItem(itemIdToDelete) {
             if (!confirm('Are you sure you want to delete this item? This cannot be undone.')) return;
+
+            let itemFoundAndDeletedLocally = false;
             Object.keys(menu).forEach(cat => {
                 const itemIndex = (menu[cat] || []).findIndex(i => i.id === itemIdToDelete);
-                if (itemIndex > -1) menu[cat].splice(itemIndex, 1);
+                if (itemIndex > -1) {
+                    menu[cat].splice(itemIndex, 1);
+                    itemFoundAndDeletedLocally = true;
+                }
             });
-            if (await saveMenuToServer()) {
+
+            if (!itemFoundAndDeletedLocally) {
+                showToast('Item not found for deletion.', 'warning'); return;
+            }
+
+            const success = await saveMenuToServer();
+            if (success) {
                 showToast('Item deleted successfully.', 'success');
                 await loadMenu();
                 loadManagementData();
             } else {
-                showToast('Failed to delete item. Reverting.', 'error');
+                showToast('Failed to delete item on server. Reverting.', 'error');
                 await loadMenu();
             }
         }
 
         async function saveCategory() {
+			if (!elements.categoryNameInput) return;
 			const categoryName = elements.categoryNameInput.value.trim();
-			if (!categoryName) { showToast('Category name cannot be empty.', 'warning'); return; }
-			if (menu[categoryName]) { showToast('Category already exists.', 'warning'); return; }
+			if (!categoryName) { 
+				showToast('Category name cannot be empty.', 'warning'); 
+				return; 
+			}
+			if (menu[categoryName]) { 
+				showToast('Category already exists.', 'warning'); 
+				return; 
+			}
+
 			menu[categoryName] = [];
-            if(await saveMenuToServer()) {
+			
+            const success = await saveMenuToServer();
+            if (success) {
                 showToast(`Category "${categoryName}" added successfully.`, 'success');
-                elements.categoryNameInput.value = '';
-                await loadMenu();
+				elements.categoryNameInput.value = '';
+				await loadMenu();
                 loadManagementData();
             } else {
-                showToast(`Failed to save category.`, 'error');
-                delete menu[categoryName]; 
+                showToast('Failed to save category. Reverting.', 'error');
+                delete menu[categoryName];
+                await loadMenu();
             }
 		}
 
         async function deleteCategory(categoryNameToDelete) {
-            if (!confirm(`Are you sure you want to delete category "${categoryNameToDelete}" and all its items? This cannot be undone.`)) return;
+            if (menu[categoryNameToDelete] && menu[categoryNameToDelete].length > 0) {
+                if (!confirm(`Category "${categoryNameToDelete}" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.`)) return;
+            } else {
+                if (!confirm(`Are you sure you want to delete category "${categoryNameToDelete}"? This cannot be undone.`)) return;
+            }
             const backupMenu = JSON.parse(JSON.stringify(menu));
             delete menu[categoryNameToDelete];
-            if (await saveMenuToServer()) {
+
+            const success = await saveMenuToServer();
+            if (success) {
                 showToast(`Category "${categoryNameToDelete}" deleted successfully.`, 'success');
-                if (selectedCategory === categoryNameToDelete) selectedCategory = Object.keys(menu)[0] || null;
+                if (selectedCategory === categoryNameToDelete) {
+                    selectedCategory = Object.keys(menu)[0] || null;
+                }
                 await loadMenu();
                 loadManagementData();
             } else {
                 menu = backupMenu;
-                showToast(`Failed to delete category. Reverting.`, 'error');
+                showToast(`Failed to delete category "${categoryNameToDelete}" on server. Reverting.`, 'error');
+                await loadMenu();
+                loadManagementData();
             }
         }
 
         function toggleItemOptionsUIInModal() {
             const hasOptions = document.getElementById('itemHasOptionsModal').checked;
             document.getElementById('itemOptionsModalContainer').style.display = hasOptions ? 'block' : 'none';
-            if(!hasOptions) tempItemOptionsModal = [];
+
+            if(!hasOptions) {
+                tempItemOptionsModal = [];
+            }
             renderTemporaryOptionsListModal();
         }
 
         function addOptionToItemFormTempModal() {
+            if (!elements.newOptionNameInputModal || !elements.newOptionPriceInputModal) return;
             const optionName = elements.newOptionNameInputModal.value.trim();
-            const priceChange = parseFloat(elements.newOptionPriceInputModal.value.trim() || 0);
-            if (!optionName) { showToast('Option name cannot be empty.', 'warning'); return; }
-            if (isNaN(priceChange)) { showToast('Price change must be a valid number.', 'warning'); return; }
-            if (tempItemOptionsModal.find(opt => opt.name === optionName)) {
-                showToast('This option name already exists.', 'warning'); return;
+            const priceChangeText = elements.newOptionPriceInputModal.value.trim();
+            const priceChange = priceChangeText === "" ? 0 : parseFloat(priceChangeText);
+
+            if (!optionName) {
+                showToast('Option name cannot be empty.', 'warning');
+                return;
             }
+            if (isNaN(priceChange)) {
+                showToast('Price change must be a valid number or empty (for 0).', 'warning');
+                return;
+            }
+
+            if (tempItemOptionsModal.find(opt => opt.name === optionName)) {
+                showToast('This general option name already exists for the item.', 'warning');
+                return;
+            }
+            
             tempItemOptionsModal.push({ name: optionName, priceChange: priceChange });
             renderTemporaryOptionsListModal();
             elements.newOptionNameInputModal.value = '';
@@ -1492,18 +1693,24 @@
         function renderTemporaryOptionsListModal() {
             if (!elements.itemOptionsListDisplayModal) return;
             elements.itemOptionsListDisplayModal.innerHTML = '';
-            if (tempItemOptionsModal.length === 0) {
-                elements.itemOptionsListDisplayModal.innerHTML = '<p class="text-xs text-gray-500 italic w-full">No options added yet.</p>';
+            if (tempItemOptionsModal.length === 0 && document.getElementById('itemHasOptionsModal').checked) {
+                elements.itemOptionsListDisplayModal.innerHTML = '<p class="text-xs text-gray-500 italic w-full">No general options added yet.</p>';
+                return;
+            } else if (tempItemOptionsModal.length === 0 && !document.getElementById('itemHasOptionsModal').checked) {
+                elements.itemOptionsListDisplayModal.innerHTML = '';
                 return;
             }
+
             tempItemOptionsModal.forEach(opt => {
                 const pillSpan = document.createElement('span');
                 pillSpan.className = 'option-pill'; 
-                const priceDisplay = opt.priceChange !== 0 ? ` (${opt.priceChange > 0 ? '+' : ''}€${opt.priceChange.toFixed(2)})` : '';
+                const priceDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
                 pillSpan.textContent = `${opt.name}${priceDisplay}`;
+
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-option-btn'; 
                 removeBtn.innerHTML = '&times;'; 
+                removeBtn.title = `Remove option: ${opt.name}`;
                 removeBtn.type = 'button'; 
                 removeBtn.onclick = () => removeTemporaryOptionModal(opt.name);
                 pillSpan.appendChild(removeBtn);
@@ -1520,11 +1727,19 @@
             if (!elements.toast || !elements.toastMessage) return;
             clearTimeout(toastTimeout);
             elements.toastMessage.textContent = message;
+
             elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] opacity-0 transition-opacity duration-300';
-            const colors = { success: 'bg-green-600', warning: 'bg-yellow-500', error: 'bg-red-600', info: 'bg-gray-800' };
-            elements.toast.classList.add(colors[type] || colors.info);
+
+            switch(type) {
+                case 'success': elements.toast.classList.add('bg-green-600'); break;
+                case 'warning': elements.toast.classList.add('bg-yellow-500'); break;
+                case 'error': elements.toast.classList.add('bg-red-600'); break;
+                default: elements.toast.classList.add('bg-gray-800');
+            }
+
             elements.toast.classList.remove('hidden');
             setTimeout(() => elements.toast.classList.remove('opacity-0'), 10);
+
             toastTimeout = setTimeout(() => {
                 elements.toast.classList.add('opacity-0');
                 setTimeout(() => elements.toast.classList.add('hidden'), 300);
@@ -1539,17 +1754,32 @@
 
         function renderDaySummary(summary) {
             if (!elements.daySummaryContent) return;
+            
             if (summary.status === 'error') {
                 elements.daySummaryContent.innerHTML = `<p class="text-center text-red-500">${summary.message}</p>`;
                 return;
             }
+
             elements.daySummaryContent.innerHTML = `
                 <div class="space-y-3 text-base">
-                    <div class="flex justify-between items-center py-2 border-b"><span class="font-medium text-gray-600">Total Orders:</span><span class="font-semibold text-gray-800">${summary.total_orders}</span></div>
-                    <div class="flex justify-between items-center py-2 border-b"><span class="font-medium text-gray-600">Total Cash Payments:</span><span class="font-semibold text-green-600">€${summary.cash_total.toFixed(2)}</span></div>
-                    <div class="flex justify-between items-center py-2 border-b"><span class="font-medium text-gray-600">Total Card Payments:</span><span class="font-semibold text-blue-600">€${summary.card_total.toFixed(2)}</span></div>
-                    <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black"><span class="text-lg font-bold text-gray-900">Grand Total:</span><span class="font-semibold text-gray-900">€${summary.grand_total.toFixed(2)}</span></div>
-                </div>`;
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium text-gray-600">Total Orders:</span>
+                        <span class="font-semibold text-gray-800">${summary.total_orders}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium text-gray-600">Total Cash Payments:</span>
+                        <span class="font-semibold text-green-600">€${summary.cash_total.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-center py-2 border-b">
+                        <span class="font-medium text-gray-600">Total Card Payments:</span>
+                        <span class="font-semibold text-blue-600">€${summary.card_total.toFixed(2)}</span>
+                    </div>
+                    <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black">
+                        <span class="text-lg font-bold text-gray-900">Grand Total:</span>
+                        <span class="font-semibold text-gray-900">€${summary.grand_total.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
         }
             </script>
 </body>
