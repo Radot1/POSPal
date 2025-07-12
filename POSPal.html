@@ -275,7 +275,8 @@
             <!-- Tabs -->
             <div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
                 <div class="flex flex-wrap gap-1 rounded-md bg-gray-100 p-1">
-                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Items</button>
+                    <button onclick="switchManagementTab('analytics', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Analytics</button>
+                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
                     <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
                     <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
@@ -284,8 +285,86 @@
 
             <!-- Content -->
             <div class="flex-grow overflow-y-auto p-4 management-content">
+                <!-- NEW: Analytics View -->
+                <div id="analyticsManagement">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">Today's Performance</h3>
+                        <button onclick="loadAnalyticsData()" class="px-4 py-2 btn-secondary text-sm">
+                            <i class="fas fa-sync-alt mr-1"></i> Refresh
+                        </button>
+                    </div>
+
+                    <!-- KPI Cards Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Card: Gross Revenue -->
+                        <div class="bg-gray-50 p-4 rounded-lg shadow">
+                            <h4 class="text-sm font-medium text-gray-500">Today's Gross Revenue</h4>
+                            <p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p>
+                            <p class="text-xs text-gray-500 mt-1">Total sales before any deductions.</p>
+                        </div>
+
+                        <!-- Card: Total Orders -->
+                        <div class="bg-gray-50 p-4 rounded-lg shadow">
+                            <h4 class="text-sm font-medium text-gray-500">Total Orders</h4>
+                            <p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p>
+                            <p class="text-xs text-gray-500 mt-1">Total number of transactions.</p>
+                        </div>
+
+                        <!-- Card: Average Transaction Value -->
+                        <div class="bg-gray-50 p-4 rounded-lg shadow">
+                            <h4 class="text-sm font-medium text-gray-500">Average Transaction Value</h4>
+                            <p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p>
+                            <p class="text-xs text-gray-500 mt-1">Average amount spent per order.</p>
+                        </div>
+                    </div>
+
+                    <!-- Deeper Dive Sections -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <!-- Section: Sales by Payment -->
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="font-semibold text-gray-700 mb-2">Sales by Payment Method</h4>
+                            <div class="space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span>
+                                    <span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-sm text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span>
+                                    <span id="kpi-payment-card" class="font-bold text-gray-800">€0.00</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Section: Sales by Category -->
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4>
+                            <div id="kpi-sales-by-category" class="space-y-2 max-h-40 overflow-y-auto">
+                                <p class="text-xs text-gray-500 italic">Loading data...</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <!-- Section: Best Selling Items -->
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="font-semibold text-gray-700 mb-2">Best Selling Items (by Qty)</h4>
+                            <div id="kpi-best-sellers" class="space-y-2 max-h-48 overflow-y-auto">
+                                <p class="text-xs text-gray-500 italic">Loading data...</p>
+                            </div>
+                        </div>
+
+                        <!-- Section: Underperforming Items -->
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="font-semibold text-gray-700 mb-2">Underperforming Items (by Qty)</h4>
+                            <div id="kpi-worst-sellers" class="space-y-2 max-h-48 overflow-y-auto">
+                                <p class="text-xs text-gray-500 italic">Loading data...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Items Management View -->
-                <div id="itemsManagement">
+                <div id="itemsManagement" class="hidden">
                     <div class="flex justify-end mb-4">
                         <button onclick="openItemFormModal()" class="btn-success py-2 px-4 rounded-md flex items-center">
                             <i class="fas fa-plus mr-2"></i>Add New Item
@@ -1196,7 +1275,7 @@
         }
 
         // --- Management Modal & Data Logic ---
-        let currentManagementTab = 'items';
+        let currentManagementTab = 'analytics'; // Default to analytics
         let tempItemOptionsModal = []; 
 
         async function loadAppVersion() {
@@ -1226,9 +1305,9 @@
                 loadManagementData();
                 loadAppVersion();
                 // Reset to the main tab when opening, and find the button to pass to the function
-                const itemsTabButton = document.querySelector('.management-tab[onclick*="\'items\'"]');
-                if (itemsTabButton) {
-                    switchManagementTab('items', itemsTabButton); 
+                const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
+                if (analyticsTabButton) {
+                    switchManagementTab('analytics', analyticsTabButton); 
                 }
             }
         }
@@ -1245,17 +1324,22 @@
                 clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
             }
 
+            const analyticsView = document.getElementById('analyticsManagement');
             const itemsView = document.getElementById('itemsManagement');
             const categoriesView = document.getElementById('categoriesManagement');
             const orderHistoryView = document.getElementById('orderHistoryManagement');
 
-            if (!itemsView || !categoriesView || !orderHistoryView) return;
+            if (!analyticsView || !itemsView || !categoriesView || !orderHistoryView) return;
 
+            analyticsView.style.display = 'none';
             itemsView.style.display = 'none';
             categoriesView.style.display = 'none';
             orderHistoryView.style.display = 'none';
 
-            if (tabName === 'items') {
+            if (tabName === 'analytics') {
+                analyticsView.style.display = 'block';
+                loadAnalyticsData(); // Load data when tab is switched to
+            } else if (tabName === 'items') {
                 itemsView.style.display = 'block';
             } else if (tabName === 'categories') {
                 categoriesView.style.display = 'block';
@@ -1960,6 +2044,92 @@
                     </div>
                 </div>
             `;
+        }
+
+        // --- NEW Analytics Functions ---
+        async function loadAnalyticsData() {
+            const refreshButton = event.target.closest('button');
+            if (refreshButton) {
+                const icon = refreshButton.querySelector('i');
+                if(icon) icon.classList.add('fa-spin');
+                refreshButton.disabled = true;
+            }
+
+            try {
+                const response = await fetch('/api/analytics');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
+                    throw new Error(errorData.message || 'Failed to load analytics data');
+                }
+                const data = await response.json();
+                renderAnalytics(data);
+                showToast("Analytics data refreshed.", "success");
+            } catch (error) {
+                showToast(`Error loading analytics: ${error.message}`, 'error');
+                console.error("Analytics load error:", error);
+            } finally {
+                if (refreshButton) {
+                    const icon = refreshButton.querySelector('i');
+                    if(icon) icon.classList.remove('fa-spin');
+                    refreshButton.disabled = false;
+                }
+            }
+        }
+
+        function renderAnalytics(data) {
+            document.getElementById('kpi-gross-revenue').textContent = `€${(data.grossRevenue || 0).toFixed(2)}`;
+            document.getElementById('kpi-total-orders').textContent = data.totalOrders || 0;
+            document.getElementById('kpi-atv').textContent = `€${(data.atv || 0).toFixed(2)}`;
+            
+            document.getElementById('kpi-payment-cash').textContent = `€${(data.paymentMethods.cash || 0).toFixed(2)}`;
+            document.getElementById('kpi-payment-card').textContent = `€${(data.paymentMethods.card || 0).toFixed(2)}`;
+
+            const categoryContainer = document.getElementById('kpi-sales-by-category');
+            categoryContainer.innerHTML = '';
+            if (data.salesByCategory && data.salesByCategory.length > 0) {
+                data.salesByCategory.forEach(cat => {
+                    categoryContainer.innerHTML += `
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600">${cat.category}</span>
+                            <span class="font-medium text-gray-800">€${(cat.total || 0).toFixed(2)}</span>
+                        </div>
+                    `;
+                });
+            } else {
+                categoryContainer.innerHTML = '<p class="text-xs text-gray-500 italic">No category sales yet.</p>';
+            }
+
+
+            const bestSellersContainer = document.getElementById('kpi-best-sellers');
+            bestSellersContainer.innerHTML = '';
+            if(data.bestSellers && data.bestSellers.length > 0) {
+                data.bestSellers.forEach(item => {
+                    bestSellersContainer.innerHTML += `
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600">${item.name}</span>
+                            <span class="font-medium text-gray-800">${item.quantity} sold</span>
+                        </div>
+                    `;
+                });
+            } else {
+                bestSellersContainer.innerHTML = '<p class="text-xs text-gray-500 italic">No items sold yet.</p>';
+            }
+            
+            
+            const worstSellersContainer = document.getElementById('kpi-worst-sellers');
+            worstSellersContainer.innerHTML = '';
+            if(data.worstSellers && data.worstSellers.length > 0) {
+                data.worstSellers.forEach(item => {
+                    worstSellersContainer.innerHTML += `
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600">${item.name}</span>
+                            <span class="font-medium text-gray-800">${item.quantity} sold</span>
+                        </div>
+                    `;
+                });
+            } else {
+                 worstSellersContainer.innerHTML = '<p class="text-xs text-gray-500 italic">No items sold yet.</p>';
+            }
         }
 
     </script>

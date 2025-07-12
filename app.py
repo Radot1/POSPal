@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.3"  # Update this with each release
+CURRENT_VERSION = "1.0.4"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
@@ -11,6 +11,7 @@ import requests
 import threading
 import logging
 import sys  # Added for auto-update functionality
+from collections import Counter # Added for analytics
 
 
 app = Flask(__name__)
@@ -830,6 +831,111 @@ def get_daily_summary():
     except Exception as e:
         app.logger.error(f"Error generating daily summary: {str(e)}")
         return jsonify({"status": "error", "message": f"Could not generate daily summary: {str(e)}"}), 500
+
+
+# --- NEW ANALYTICS ENDPOINT ---
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    try:
+        # --- 1. Load Menu to get item-to-category mapping ---
+        item_to_category_map = {}
+        if os.path.exists(MENU_FILE):
+            with open(MENU_FILE, 'r', encoding='utf-8') as f:
+                menu_data = json.load(f)
+                for category, items in menu_data.items():
+                    for item in items:
+                        item_to_category_map[str(item.get('id'))] = category
+        
+        # --- 2. Process Today's Orders ---
+        today_date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = os.path.join(DATA_DIR, f"orders_{today_date_str}.csv")
+
+        if not os.path.exists(filename):
+            # Return zeroed-out data if no orders file exists
+            return jsonify({
+                "grossRevenue": 0.0, "totalOrders": 0, "atv": 0.0,
+                "paymentMethods": {"cash": 0.0, "card": 0.0},
+                "salesByCategory": [], "bestSellers": [], "worstSellers": []
+            })
+
+        # --- 3. Initialize Analytics Variables ---
+        total_orders = 0
+        gross_revenue = 0.0
+        cash_total = 0.0
+        card_total = 0.0
+        sales_by_category = {}
+        item_sales_counter = Counter()
+
+        # --- 4. Read and Aggregate Data from CSV ---
+        with open(filename, 'r', newline='', encoding='utf-8') as f_read:
+            reader = csv.DictReader(f_read)
+            for row in reader:
+                try:
+                    total_orders += 1
+                    order_total = float(row.get('order_total', 0.0))
+                    gross_revenue += order_total
+                    
+                    # Payment method aggregation
+                    payment_method = row.get('payment_method', 'Cash').strip().capitalize()
+                    if payment_method == 'Card':
+                        card_total += order_total
+                    else:
+                        cash_total += order_total
+
+                    # Item and Category aggregation
+                    items_json = row.get('items_json', '[]')
+                    items_in_order = json.loads(items_json)
+                    
+                    for item in items_in_order:
+                        item_id_str = str(item.get('id'))
+                        item_name = item.get('name', 'Unknown Item')
+                        quantity = int(item.get('quantity', 0))
+                        
+                        # Add to best/worst seller counter
+                        item_sales_counter[item_name] += quantity
+                        
+                        # Add to category sales
+                        category = item_to_category_map.get(item_id_str, "Uncategorized")
+                        item_total_price = float(item.get('itemPriceWithModifiers', 0.0)) * quantity
+                        sales_by_category[category] = sales_by_category.get(category, 0.0) + item_total_price
+
+                except (ValueError, TypeError, json.JSONDecodeError) as e:
+                    app.logger.warning(f"Could not parse row in analytics processing: {row}. Error: {e}")
+
+        # --- 5. Calculate Final KPIs ---
+        atv = (gross_revenue / total_orders) if total_orders > 0 else 0.0
+        
+        # Format sales by category
+        formatted_sales_by_cat = sorted(
+            [{"category": cat, "total": total} for cat, total in sales_by_category.items()],
+            key=lambda x: x['total'], reverse=True
+        )
+
+        # Get best and worst sellers
+        sorted_items = item_sales_counter.most_common()
+        best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:5]]
+        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-5:]]
+        worst_sellers.reverse() # Show least sold at the top
+
+        # --- 6. Construct and Return JSON Response ---
+        analytics_data = {
+            "grossRevenue": gross_revenue,
+            "totalOrders": total_orders,
+            "atv": atv,
+            "paymentMethods": {
+                "cash": cash_total,
+                "card": card_total
+            },
+            "salesByCategory": formatted_sales_by_cat,
+            "bestSellers": best_sellers,
+            "worstSellers": worst_sellers
+        }
+        
+        return jsonify(analytics_data)
+
+    except Exception as e:
+        app.logger.error(f"Error generating analytics data: {str(e)}")
+        return jsonify({"status": "error", "message": f"Could not generate analytics: {str(e)}"}), 500
 
 
 def check_for_updates():
