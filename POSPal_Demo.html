@@ -529,14 +529,6 @@
         function showDemoModeBanner() {
             if(elements.demoModeBanner) {
                 elements.demoModeBanner.classList.remove('hidden');
-                const bannerHeight = elements.demoModeBanner.offsetHeight;
-                 if (elements.mainHeader) {
-                    elements.mainHeader.style.top = bannerHeight + 'px';
-                }
-                 if (elements.categorySection) {
-                    const headerHeight = elements.mainHeader?.offsetHeight || 68;
-                    elements.categorySection.style.top = (bannerHeight + headerHeight) + 'px';
-                }
             }
         }
 
@@ -673,7 +665,7 @@
         async function openDaySummaryModal() {
             if (!elements.daySummaryModal || !elements.daySummaryContent) return;
             elements.daySummaryModal.classList.remove('hidden');
-            elements.daySummaryModal.classList.add('flex');
+            elements.daySummaryModal.classList.add('flex', 'z-[110]'); // DEMO FIX
             
             // Provide a mock summary
             renderDaySummary({
@@ -691,8 +683,7 @@
 
         // --- END MOCKED/DEMO FUNCTIONS ---
 
-        // --- ALL OTHER FUNCTIONS from POSPal.html are copied below without modification ---
-        // This ensures the UI logic remains identical to the live version.
+        // --- ALL OTHER FUNCTIONS from POSPal.html are copied below with z-index fixes ---
         
         function renderCategories() {
             if (!elements.categoriesContainer) return;
@@ -1066,7 +1057,7 @@
                 console.warn("Modal opened with unexpected context or item structure:", itemForModal, context);
                 elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No suitable options for this step.</p>`;
                 elements.itemOptionSelectModal.classList.remove('hidden');
-                elements.itemOptionSelectModal.classList.add('flex');
+                elements.itemOptionSelectModal.classList.add('flex', 'z-[110]'); // DEMO FIX
                 return;
             }
             elements.optionModalItemDescription.textContent = description;
@@ -1153,13 +1144,13 @@
                 elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No specific options defined for this item.</p>`;
             }
             elements.itemOptionSelectModal.classList.remove('hidden');
-            elements.itemOptionSelectModal.classList.add('flex');
+            elements.itemOptionSelectModal.classList.add('flex', 'z-[110]'); // DEMO FIX
         }
 
         function cancelOptionSelection() {
             if(elements.itemOptionSelectModal) {
                 elements.itemOptionSelectModal.classList.add('hidden');
-                elements.itemOptionSelectModal.classList.remove('flex');
+                elements.itemOptionSelectModal.classList.remove('flex', 'z-[110]'); // DEMO FIX
             }
             currentItemOptionContext = null;
             resetMultiStepSelection(); 
@@ -1194,11 +1185,11 @@
             const isActive = !elements.managementModal.classList.contains('hidden');
             if (isActive) {
                 elements.managementModal.classList.add('hidden');
-                elements.managementModal.classList.remove('flex');
+                elements.managementModal.classList.remove('flex', 'z-[110]'); // DEMO FIX
                 document.body.style.overflow = '';
             } else {
                 elements.managementModal.classList.remove('hidden');
-                elements.managementModal.classList.add('flex');
+                elements.managementModal.classList.add('flex', 'z-[110]'); // DEMO FIX
                 document.body.style.overflow = 'hidden';
                 loadManagementData();
                 loadAppVersion();
@@ -1471,12 +1462,12 @@
                 if(elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save New Item';
             }
             elements.itemFormModal.classList.remove('hidden');
-            elements.itemFormModal.classList.add('flex');
+            elements.itemFormModal.classList.add('flex', 'z-[110]'); // DEMO FIX
         }
 
         function closeItemFormModal() {
             elements.itemFormModal.classList.add('hidden');
-            elements.itemFormModal.classList.remove('flex');
+            elements.itemFormModal.classList.remove('flex', 'z-[110]'); // DEMO FIX
             resetItemForm();
         }
 
@@ -1728,7 +1719,7 @@
             clearTimeout(toastTimeout);
             elements.toastMessage.textContent = message;
 
-            elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] opacity-0 transition-opacity duration-300';
+            elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[120] opacity-0 transition-opacity duration-300'; // High z-index for toast
 
             switch(type) {
                 case 'success': elements.toast.classList.add('bg-green-600'); break;
@@ -1749,7 +1740,7 @@
         function closeDaySummaryModal() {
             if (!elements.daySummaryModal) return;
             elements.daySummaryModal.classList.add('hidden');
-            elements.daySummaryModal.classList.remove('flex');
+            elements.daySummaryModal.classList.remove('flex', 'z-[110]'); // DEMO FIX
         }
 
         function renderDaySummary(summary) {
