@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.5"  # Update this with each release
+CURRENT_VERSION = "1.0.6"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
@@ -951,9 +951,10 @@ def check_for_updates():
             return
             
         latest_ver = response.json()['tag_name']
-        app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version: {latest_ver}")
+        app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version from GitHub: {latest_ver}")
         
-        if latest_ver != CURRENT_VERSION:
+        # FIX: Compare versions after stripping any leading 'v' to prevent update loops.
+        if latest_ver.lstrip('v') != CURRENT_VERSION.lstrip('v'):
             app.logger.info(f"New version {latest_ver} found. Starting update process.")
             # Download the new executable from the release assets
             assets = response.json().get('assets', [])
