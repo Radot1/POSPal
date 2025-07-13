@@ -250,10 +250,31 @@
         </div>
     </aside>
 
-    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40"> <button onclick="toggleManagementModal()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
+    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40"> <button onclick="openLoginModal()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
             <i class="fas fa-cog text-xl"></i>
         </button>
     </div>
+
+    <!-- NEW: Login Modal -->
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-gray-800">
+            <h3 class="text-xl font-semibold mb-4 text-center">Management Access</h3>
+            <form id="loginForm">
+                <div class="space-y-4">
+                    <div>
+                        <label for="passwordInput" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="passwordInput" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                    </div>
+                    <p id="loginError" class="text-sm text-red-600 text-center hidden"></p>
+                    <div class="flex gap-2 pt-2">
+                        <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="closeLoginModal()">Cancel</button>
+                        <button type="submit" id="loginSubmitBtn" class="w-full py-2 px-4 btn-primary">Login</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
 
     <div id="itemOptionSelectModal" class="fixed inset-0 bg-black bg-opacity-70 z-[60] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl p-5 w-full max-w-md max-h-[80vh] flex flex-col text-gray-800">
@@ -274,7 +295,7 @@
             <!-- Header -->
             <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
                 <h2 class="text-xl font-semibold">Management</h2>
-                <button onclick="toggleManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
+                <button onclick="closeManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
             </div>
 
             <!-- Tabs -->
@@ -575,6 +596,14 @@
             elements.orderPanelBackdrop = document.getElementById('order-panel-backdrop');
             elements.sendOrderBtn = document.getElementById('sendOrderBtn');
             elements.settingsGearContainer = document.getElementById('settings-gear-container');
+            
+            // Modals
+            elements.loginModal = document.getElementById('loginModal');
+            elements.loginForm = document.getElementById('loginForm');
+            elements.passwordInput = document.getElementById('passwordInput');
+            elements.loginError = document.getElementById('loginError');
+            elements.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+            
             elements.managementModal = document.getElementById('managementModal');
             elements.itemFormModal = document.getElementById('itemFormModal');
             elements.itemFormModalTitle = document.getElementById('itemFormModalTitle');
@@ -634,6 +663,10 @@
                         e.target.blur(); // Remove focus from input
                     }
                 });
+            }
+
+            if (elements.loginForm) {
+                elements.loginForm.addEventListener('submit', handleLogin);
             }
 
             updateOrderDisplay();
@@ -1307,9 +1340,60 @@
             }
         }
 
-        // --- Management Modal & Data Logic ---
+        // --- Management Modal, Login & Data Logic ---
         let currentManagementTab = 'analytics'; // Default to analytics
         let tempItemOptionsModal = []; 
+
+        function openLoginModal() {
+            if (!elements.loginModal) return;
+            elements.passwordInput.value = '';
+            elements.loginError.classList.add('hidden');
+            elements.loginModal.classList.remove('hidden');
+            elements.loginModal.classList.add('flex');
+            elements.passwordInput.focus();
+        }
+
+        function closeLoginModal() {
+            if (!elements.loginModal) return;
+            elements.loginModal.classList.add('hidden');
+            elements.loginModal.classList.remove('flex');
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            if (!elements.passwordInput || !elements.loginSubmitBtn || !elements.loginError) return;
+
+            const password = elements.passwordInput.value;
+            elements.loginSubmitBtn.disabled = true;
+            elements.loginSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            elements.loginError.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    closeLoginModal();
+                    openManagementModal();
+                } else {
+                    elements.loginError.textContent = result.message || 'Login failed. Please try again.';
+                    elements.loginError.classList.remove('hidden');
+                    elements.passwordInput.select();
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                elements.loginError.textContent = 'A network error occurred. Please try again.';
+                elements.loginError.classList.remove('hidden');
+            } finally {
+                elements.loginSubmitBtn.disabled = false;
+                elements.loginSubmitBtn.textContent = 'Login';
+            }
+        }
 
         async function loadAppVersion() {
             if (!elements.appVersion) return;
@@ -1324,25 +1408,25 @@
             }
         }
 
-        function toggleManagementModal() {
+        function openManagementModal() {
             if (!elements.managementModal) return;
-            const isActive = !elements.managementModal.classList.contains('hidden');
-            if (isActive) {
-                elements.managementModal.classList.add('hidden');
-                elements.managementModal.classList.remove('flex');
-                document.body.style.overflow = ''; // Allow scrolling on the body again
-            } else {
-                elements.managementModal.classList.remove('hidden');
-                elements.managementModal.classList.add('flex');
-                document.body.style.overflow = 'hidden'; // Prevent body scrolling
-                loadManagementData();
-                loadAppVersion();
-                // Reset to the main tab when opening, and find the button to pass to the function
-                const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
-                if (analyticsTabButton) {
-                    switchManagementTab('analytics', analyticsTabButton); 
-                }
+            elements.managementModal.classList.remove('hidden');
+            elements.managementModal.classList.add('flex');
+            document.body.style.overflow = 'hidden'; // Prevent body scrolling
+            loadManagementData();
+            loadAppVersion();
+            // Reset to the main tab when opening
+            const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
+            if (analyticsTabButton) {
+                switchManagementTab('analytics', analyticsTabButton); 
             }
+        }
+
+        function closeManagementModal() {
+            if (!elements.managementModal) return;
+            elements.managementModal.classList.add('hidden');
+            elements.managementModal.classList.remove('flex');
+            document.body.style.overflow = ''; // Allow scrolling on the body again
         }
 
 

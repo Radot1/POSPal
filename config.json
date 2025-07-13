@@ -1,5 +1,6 @@
 {
     "printer_name": "POSPalPDFTest",
     "auto_update": false,
-    "port": 5000
+    "port": 5000,
+    "management_password": "9999"
 }

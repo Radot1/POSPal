@@ -60,17 +60,24 @@ def load_config():
     # Ensure data directory exists BEFORE loading config
     os.makedirs(DATA_DIR, exist_ok=True)
     
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE) as f:
-            return json.load(f)
-    return {
+    defaults = {
         "printer_name": "80mm Series Printer",
         "auto_update": True,
-        "port": 5000
+        "port": 5000,
+        "management_password": "9999" # Default password
     }
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config_from_file = json.load(f)
+                defaults.update(config_from_file)
+        except json.JSONDecodeError:
+            app.logger.error(f"Error decoding {CONFIG_FILE}. Using default values.")
+    return defaults
 
 config = load_config()
 PRINTER_NAME = config["printer_name"]
+MANAGEMENT_PASSWORD = str(config["management_password"]) # Ensure password is a string
 
 # Disable debug mode
 app.config['DEBUG'] = False
@@ -204,7 +211,25 @@ def get_next_daily_order_number():
 
 @app.route('/')
 def serve_index():
-    return send_from_directory('.', 'POSPal.html')
+    return send_from_directory('.', 'index.html')
+
+# --- NEW ENDPOINT for Login ---
+@app.route('/api/login', methods=['POST'])
+@limiter.limit("10 per minute") # Rate limit login attempts
+def login():
+    data = request.get_json()
+    password_attempt = data.get('password')
+    
+    if not password_attempt:
+        return jsonify({"success": False, "message": "Password is required."}), 400
+
+    if str(password_attempt) == MANAGEMENT_PASSWORD:
+        app.logger.info("Successful management login.")
+        return jsonify({"success": True})
+    else:
+        app.logger.warning(f"Failed management login attempt from {get_remote_address()}.")
+        return jsonify({"success": False, "message": "Invalid password."}), 401
+
 
 # --- NEW ENDPOINT to get app version ---
 @app.route('/api/version')
@@ -833,11 +858,40 @@ def get_daily_summary():
         return jsonify({"status": "error", "message": f"Could not generate daily summary: {str(e)}"}), 500
 
 
-# --- ANALYTICS ENDPOINT (CORRECTED) ---
+# --- ANALYTICS ENDPOINT (CORRECTED & ENHANCED) ---
 @app.route('/api/analytics', methods=['GET'])
 def get_analytics():
     try:
-        # --- 1. Load Menu to get item-to-category mapping ---
+        range_param = request.args.get('range', 'today')
+        start_date_str = request.args.get('start')
+        end_date_str = request.args.get('end')
+
+        # --- 1. Determine Date Range and Filenames ---
+        target_filenames = []
+        now = datetime.now()
+
+        if range_param == 'today':
+            target_filenames.append(os.path.join(DATA_DIR, f"orders_{now.strftime('%Y-%m-%d')}.csv"))
+        elif range_param == 'week':
+            for i in range(now.weekday() + 1):
+                d = now - timedelta(days=i)
+                target_filenames.append(os.path.join(DATA_DIR, f"orders_{d.strftime('%Y-%m-%d')}.csv"))
+        elif range_param == 'month':
+            for i in range(now.day):
+                d = now - timedelta(days=i)
+                target_filenames.append(os.path.join(DATA_DIR, f"orders_{d.strftime('%Y-%m-%d')}.csv"))
+        elif range_param == 'custom' and start_date_str and end_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            delta = end_date - start_date
+            for i in range(delta.days + 1):
+                day = start_date + timedelta(days=i)
+                target_filenames.append(os.path.join(DATA_DIR, f"orders_{day.strftime('%Y-%m-%d')}.csv"))
+        else: # Default to today if params are weird
+             target_filenames.append(os.path.join(DATA_DIR, f"orders_{now.strftime('%Y-%m-%d')}.csv"))
+
+
+        # --- 2. Load Menu to get item-to-category mapping ---
         item_to_category_map = {}
         if os.path.exists(MENU_FILE):
             with open(MENU_FILE, 'r', encoding='utf-8') as f:
@@ -846,94 +900,74 @@ def get_analytics():
                     for item in items:
                         item_to_category_map[str(item.get('id'))] = category
         
-        # --- 2. Process Today's Orders ---
-        today_date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = os.path.join(DATA_DIR, f"orders_{today_date_str}.csv")
-
-        if not os.path.exists(filename):
-            # Return zeroed-out data if no orders file exists
-            return jsonify({
-                "grossRevenue": 0.0, "totalOrders": 0, "atv": 0.0,
-                "paymentMethods": {"cash": 0.0, "card": 0.0},
-                "salesByCategory": [], "bestSellers": [], "worstSellers": [],
-                "topRevenueItems": [], "salesByHour": [] # Ensure these keys exist
-            })
-
         # --- 3. Initialize Analytics Variables ---
         total_orders = 0
         gross_revenue = 0.0
         cash_total = 0.0
         card_total = 0.0
-        sales_by_category = {}
+        sales_by_category = defaultdict(float)
         item_sales_counter = Counter()
-        item_revenue_counter = defaultdict(float) # NEW: For top revenue items
-        sales_by_hour = defaultdict(float) # NEW: For sales by hour
+        item_revenue_counter = defaultdict(float)
+        sales_by_hour = defaultdict(float)
 
-        # --- 4. Read and Aggregate Data from CSV ---
-        with open(filename, 'r', newline='', encoding='utf-8') as f_read:
-            reader = csv.DictReader(f_read)
-            for row in reader:
-                try:
-                    total_orders += 1
-                    order_total = float(row.get('order_total', 0.0))
-                    gross_revenue += order_total
-                    
-                    # Payment method aggregation
-                    payment_method = row.get('payment_method', 'Cash').strip().capitalize()
-                    if payment_method == 'Card':
-                        card_total += order_total
-                    else:
-                        cash_total += order_total
+        # --- 4. Read and Aggregate Data from relevant CSV files ---
+        for filename in target_filenames:
+            if not os.path.exists(filename):
+                continue # Skip if file for a specific day doesn't exist
 
-                    # NEW: Sales by hour aggregation
-                    timestamp_str = row.get('timestamp')
-                    if timestamp_str:
-                        hour = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S').hour
-                        sales_by_hour[hour] += order_total
-
-                    # Item and Category aggregation
-                    items_json = row.get('items_json', '[]')
-                    items_in_order = json.loads(items_json)
-                    
-                    for item in items_in_order:
-                        item_id_str = str(item.get('id'))
-                        item_name = item.get('name', 'Unknown Item')
-                        quantity = int(item.get('quantity', 0))
-                        item_total_price = float(item.get('itemPriceWithModifiers', 0.0)) * quantity
+            with open(filename, 'r', newline='', encoding='utf-8') as f_read:
+                reader = csv.DictReader(f_read)
+                for row in reader:
+                    try:
+                        total_orders += 1
+                        order_total = float(row.get('order_total', 0.0))
+                        gross_revenue += order_total
                         
-                        # Add to best/worst seller counter (by quantity)
-                        item_sales_counter[item_name] += quantity
+                        payment_method = row.get('payment_method', 'Cash').strip().capitalize()
+                        if payment_method == 'Card':
+                            card_total += order_total
+                        else:
+                            cash_total += order_total
 
-                        # NEW: Add to top revenue items counter
-                        item_revenue_counter[item_name] += item_total_price
+                        timestamp_str = row.get('timestamp')
+                        if timestamp_str:
+                            hour = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S').hour
+                            sales_by_hour[hour] += order_total
+
+                        items_json = row.get('items_json', '[]')
+                        items_in_order = json.loads(items_json)
                         
-                        # Add to category sales
-                        category = item_to_category_map.get(item_id_str, "Uncategorized")
-                        sales_by_category[category] = sales_by_category.get(category, 0.0) + item_total_price
+                        for item in items_in_order:
+                            item_id_str = str(item.get('id'))
+                            item_name = item.get('name', 'Unknown Item')
+                            quantity = int(item.get('quantity', 0))
+                            item_total_price = float(item.get('itemPriceWithModifiers', 0.0)) * quantity
+                            
+                            item_sales_counter[item_name] += quantity
+                            item_revenue_counter[item_name] += item_total_price
+                            
+                            category = item_to_category_map.get(item_id_str, "Uncategorized")
+                            sales_by_category[category] += item_total_price
 
-                except (ValueError, TypeError, json.JSONDecodeError) as e:
-                    app.logger.warning(f"Could not parse row in analytics processing: {row}. Error: {e}")
+                    except (ValueError, TypeError, json.JSONDecodeError) as e:
+                        app.logger.warning(f"Could not parse row in analytics processing from {os.path.basename(filename)}: {row}. Error: {e}")
 
         # --- 5. Calculate Final KPIs ---
         atv = (gross_revenue / total_orders) if total_orders > 0 else 0.0
         
-        # Format sales by category
         formatted_sales_by_cat = sorted(
             [{"category": cat, "total": total} for cat, total in sales_by_category.items()],
             key=lambda x: x['total'], reverse=True
         )
 
-        # Get best and worst sellers by QUANTITY
         sorted_items = item_sales_counter.most_common()
         best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:10]]
-        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-10:]]
+        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-10:] if qty > 0]
         worst_sellers.reverse()
 
-        # NEW: Get top items by REVENUE
         sorted_revenue_items = sorted(item_revenue_counter.items(), key=lambda item: item[1], reverse=True)
         top_revenue_items = [{"name": name, "revenue": rev} for name, rev in sorted_revenue_items[:10]]
 
-        # NEW: Format sales by hour (ensures all 24 hours are present)
         formatted_sales_by_hour = [
             {"hour": hour, "total": sales_by_hour.get(hour, 0.0)} for hour in range(24)
         ]
@@ -943,15 +977,12 @@ def get_analytics():
             "grossRevenue": gross_revenue,
             "totalOrders": total_orders,
             "atv": atv,
-            "paymentMethods": {
-                "cash": cash_total,
-                "card": card_total
-            },
+            "paymentMethods": {"cash": cash_total, "card": card_total},
             "salesByCategory": formatted_sales_by_cat,
             "bestSellers": best_sellers,
             "worstSellers": worst_sellers,
-            "topRevenueItems": top_revenue_items,   # ADDED
-            "salesByHour": formatted_sales_by_hour  # ADDED
+            "topRevenueItems": top_revenue_items,
+            "salesByHour": formatted_sales_by_hour
         }
         
         return jsonify(analytics_data)
