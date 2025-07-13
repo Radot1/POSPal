@@ -1,7 +1,7 @@
 CURRENT_VERSION = "1.0.4"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
-from datetime import datetime
+from datetime import datetime, timedelta
 import csv
 import os
 import win32print  # type: ignore
@@ -211,7 +211,7 @@ def get_next_daily_order_number():
 
 @app.route('/')
 def serve_index():
-    return send_from_directory('.', 'index.html')
+    return send_from_directory('.', 'POSPal.html')
 
 # --- NEW ENDPOINT for Login ---
 @app.route('/api/login', methods=['POST'])
