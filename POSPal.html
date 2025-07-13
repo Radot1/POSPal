@@ -137,6 +137,11 @@
             border-color: #111827 !important; 
             background-color: #f3f4f6; 
         }
+        .date-range-btn.active {
+            background-color: #111827;
+            color: white;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body class="bg-white text-gray-800">
@@ -265,7 +270,7 @@
 
     <!-- Main Management Modal (IMPROVED) -->
     <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] hidden flex flex-col justify-end sm:justify-center sm:items-center">
-        <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-5xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
+        <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-6xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
             <!-- Header -->
             <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
                 <h2 class="text-xl font-semibold">Management</h2>
@@ -287,43 +292,50 @@
             <div class="flex-grow overflow-y-auto p-4 management-content">
                 <!-- NEW: Analytics View -->
                 <div id="analyticsManagement">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-semibold text-gray-800">Today's Performance</h3>
-                        <button onclick="loadAnalyticsData()" class="px-4 py-2 btn-secondary text-sm">
-                            <i class="fas fa-sync-alt mr-1"></i> Refresh
-                        </button>
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
+                        <h3 class="text-xl font-semibold text-gray-800">Performance Overview</h3>
+                        <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-lg flex-wrap">
+                            <button onclick="loadAnalyticsData('today', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">Today</button>
+                            <button onclick="loadAnalyticsData('week', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">This Week</button>
+                            <button onclick="loadAnalyticsData('month', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">This Month</button>
+                            <button onclick="toggleCustomDateRangeUI(this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">Custom</button>
+                        </div>
+                    </div>
+
+                    <!-- NEW: Custom Date Range Picker -->
+                    <div id="custom-date-range-picker" class="hidden my-4 p-4 bg-gray-100 rounded-lg border border-gray-200">
+                        <div class="flex flex-col sm:flex-row items-center gap-4">
+                            <div>
+                                <label for="startDate" class="block text-sm font-medium text-gray-700">Start Date</label>
+                                <input type="date" id="startDate" name="startDate" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
+                            </div>
+                            <div>
+                                <label for="endDate" class="block text-sm font-medium text-gray-700">End Date</label>
+                                <input type="date" id="endDate" name="endDate" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
+                            </div>
+                            <div class="self-end pt-1 sm:pt-0">
+                                <button onclick="fetchCustomDateRangeAnalytics()" class="w-full sm:w-auto py-2 px-4 btn-primary rounded-md">Go</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- KPI Cards Grid -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <!-- Card: Gross Revenue -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                         <div class="bg-gray-50 p-4 rounded-lg shadow">
-                            <h4 class="text-sm font-medium text-gray-500">Today's Gross Revenue</h4>
+                            <h4 class="text-sm font-medium text-gray-500">Gross Revenue</h4>
                             <p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p>
-                            <p class="text-xs text-gray-500 mt-1">Total sales before any deductions.</p>
                         </div>
-
-                        <!-- Card: Total Orders -->
                         <div class="bg-gray-50 p-4 rounded-lg shadow">
                             <h4 class="text-sm font-medium text-gray-500">Total Orders</h4>
                             <p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p>
-                            <p class="text-xs text-gray-500 mt-1">Total number of transactions.</p>
                         </div>
-
-                        <!-- Card: Average Transaction Value -->
                         <div class="bg-gray-50 p-4 rounded-lg shadow">
-                            <h4 class="text-sm font-medium text-gray-500">Average Transaction Value</h4>
+                            <h4 class="text-sm font-medium text-gray-500">Avg. Order Value</h4>
                             <p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p>
-                            <p class="text-xs text-gray-500 mt-1">Average amount spent per order.</p>
                         </div>
-                    </div>
-
-                    <!-- Deeper Dive Sections -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                        <!-- Section: Sales by Payment -->
-                        <div class="bg-white p-4 rounded-lg border">
-                            <h4 class="font-semibold text-gray-700 mb-2">Sales by Payment Method</h4>
-                            <div class="space-y-2">
+                         <div class="bg-gray-50 p-4 rounded-lg shadow">
+                            <h4 class="font-semibold text-gray-700 mb-2">Payment Methods</h4>
+                            <div class="space-y-2 mt-3">
                                 <div class="flex justify-between items-center">
                                     <span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span>
                                     <span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span>
@@ -334,17 +346,37 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
 
+                    <!-- Deeper Dive Sections -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <!-- Section: Sales by Hour Chart -->
+                        <div class="bg-white p-4 rounded-lg border lg:col-span-2">
+                             <h4 class="font-semibold text-gray-700 mb-3">Sales by Hour</h4>
+                             <!-- Wrapper to allow horizontal scrolling on smaller screens -->
+                             <div class="overflow-x-auto pb-2">
+                                 <div id="analytics-chart-container" class="h-64 flex items-end space-x-4">
+                                     <p class="text-xs text-gray-500 italic w-full text-center">Loading chart data...</p>
+                                 </div>
+                             </div>
+                        </div>
+                        
                         <!-- Section: Sales by Category -->
                         <div class="bg-white p-4 rounded-lg border">
                             <h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4>
-                            <div id="kpi-sales-by-category" class="space-y-2 max-h-40 overflow-y-auto">
+                            <div id="kpi-sales-by-category" class="space-y-2 max-h-64 overflow-y-auto">
                                 <p class="text-xs text-gray-500 italic">Loading data...</p>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+
+                        <!-- Section: Top Items by Revenue -->
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="font-semibold text-gray-700 mb-2">Top Items (by Revenue)</h4>
+                            <div id="kpi-top-revenue-items" class="space-y-2 max-h-48 overflow-y-auto">
+                                <p class="text-xs text-gray-500 italic">Loading data...</p>
+                            </div>
+                        </div>
+                        
                         <!-- Section: Best Selling Items -->
                         <div class="bg-white p-4 rounded-lg border">
                             <h4 class="font-semibold text-gray-700 mb-2">Best Selling Items (by Qty)</h4>
@@ -362,6 +394,7 @@
                         </div>
                     </div>
                 </div>
+
 
                 <!-- Items Management View -->
                 <div id="itemsManagement" class="hidden">
@@ -1338,7 +1371,9 @@
 
             if (tabName === 'analytics') {
                 analyticsView.style.display = 'block';
-                loadAnalyticsData(); // Load data when tab is switched to
+                // Find the default active button ("Today") and load its data
+                const todayButton = document.querySelector('.date-range-btn[onclick*="\'today\'"]');
+                loadAnalyticsData('today', todayButton);
             } else if (tabName === 'items') {
                 itemsView.style.display = 'block';
             } else if (tabName === 'categories') {
@@ -2046,35 +2081,78 @@
             `;
         }
 
-        // --- NEW Analytics Functions ---
-        async function loadAnalyticsData() {
-            const refreshButton = event.target.closest('button');
-            if (refreshButton) {
-                const icon = refreshButton.querySelector('i');
-                if(icon) icon.classList.add('fa-spin');
-                refreshButton.disabled = true;
+        // --- NEW/ENHANCED Analytics Functions ---
+
+        function toggleCustomDateRangeUI(buttonEl) {
+            const picker = document.getElementById('custom-date-range-picker');
+            if (!picker) return;
+
+            document.querySelectorAll('.date-range-btn').forEach(btn => btn.classList.remove('active'));
+            buttonEl.classList.add('active');
+            
+            picker.classList.toggle('hidden');
+
+            if (!picker.classList.contains('hidden')) {
+                // Set default dates when opening
+                const endDateInput = document.getElementById('endDate');
+                const startDateInput = document.getElementById('startDate');
+                const today = new Date().toISOString().split('T')[0];
+                endDateInput.value = today;
+                if (!startDateInput.value) {
+                    startDateInput.value = today;
+                }
             }
+        }
+
+        async function fetchAnalytics(url) {
+             // Show loading state
+            const analyticsContainer = document.getElementById('analyticsManagement');
+            analyticsContainer.querySelectorAll('.font-bold.text-gray-900').forEach(el => el.textContent = '...');
+            analyticsContainer.querySelectorAll('.max-h-48, .max-h-64, #analytics-chart-container').forEach(el => el.innerHTML = '<p class="text-xs text-gray-500 italic p-4">Loading data...</p>');
 
             try {
-                const response = await fetch('/api/analytics');
+                const response = await fetch(url);
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ message: `HTTP ${response.status}` }));
                     throw new Error(errorData.message || 'Failed to load analytics data');
                 }
                 const data = await response.json();
                 renderAnalytics(data);
-                showToast("Analytics data refreshed.", "success");
+                showToast(`Analytics loaded successfully.`, "success");
             } catch (error) {
                 showToast(`Error loading analytics: ${error.message}`, 'error');
                 console.error("Analytics load error:", error);
-            } finally {
-                if (refreshButton) {
-                    const icon = refreshButton.querySelector('i');
-                    if(icon) icon.classList.remove('fa-spin');
-                    refreshButton.disabled = false;
-                }
             }
         }
+
+        function loadAnalyticsData(range = 'today', buttonEl = null) {
+            // Visually update the active button
+            document.querySelectorAll('.date-range-btn').forEach(btn => btn.classList.remove('active'));
+            if (buttonEl) buttonEl.classList.add('active');
+
+            // Hide custom date picker if a preset is chosen
+            const picker = document.getElementById('custom-date-range-picker');
+            if (picker) picker.classList.add('hidden');
+            
+            fetchAnalytics(`/api/analytics?range=${range}`);
+        }
+
+        function fetchCustomDateRangeAnalytics() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            if (!startDate || !endDate) {
+                showToast('Please select both a start and end date.', 'warning');
+                return;
+            }
+            if (new Date(startDate) > new Date(endDate)) {
+                showToast('Start date cannot be after the end date.', 'warning');
+                return;
+            }
+            
+            fetchAnalytics(`/api/analytics?range=custom&start=${startDate}&end=${endDate}`);
+        }
+
 
         function renderAnalytics(data) {
             document.getElementById('kpi-gross-revenue').textContent = `€${(data.grossRevenue || 0).toFixed(2)}`;
@@ -2084,52 +2162,79 @@
             document.getElementById('kpi-payment-cash').textContent = `€${(data.paymentMethods.cash || 0).toFixed(2)}`;
             document.getElementById('kpi-payment-card').textContent = `€${(data.paymentMethods.card || 0).toFixed(2)}`;
 
-            const categoryContainer = document.getElementById('kpi-sales-by-category');
-            categoryContainer.innerHTML = '';
-            if (data.salesByCategory && data.salesByCategory.length > 0) {
-                data.salesByCategory.forEach(cat => {
-                    categoryContainer.innerHTML += `
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600">${cat.category}</span>
-                            <span class="font-medium text-gray-800">€${(cat.total || 0).toFixed(2)}</span>
-                        </div>
-                    `;
+            renderList('kpi-sales-by-category', data.salesByCategory, item => `
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600 truncate pr-2">${item.category}</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.total || 0).toFixed(2)}</span>
+                </div>`, "No category sales yet.");
+            
+            renderList('kpi-top-revenue-items', data.topRevenueItems, item => `
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600 truncate pr-2">${item.name}</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.revenue || 0).toFixed(2)}</span>
+                </div>`, "No items sold yet.");
+
+            renderList('kpi-best-sellers', data.bestSellers, item => `
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600 truncate pr-2">${item.name}</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">${item.quantity} sold</span>
+                </div>`, "No items sold yet.");
+            
+            renderList('kpi-worst-sellers', data.worstSellers, item => `
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600 truncate pr-2">${item.name}</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">${item.quantity} sold</span>
+                </div>`, "No underperforming items found.");
+
+            renderSalesByHourChart(data.salesByHour);
+        }
+
+        function renderList(containerId, items, templateFn, emptyMessage) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            if (items && items.length > 0) {
+                items.forEach(item => {
+                    container.innerHTML += templateFn(item);
                 });
             } else {
-                categoryContainer.innerHTML = '<p class="text-xs text-gray-500 italic">No category sales yet.</p>';
+                container.innerHTML = `<p class="text-xs text-gray-500 italic p-2">${emptyMessage}</p>`;
             }
+        }
 
+        function renderSalesByHourChart(salesByHour) {
+            const container = document.getElementById('analytics-chart-container');
+            container.innerHTML = '';
 
-            const bestSellersContainer = document.getElementById('kpi-best-sellers');
-            bestSellersContainer.innerHTML = '';
-            if(data.bestSellers && data.bestSellers.length > 0) {
-                data.bestSellers.forEach(item => {
-                    bestSellersContainer.innerHTML += `
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600">${item.name}</span>
-                            <span class="font-medium text-gray-800">${item.quantity} sold</span>
-                        </div>
-                    `;
-                });
-            } else {
-                bestSellersContainer.innerHTML = '<p class="text-xs text-gray-500 italic">No items sold yet.</p>';
+            if (!salesByHour || salesByHour.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-500 italic w-full text-center self-center">No sales data for this period.</p>';
+                // Reset min-width if there's no data
+                container.style.minWidth = 'auto';
+                return;
             }
             
+            // Dynamically set a min-width based on the number of bars to ensure they have space
+            const barWidth = 40; // Corresponds to Tailwind's w-10
+            const spaceWidth = 16; // Corresponds to space-x-4
+            container.style.minWidth = `${salesByHour.length * (barWidth + spaceWidth)}px`;
+
+            const maxRevenue = Math.max(...salesByHour.map(h => h.total), 0);
             
-            const worstSellersContainer = document.getElementById('kpi-worst-sellers');
-            worstSellersContainer.innerHTML = '';
-            if(data.worstSellers && data.worstSellers.length > 0) {
-                data.worstSellers.forEach(item => {
-                    worstSellersContainer.innerHTML += `
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600">${item.name}</span>
-                            <span class="font-medium text-gray-800">${item.quantity} sold</span>
+            salesByHour.forEach(hourData => {
+                const barHeight = maxRevenue > 0 ? (hourData.total / maxRevenue) * 100 : 0;
+                const barWrapper = document.createElement('div');
+                // Use a fixed width for each bar instead of flex-1 to prevent squishing
+                barWrapper.className = 'w-10 flex flex-col items-center justify-end h-full';
+                barWrapper.innerHTML = `
+                    <div class="w-full h-full flex items-end justify-center group relative">
+                        <div class="bg-gray-200 hover:bg-indigo-400 w-3/4 rounded-t-sm transition-colors" style="height: ${barHeight}%"></div>
+                        <div class="absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                            €${hourData.total.toFixed(2)}
                         </div>
-                    `;
-                });
-            } else {
-                 worstSellersContainer.innerHTML = '<p class="text-xs text-gray-500 italic">No items sold yet.</p>';
-            }
+                    </div>
+                    <span class="text-xs text-gray-500 mt-1">${String(hourData.hour).padStart(2, '0')}</span>
+                `;
+                container.appendChild(barWrapper);
+            });
         }
 
     </script>
