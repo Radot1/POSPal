@@ -11,7 +11,7 @@ import requests
 import threading
 import logging
 import sys  # Added for auto-update functionality
-from collections import Counter # Added for analytics
+from collections import Counter, defaultdict # Added for analytics
 
 
 app = Flask(__name__)
@@ -833,7 +833,7 @@ def get_daily_summary():
         return jsonify({"status": "error", "message": f"Could not generate daily summary: {str(e)}"}), 500
 
 
-# --- NEW ANALYTICS ENDPOINT ---
+# --- ANALYTICS ENDPOINT (CORRECTED) ---
 @app.route('/api/analytics', methods=['GET'])
 def get_analytics():
     try:
@@ -855,7 +855,8 @@ def get_analytics():
             return jsonify({
                 "grossRevenue": 0.0, "totalOrders": 0, "atv": 0.0,
                 "paymentMethods": {"cash": 0.0, "card": 0.0},
-                "salesByCategory": [], "bestSellers": [], "worstSellers": []
+                "salesByCategory": [], "bestSellers": [], "worstSellers": [],
+                "topRevenueItems": [], "salesByHour": [] # Ensure these keys exist
             })
 
         # --- 3. Initialize Analytics Variables ---
@@ -865,6 +866,8 @@ def get_analytics():
         card_total = 0.0
         sales_by_category = {}
         item_sales_counter = Counter()
+        item_revenue_counter = defaultdict(float) # NEW: For top revenue items
+        sales_by_hour = defaultdict(float) # NEW: For sales by hour
 
         # --- 4. Read and Aggregate Data from CSV ---
         with open(filename, 'r', newline='', encoding='utf-8') as f_read:
@@ -882,6 +885,12 @@ def get_analytics():
                     else:
                         cash_total += order_total
 
+                    # NEW: Sales by hour aggregation
+                    timestamp_str = row.get('timestamp')
+                    if timestamp_str:
+                        hour = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S').hour
+                        sales_by_hour[hour] += order_total
+
                     # Item and Category aggregation
                     items_json = row.get('items_json', '[]')
                     items_in_order = json.loads(items_json)
@@ -890,13 +899,16 @@ def get_analytics():
                         item_id_str = str(item.get('id'))
                         item_name = item.get('name', 'Unknown Item')
                         quantity = int(item.get('quantity', 0))
+                        item_total_price = float(item.get('itemPriceWithModifiers', 0.0)) * quantity
                         
-                        # Add to best/worst seller counter
+                        # Add to best/worst seller counter (by quantity)
                         item_sales_counter[item_name] += quantity
+
+                        # NEW: Add to top revenue items counter
+                        item_revenue_counter[item_name] += item_total_price
                         
                         # Add to category sales
                         category = item_to_category_map.get(item_id_str, "Uncategorized")
-                        item_total_price = float(item.get('itemPriceWithModifiers', 0.0)) * quantity
                         sales_by_category[category] = sales_by_category.get(category, 0.0) + item_total_price
 
                 except (ValueError, TypeError, json.JSONDecodeError) as e:
@@ -911,11 +923,20 @@ def get_analytics():
             key=lambda x: x['total'], reverse=True
         )
 
-        # Get best and worst sellers
+        # Get best and worst sellers by QUANTITY
         sorted_items = item_sales_counter.most_common()
-        best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:10]] # Increased to 10
-        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-10:]] # Increased to 10
-        worst_sellers.reverse() # Show least sold at the top
+        best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:10]]
+        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-10:]]
+        worst_sellers.reverse()
+
+        # NEW: Get top items by REVENUE
+        sorted_revenue_items = sorted(item_revenue_counter.items(), key=lambda item: item[1], reverse=True)
+        top_revenue_items = [{"name": name, "revenue": rev} for name, rev in sorted_revenue_items[:10]]
+
+        # NEW: Format sales by hour (ensures all 24 hours are present)
+        formatted_sales_by_hour = [
+            {"hour": hour, "total": sales_by_hour.get(hour, 0.0)} for hour in range(24)
+        ]
 
         # --- 6. Construct and Return JSON Response ---
         analytics_data = {
@@ -928,7 +949,9 @@ def get_analytics():
             },
             "salesByCategory": formatted_sales_by_cat,
             "bestSellers": best_sellers,
-            "worstSellers": worst_sellers
+            "worstSellers": worst_sellers,
+            "topRevenueItems": top_revenue_items,   # ADDED
+            "salesByHour": formatted_sales_by_hour  # ADDED
         }
         
         return jsonify(analytics_data)
