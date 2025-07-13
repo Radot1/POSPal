@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.4"  # Update this with each release
+CURRENT_VERSION = "1.0.5"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
@@ -913,8 +913,8 @@ def get_analytics():
 
         # Get best and worst sellers
         sorted_items = item_sales_counter.most_common()
-        best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:5]]
-        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-5:]]
+        best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:10]] # Increased to 10
+        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-10:]] # Increased to 10
         worst_sellers.reverse() # Show least sold at the top
 
         # --- 6. Construct and Return JSON Response ---
