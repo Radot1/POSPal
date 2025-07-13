@@ -236,6 +236,20 @@ def login():
 def get_version():
     return jsonify({"version": CURRENT_VERSION})
 
+
+# --- NEW ENDPOINT FOR SHUTDOWN ---
+def shutdown_server():
+    app.logger.info("Shutdown command received. Terminating server.")
+    os._exit(0)
+
+@app.route('/api/shutdown', methods=['POST'])
+def shutdown():
+    # Schedule shutdown for 1 second from now
+    threading.Timer(1.0, shutdown_server).start()
+    # Immediately return a response
+    return jsonify({"status": "success", "message": "Server is shutting down."})
+
+
 # --- NEW ENDPOINT to get the next order number ---
 @app.route('/api/order_status', methods=['GET'])
 def get_order_status():
@@ -1046,7 +1060,7 @@ taskkill /f /im POSPal.exe > nul 2>&1
 :: Replace the old executable with the new one
 move /y "POSPal_new.exe" "POSPal.exe"
 
-:: Launch the new version
+:: Relaunch the new version
 echo Relaunching POSPal...
 start "" "POSPal.exe"
 

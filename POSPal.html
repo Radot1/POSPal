@@ -459,9 +459,13 @@
                 </div>
 
             </div>
-            <!-- Version Display Area -->
-            <div id="appVersionContainer" class="p-3 border-t border-gray-200 text-center text-xs text-gray-400 flex-shrink-0">
-                POSPal Version: <span id="appVersion">...</span>
+            <!-- Footer: Version and Shutdown -->
+            <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg">
+                <span>POSPal Version: <span id="appVersion" class="font-medium text-gray-600">...</span></span>
+                <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold">
+                    <i class="fas fa-power-off mr-1.5"></i>
+                    <span>Shutdown</span>
+                </button>
             </div>
         </div>
     </div>
@@ -2319,6 +2323,49 @@
                 `;
                 container.appendChild(barWrapper);
             });
+        }
+
+        // --- NEW: Shutdown Function ---
+        async function shutdownApplication() {
+            if (!confirm('Are you sure you want to shut down the POSPal application? This will close the server for all users.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/shutdown', {
+                    method: 'POST',
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    showToast('Server is shutting down...', 'info', 5000);
+                    // Disable the UI to prevent further interaction
+                    document.body.innerHTML = `
+                        <div class="fixed inset-0 bg-gray-900 flex flex-col items-center justify-center text-white p-8">
+                            <h1 class="text-4xl font-bold mb-4">POSPal is Shutting Down</h1>
+                            <p class="text-lg text-gray-300">You can now safely close this window.</p>
+                        </div>
+                    `;
+                    // Attempt to close the window after a short delay
+                    setTimeout(() => {
+                        window.close();
+                    }, 3000);
+                } else {
+                    showToast(result.message || 'Failed to initiate shutdown.', 'error');
+                }
+            } catch (error) {
+                // This error is expected as the server will close the connection before responding fully
+                console.log('Shutdown command sent. The server is likely closing the connection, which is normal.');
+                 showToast('Shutdown command sent. The server is closing.', 'info', 5000);
+                 document.body.innerHTML = `
+                    <div class="fixed inset-0 bg-gray-900 flex flex-col items-center justify-center text-white p-8">
+                        <h1 class="text-4xl font-bold mb-4">POSPal is Shutting Down</h1>
+                        <p class="text-lg text-gray-300">You can now safely close this window.</p>
+                    </div>
+                `;
+                setTimeout(() => {
+                    window.close();
+                }, 3000);
+            }
         }
 
     </script>
