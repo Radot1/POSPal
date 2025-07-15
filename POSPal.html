@@ -319,8 +319,6 @@
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
                     <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
-                    <!-- NEW: License Tab Button -->
-                    <button onclick="switchManagementTab('license', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">License</button>
                     <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
                 </div>
             </div>
@@ -474,7 +472,7 @@
                     </div>
                 </div>
                 
-                <!-- NEW: License Management View -->
+                <!-- License Management View -->
                 <div id="licenseManagement" class="hidden">
                     <h3 class="text-xl font-semibold text-gray-800 mb-2">License Information</h3>
                     <div class="bg-gray-100 p-4 rounded-lg space-y-4">
@@ -508,10 +506,10 @@
             </div>
             <!-- Footer: Version and Shutdown -->
             <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg">
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-4 flex-wrap">
                     <span>POSPal Version: <span id="appVersion" class="font-medium text-gray-600">...</span></span>
-                    <!-- NEW: Trial Status Display in Footer -->
                     <span id="footer-trial-status" class="font-medium"></span>
+                    <button onclick="switchManagementTab('license', null)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">License Info</button>
                 </div>
                 <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold">
                     <i class="fas fa-power-off mr-1.5"></i>
@@ -633,6 +631,7 @@
 
         const elements = {}; 
 
+
         function cacheDOMElements() {
             elements.headerOrderNumber = document.getElementById('header-order-number');
             elements.headerTableInput = document.getElementById('header-table-input');
@@ -690,7 +689,7 @@
             elements.appVersionContainer = document.getElementById('appVersionContainer');
             elements.appVersion = document.getElementById('appVersion');
 
-            // NEW: License and Trial elements
+            // License and Trial elements
             elements.licenseStatusDisplay = document.getElementById('license-status-display');
             elements.hardwareIdDisplay = document.getElementById('hardware-id-display');
             elements.copyHwidBtn = document.getElementById('copy-hwid-btn');
@@ -1499,15 +1498,18 @@
 
         function switchManagementTab(tabName, clickedButton) {
             currentManagementTab = tabName;
+            // Deselect all tabs
             document.querySelectorAll('.management-tab').forEach(btn => {
                 btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
                 btn.classList.add('text-gray-600', 'hover:bg-gray-200');
             });
+            // Select the clicked tab if it exists
             if (clickedButton) {
                 clickedButton.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
                 clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
             }
 
+            // Switch views
             const views = ['analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement'];
             views.forEach(id => {
                 const view = document.getElementById(id);
@@ -2415,7 +2417,7 @@
             }
         }
 
-        // --- NEW: Trial and License Functions ---
+        // --- Trial and License Functions ---
 
         async function checkAndDisplayTrialStatus() {
             try {
