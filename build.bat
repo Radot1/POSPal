@@ -8,7 +8,7 @@ REM Version: 1.7.0
 REM ============================================================================
 setlocal
 
-set VERSION=1.0.4
+set VERSION=1.0.5
 set RELEASE_DIR=POSPal_v%VERSION%
 
 REM --- 0. Pre-flight Check ---

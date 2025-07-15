@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.4"  # Update this with each release
+CURRENT_VERSION = "1.0.5"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -9,6 +9,8 @@ import time
 import json
 import requests
 import threading
+import uuid
+import hashlib
 import logging
 import sys  # Added for auto-update functionality
 from collections import Counter, defaultdict # Added for analytics
@@ -27,8 +29,13 @@ if getattr(sys, 'frozen', False):
 else:
     # If run as a normal python script
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
+    
 DATA_DIR = os.path.join(BASE_DIR, 'data')
+
+TRIAL_INFO_FILE = os.path.join(DATA_DIR, 'trial.json')
+LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
+APP_SECRET_KEY = 762378  # Use a strong secret key
+
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
 ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock file for order counter
@@ -97,6 +104,23 @@ def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
     if isinstance(s, bytes):
         return s
     return s.encode(encoding, errors='replace') # 'replace' will put a ? for unmappable chars
+    
+def initialize_trial():
+    """Create trial file on first run with signature"""
+    if not os.path.exists(TRIAL_INFO_FILE):
+        try:
+            first_run_date = datetime.now().strftime("%Y-%m-%d")
+            signature_data = f"{first_run_date}{APP_SECRET_KEY}".encode()
+            signature = hashlib.sha256(signature_data).hexdigest()
+            
+            with open(TRIAL_INFO_FILE, 'w') as f:
+                json.dump({
+                    "first_run_date": first_run_date,
+                    "signature": signature
+                }, f)
+            app.logger.info("Initialized 30-day trial period")
+        except Exception as e:
+            app.logger.error(f"Error creating trial file: {e}")
 
 def word_wrap_text(text, max_width, initial_indent="", subsequent_indent=""):
     lines = []
@@ -317,6 +341,13 @@ def save_menu():
 
 
 def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
+    
+    # Check trial status first
+    trial_status = check_trial_status()
+    if not trial_status.get("active", False):
+        app.logger.warning("Printing blocked - trial expired")
+        return {"success": False, "reason": "TRIAL_EXPIRED"}
+    
     hprinter = None
     try:
         ticket_content = bytearray()
@@ -609,6 +640,14 @@ def record_order_in_csv(order_data, print_status_message):
 
 @app.route('/api/orders', methods=['POST'])
 def handle_order():
+    # Check trial status
+    trial_status = check_trial_status()
+    if not trial_status.get("active", False):
+        return jsonify({
+            "status": "error_trial_expired",
+            "message": "Trial period has ended. Printing disabled."
+        }), 403
+    
     order_data_from_client = request.json
     if not order_data_from_client or 'items' not in order_data_from_client or not order_data_from_client['items']:
         return jsonify({"status": "error_validation", "message": "Invalid order data: Items are required."}), 400
@@ -704,7 +743,64 @@ def handle_order():
         "logged": csv_log_succeeded,
         "message": message
     }), 200
+    
+def check_trial_status():
+    """Check trial status with tamper protection"""
+    # License check (highest priority)
+    if os.path.exists(LICENSE_FILE):
+        try:
+            with open(LICENSE_FILE) as f:
+                license = json.load(f)
+            # Validate signature
+            data = f"{license['hardware_id']}{APP_SECRET_KEY}".encode()
+            if hashlib.sha256(data).hexdigest() == license['signature']:
+                # Validate hardware
+                current_hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
+                                         for i in range(0, 8*6, 8))
+                if current_hw_id == license['hardware_id']:
+                    return {"licensed": True, "active": True}
+        except:
+            app.logger.warning("Invalid license file")
+    
+    # Trial check
+    if not os.path.exists(TRIAL_INFO_FILE):
+        return {"licensed": False, "active": False, "expired": True}
+    
+    try:
+        with open(TRIAL_INFO_FILE) as f:
+            trial = json.load(f)
+        
+        # Verify signature
+        data = f"{trial['first_run_date']}{APP_SECRET_KEY}".encode()
+        if hashlib.sha256(data).hexdigest() != trial['signature']:
+            return {"licensed": False, "active": False, "expired": True}
+        
+        # Check dates
+        first_run = datetime.strptime(trial['first_run_date'], "%Y-%m-%d")
+        days_elapsed = (datetime.now() - first_run).days
+        days_left = 30 - days_elapsed
+        
+        return {
+            "licensed": False,
+            "active": days_left > 0,
+            "days_left": max(0, days_left),
+            "expired": days_left <= 0
+        }
+    except:
+        return {"licensed": False, "active": False, "expired": True}
 
+# Add API endpoint
+@app.route('/api/trial_status')
+def get_trial_status():
+    return jsonify(check_trial_status())
+
+@app.route('/api/hardware_id')
+def get_hardware_id():
+    """Get machine's hardware ID"""
+    hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
+                     for i in range(0, 8*6, 8))
+    return jsonify({"hardware_id": hw_id})
+    
 
 # --- NEW ENDPOINTS FOR REPRINT ---
 @app.route('/api/todays_orders_for_reprint', methods=['GET'])
@@ -1087,6 +1183,7 @@ if config.get("auto_update", False) and getattr(sys, 'frozen', False):
     threading.Timer(5, check_for_updates).start()
 
 if __name__ == '__main__':
+    initialize_trial()
     # Verify we can write to DATA_DIR
     try:
         test_file = os.path.join(DATA_DIR, 'permission_test.tmp')

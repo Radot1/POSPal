@@ -142,6 +142,20 @@
             color: white;
             font-weight: 600;
         }
+        /* Style for the copy button */
+        .copy-btn {
+            background-color: #d1d5db;
+            color: #1f2937;
+            border: 1px solid #9ca3af;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .copy-btn:hover {
+            background-color: #9ca3af;
+        }
     </style>
 </head>
 <body class="bg-white text-gray-800">
@@ -255,7 +269,7 @@
         </button>
     </div>
 
-    <!-- NEW: Login Modal -->
+    <!-- Login Modal -->
     <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-gray-800">
             <h3 class="text-xl font-semibold mb-4 text-center">Management Access</h3>
@@ -305,13 +319,15 @@
                     <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Items</button>
                     <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
                     <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
+                    <!-- NEW: License Tab Button -->
+                    <button onclick="switchManagementTab('license', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">License</button>
                     <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
                 </div>
             </div>
 
             <!-- Content -->
             <div class="flex-grow overflow-y-auto p-4 management-content">
-                <!-- NEW: Analytics View -->
+                <!-- Analytics View -->
                 <div id="analyticsManagement">
                     <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                         <h3 class="text-xl font-semibold text-gray-800">Performance Overview</h3>
@@ -323,7 +339,7 @@
                         </div>
                     </div>
 
-                    <!-- NEW: Custom Date Range Picker -->
+                    <!-- Custom Date Range Picker -->
                     <div id="custom-date-range-picker" class="hidden my-4 p-4 bg-gray-100 rounded-lg border border-gray-200">
                         <div class="flex flex-col sm:flex-row items-center gap-4">
                             <div>
@@ -457,11 +473,46 @@
                         <p class="text-xs text-gray-500 italic">Loading today's orders...</p>
                     </div>
                 </div>
+                
+                <!-- NEW: License Management View -->
+                <div id="licenseManagement" class="hidden">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2">License Information</h3>
+                    <div class="bg-gray-100 p-4 rounded-lg space-y-4">
+                        <div>
+                            <h4 class="text-lg font-medium text-gray-700">Current Status</h4>
+                            <p id="license-status-display" class="text-base font-semibold text-gray-900 mt-1">Loading...</p>
+                        </div>
+                        <div class="border-t border-gray-300 pt-4">
+                            <h4 class="text-lg font-medium text-gray-700">Your Hardware ID</h4>
+                            <p class="text-sm text-gray-600 mt-1">To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.</p>
+                            <div class="mt-2 bg-white p-3 rounded-md flex items-center justify-between border border-gray-300">
+                                <code id="hardware-id-display" class="text-sm font-mono text-gray-800">Loading...</code>
+                                <button id="copy-hwid-btn" class="copy-btn" onclick="copyHardwareId()">
+                                    <i class="far fa-copy mr-1"></i> Copy
+                                </button>
+                            </div>
+                        </div>
+                         <div class="border-t border-gray-300 pt-4">
+                            <h4 class="text-lg font-medium text-gray-700">How to Activate</h4>
+                             <ol class="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-2">
+                                <li>Copy your unique Hardware ID from above.</li>
+                                <li>Email the Hardware ID to <a href="mailto:your-email@example.com" class="text-blue-600 hover:underline">your-email@example.com</a> to purchase a license.</li>
+                                <li>You will receive a `license.key` file back.</li>
+                                <li>Place the `license.key` file in the same folder as the `POSPal.exe` application.</li>
+                                <li>Restart the POSPal application to activate the full version.</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
 
             </div>
             <!-- Footer: Version and Shutdown -->
             <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg">
-                <span>POSPal Version: <span id="appVersion" class="font-medium text-gray-600">...</span></span>
+                <div class="flex items-center gap-4">
+                    <span>POSPal Version: <span id="appVersion" class="font-medium text-gray-600">...</span></span>
+                    <!-- NEW: Trial Status Display in Footer -->
+                    <span id="footer-trial-status" class="font-medium"></span>
+                </div>
                 <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold">
                     <i class="fas fa-power-off mr-1.5"></i>
                     <span>Shutdown</span>
@@ -470,7 +521,7 @@
         </div>
     </div>
 
-    <!-- NEW: Add/Edit Item Modal -->
+    <!-- Add/Edit Item Modal -->
     <div id="itemFormModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div class="p-4 border-b border-gray-300 flex justify-between items-center">
@@ -638,6 +689,12 @@
             elements.todaysOrdersList = document.getElementById('todaysOrdersList');
             elements.appVersionContainer = document.getElementById('appVersionContainer');
             elements.appVersion = document.getElementById('appVersion');
+
+            // NEW: License and Trial elements
+            elements.licenseStatusDisplay = document.getElementById('license-status-display');
+            elements.hardwareIdDisplay = document.getElementById('hardware-id-display');
+            elements.copyHwidBtn = document.getElementById('copy-hwid-btn');
+            elements.footerTrialStatus = document.getElementById('footer-trial-status');
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -645,6 +702,7 @@
             initializeAppState();
             loadMenu();
             startClock();
+            checkAndDisplayTrialStatus(); // Check trial status on load
 
             if(elements.universalOrderCommentInput) {
                 elements.universalOrderCommentInput.addEventListener('input', (e) => {
@@ -1065,7 +1123,8 @@
                 body: JSON.stringify(orderData)
             });
 
-            const result = await response.json();
+            // Try to parse JSON body regardless of status code
+            const result = await response.json().catch(() => ({}));
 
             if (response.ok) {
                 if (result.status === "success") {
@@ -1085,16 +1144,19 @@
                 }
 
             } else {
-                let errorMsg = `Server error: ${response.status}.`;
-                if (result && result.message) {
-                   errorMsg = result.message;
+                // Handle non-ok responses (like 403 for expired trial)
+                if (response.status === 403 && result.status === 'error_trial_expired') {
+                    showToast(result.message, 'error', 10000);
+                    // Automatically open the management modal to the license tab for user convenience
+                    openManagementModal();
+                    const licenseTabButton = document.querySelector('.management-tab[onclick*="\'license\'"]');
+                    if (licenseTabButton) {
+                        switchManagementTab('license', licenseTabButton);
+                    }
                 } else {
-                   try {
-                       const errorText = await response.text();
-                       errorMsg = `Server error: ${response.status}${errorText ? ' - ' + errorText.substring(0,100) : ''}.`;
-                   } catch (textError) { /* Ignore */ }
+                    const errorMsg = result.message || `Server error: ${response.status}. Please check server logs.`;
+                    showToast(errorMsg, 'error', 7000);
                 }
-                showToast(errorMsg + ' Order remains on screen.', 'error', 7000);
                 fetchAndUpdateOrderNumber();
             }
         } catch (error) {
@@ -1419,6 +1481,7 @@
             document.body.style.overflow = 'hidden'; // Prevent body scrolling
             loadManagementData();
             loadAppVersion();
+            checkAndDisplayTrialStatus(); // Refresh trial status when opening
             // Reset to the main tab when opening
             const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
             if (analyticsTabButton) {
@@ -1445,31 +1508,25 @@
                 clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
             }
 
-            const analyticsView = document.getElementById('analyticsManagement');
-            const itemsView = document.getElementById('itemsManagement');
-            const categoriesView = document.getElementById('categoriesManagement');
-            const orderHistoryView = document.getElementById('orderHistoryManagement');
+            const views = ['analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement'];
+            views.forEach(id => {
+                const view = document.getElementById(id);
+                if(view) view.style.display = 'none';
+            });
 
-            if (!analyticsView || !itemsView || !categoriesView || !orderHistoryView) return;
+            const activeView = document.getElementById(`${tabName}Management`);
+            if(activeView) activeView.style.display = 'block';
 
-            analyticsView.style.display = 'none';
-            itemsView.style.display = 'none';
-            categoriesView.style.display = 'none';
-            orderHistoryView.style.display = 'none';
-
+            // Special actions for certain tabs
             if (tabName === 'analytics') {
-                analyticsView.style.display = 'block';
-                // Find the default active button ("Today") and load its data
                 const todayButton = document.querySelector('.date-range-btn[onclick*="\'today\'"]');
                 loadAnalyticsData('today', todayButton);
-            } else if (tabName === 'items') {
-                itemsView.style.display = 'block';
             } else if (tabName === 'categories') {
-                categoriesView.style.display = 'block';
                 if (elements.categoryNameInput) elements.categoryNameInput.value = '';
             } else if (tabName === 'orderHistory') {
-                orderHistoryView.style.display = 'block';
                 loadTodaysOrdersForReprint();
+            } else if (tabName === 'license') {
+                loadHardwareId();
             }
         }
 
@@ -2169,7 +2226,7 @@
             `;
         }
 
-        // --- NEW/ENHANCED Analytics Functions ---
+        // --- Analytics Functions ---
 
         function toggleCustomDateRangeUI(buttonEl) {
             const picker = document.getElementById('custom-date-range-picker');
@@ -2295,14 +2352,12 @@
 
             if (!salesByHour || salesByHour.length === 0) {
                 container.innerHTML = '<p class="text-xs text-gray-500 italic w-full text-center self-center">No sales data for this period.</p>';
-                // Reset min-width if there's no data
                 container.style.minWidth = 'auto';
                 return;
             }
             
-            // Dynamically set a min-width based on the number of bars to ensure they have space
-            const barWidth = 40; // Corresponds to Tailwind's w-10
-            const spaceWidth = 16; // Corresponds to space-x-4
+            const barWidth = 40; 
+            const spaceWidth = 16; 
             container.style.minWidth = `${salesByHour.length * (barWidth + spaceWidth)}px`;
 
             const maxRevenue = Math.max(...salesByHour.map(h => h.total), 0);
@@ -2310,7 +2365,6 @@
             salesByHour.forEach(hourData => {
                 const barHeight = maxRevenue > 0 ? (hourData.total / maxRevenue) * 100 : 0;
                 const barWrapper = document.createElement('div');
-                // Use a fixed width for each bar instead of flex-1 to prevent squishing
                 barWrapper.className = 'w-10 flex flex-col items-center justify-end h-full';
                 barWrapper.innerHTML = `
                     <div class="w-full h-full flex items-end justify-center group relative">
@@ -2325,7 +2379,7 @@
             });
         }
 
-        // --- NEW: Shutdown Function ---
+        // --- Shutdown Function ---
         async function shutdownApplication() {
             if (!confirm('Are you sure you want to shut down the POSPal application? This will close the server for all users.')) {
                 return;
@@ -2338,22 +2392,17 @@
                 const result = await response.json();
                 if (result.status === 'success') {
                     showToast('Server is shutting down...', 'info', 5000);
-                    // Disable the UI to prevent further interaction
                     document.body.innerHTML = `
                         <div class="fixed inset-0 bg-gray-900 flex flex-col items-center justify-center text-white p-8">
                             <h1 class="text-4xl font-bold mb-4">POSPal is Shutting Down</h1>
                             <p class="text-lg text-gray-300">You can now safely close this window.</p>
                         </div>
                     `;
-                    // Attempt to close the window after a short delay
-                    setTimeout(() => {
-                        window.close();
-                    }, 3000);
+                    setTimeout(() => { window.close(); }, 3000);
                 } else {
                     showToast(result.message || 'Failed to initiate shutdown.', 'error');
                 }
             } catch (error) {
-                // This error is expected as the server will close the connection before responding fully
                 console.log('Shutdown command sent. The server is likely closing the connection, which is normal.');
                  showToast('Shutdown command sent. The server is closing.', 'info', 5000);
                  document.body.innerHTML = `
@@ -2362,9 +2411,97 @@
                         <p class="text-lg text-gray-300">You can now safely close this window.</p>
                     </div>
                 `;
-                setTimeout(() => {
-                    window.close();
-                }, 3000);
+                setTimeout(() => { window.close(); }, 3000);
+            }
+        }
+
+        // --- NEW: Trial and License Functions ---
+
+        async function checkAndDisplayTrialStatus() {
+            try {
+                const response = await fetch('/api/trial_status');
+                if (!response.ok) throw new Error('Could not fetch trial status');
+                const status = await response.json();
+
+                const statusDisplay = elements.licenseStatusDisplay;
+                const footerStatusDisplay = elements.footerTrialStatus;
+
+                if (status.licensed) {
+                    const licensedHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>Fully Licensed`;
+                    if(statusDisplay) statusDisplay.innerHTML = licensedHTML;
+                    if(footerStatusDisplay) {
+                        footerStatusDisplay.innerHTML = licensedHTML;
+                        footerStatusDisplay.className = 'font-medium text-green-600';
+                    }
+                } else if (status.expired) {
+                    const expiredHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Trial Expired`;
+                    if(statusDisplay) statusDisplay.innerHTML = expiredHTML;
+                    if(footerStatusDisplay) {
+                        footerStatusDisplay.innerHTML = expiredHTML;
+                        footerStatusDisplay.className = 'font-medium text-red-600';
+                    }
+                } else if (status.active) {
+                    const days = status.days_left;
+                    const dayText = days === 1 ? 'day' : 'days';
+                    const trialHTML = `<i class="fas fa-info-circle text-yellow-500 mr-2"></i>Trial Version: ${days} ${dayText} remaining`;
+                     if(statusDisplay) statusDisplay.innerHTML = trialHTML;
+                    if(footerStatusDisplay) {
+                        footerStatusDisplay.innerHTML = trialHTML;
+                        footerStatusDisplay.className = 'font-medium text-yellow-500';
+                    }
+                }
+
+            } catch (error) {
+                console.error("Error checking trial status:", error);
+                if(elements.licenseStatusDisplay) elements.licenseStatusDisplay.textContent = "Could not load status.";
+                if(elements.footerTrialStatus) {
+                    elements.footerTrialStatus.textContent = "Status Unknown";
+                    elements.footerTrialStatus.className = 'font-medium text-gray-500';
+                }
+            }
+        }
+
+        async function loadHardwareId() {
+            if (!elements.hardwareIdDisplay) return;
+            elements.hardwareIdDisplay.textContent = "Loading...";
+            try {
+                const response = await fetch('/api/hardware_id');
+                if (!response.ok) throw new Error('Failed to fetch Hardware ID');
+                const data = await response.json();
+                elements.hardwareIdDisplay.textContent = data.hardware_id || 'Not Available';
+            } catch (error) {
+                console.error("Error fetching hardware ID:", error);
+                elements.hardwareIdDisplay.textContent = 'Error loading ID.';
+            }
+        }
+
+        function copyHardwareId() {
+            const hwid = elements.hardwareIdDisplay.textContent;
+            if (hwid && hwid !== 'Loading...' && hwid !== 'Error loading ID.') {
+                // Use the Clipboard API for modern browsers
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(hwid).then(() => {
+                        showToast('Hardware ID copied to clipboard!', 'success');
+                    }).catch(err => {
+                        showToast('Failed to copy.', 'error');
+                    });
+                } else {
+                    // Fallback for older/insecure contexts
+                    const textArea = document.createElement("textarea");
+                    textArea.value = hwid;
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        showToast('Hardware ID copied to clipboard!', 'success');
+                    } catch (err) {
+                        showToast('Failed to copy.', 'error');
+                    }
+                    document.body.removeChild(textArea);
+                }
+            } else {
+                showToast('Hardware ID not available to copy.', 'warning');
             }
         }
 
