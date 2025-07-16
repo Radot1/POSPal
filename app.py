@@ -1135,11 +1135,28 @@ def get_analytics():
 
 
 def check_for_updates():
+    # --- MODIFIED: Added PAT for private repo access ---
+    # WARNING: Hardcoding tokens is a major security risk. This token can be
+    # extracted from the compiled .exe file. For a real product, use a more
+    # secure method to provide credentials.
+    GITHUB_PAT = "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" 
+    
+    if not GITHUB_PAT or GITHUB_PAT == "YOUR_PAT_HERE":
+        app.logger.warning("GitHub PAT is not configured. Auto-update will likely fail for private repos.")
+        # We can let it proceed, it will fail gracefully below.
+        
+    headers = {
+        "Authorization": f"token {GITHUB_PAT}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
     try:
         app.logger.info("Checking for application updates...")
-        response = requests.get("https://api.github.com/repos/Radot1/POSPal/releases/latest")
+        response = requests.get("https://api.github.com/repos/Radot1/POSPal/releases/latest", headers=headers)
+        
         if response.status_code != 200:
             app.logger.error(f"Update check failed: GitHub API returned HTTP {response.status_code}")
+            app.logger.error(f"Response body: {response.text}")
             return
             
         latest_ver = response.json()['tag_name']
@@ -1159,7 +1176,8 @@ def check_for_updates():
                 return
 
             app.logger.info(f"Downloading new executable from: {download_url}")
-            new_exe_response = requests.get(download_url)
+            # The download URL for assets from a private repo also requires authentication
+            new_exe_response = requests.get(download_url, headers=headers)
             new_exe_response.raise_for_status()
 
             new_exe_path = os.path.join(BASE_DIR, "POSPal_new.exe")
