@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.5"  # Update this with each release
+CURRENT_VERSION = "1.0.6"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -12,9 +12,12 @@ import threading
 import uuid
 import hashlib
 import logging
-import sys  # Added for auto-update functionality
-from collections import Counter, defaultdict # Added for analytics
+import sys
+from collections import Counter, defaultdict
 
+# --- NEW: Import for Windows Registry access ---
+if sys.platform == 'win32':
+    import winreg
 
 app = Flask(__name__)
 
@@ -22,12 +25,9 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
 
 # --- CORRECTED File Paths ---
-# This block correctly determines the base directory whether running as a script or a frozen .exe
 if getattr(sys, 'frozen', False):
-    # If the application is run as a bundle/executable
     BASE_DIR = os.path.dirname(sys.executable)
 else:
-    # If run as a normal python script
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     
 DATA_DIR = os.path.join(BASE_DIR, 'data')
@@ -36,9 +36,13 @@ TRIAL_INFO_FILE = os.path.join(DATA_DIR, 'trial.json')
 LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
 APP_SECRET_KEY = 762378  # Use a strong secret key
 
+# --- NEW: Registry constants for trial anchoring ---
+REGISTRY_PATH = r"SOFTWARE\POSPal"
+REGISTRY_VALUE_NAME = "InstallDate"
+
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
-ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock file for order counter
+ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock')
 CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
 # --- ESC/POS Commands ---
@@ -47,31 +51,27 @@ GS = b'\x1D'
 InitializePrinter = ESC + b'@'
 BoldOn = ESC + b'E\x01'
 BoldOff = b'E\x00'
-DoubleHeightWidth = GS + b'!\x11'  # Double Height and Double Width
-DoubleHeight = GS + b'!\x01'       # Double Height only
-DoubleWidth = GS + b'!\x10'        # Double Width only
+DoubleHeightWidth = GS + b'!\x11'
+DoubleHeight = GS + b'!\x01'
+DoubleWidth = GS + b'!\x10'
 NormalText = GS + b'!\x00'
 AlignLeft = ESC + b'a\x00'
 AlignCenter = ESC + b'a\x01'
 AlignRight = ESC + b'a\x02'
-SelectFontA = ESC + b'M\x00' # Standard Font A
-SelectFontB = ESC + b'M\x01' # Smaller Font B (often used for details)
+SelectFontA = ESC + b'M\x00'
+SelectFontB = ESC + b'M\x01'
 FullCut = GS + b'V\x00'
-PartialCut = GS + b'V\x01' # Or m=66 for some printers
+PartialCut = GS + b'V\x01'
 
-# Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
 
-
 def load_config():
-    # Ensure data directory exists BEFORE loading config
     os.makedirs(DATA_DIR, exist_ok=True)
-    
     defaults = {
         "printer_name": "80mm Series Printer",
         "auto_update": True,
         "port": 5000,
-        "management_password": "9999" # Default password
+        "management_password": "9999"
     }
     if os.path.exists(CONFIG_FILE):
         try:
@@ -84,12 +84,10 @@ def load_config():
 
 config = load_config()
 PRINTER_NAME = config["printer_name"]
-MANAGEMENT_PASSWORD = str(config["management_password"]) # Ensure password is a string
+MANAGEMENT_PASSWORD = str(config["management_password"])
 
-# Disable debug mode
 app.config['DEBUG'] = False
 
-# Add rate limiting
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -99,28 +97,96 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"]
 )
 
-
-def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
+def to_bytes(s, encoding='cp437'):
     if isinstance(s, bytes):
         return s
-    return s.encode(encoding, errors='replace') # 'replace' will put a ? for unmappable chars
-    
+    return s.encode(encoding, errors='replace')
+
+# --- NEW: Helper functions to interact with the Windows Registry ---
+def get_registry_first_run_date():
+    """Reads the install date from the Windows Registry."""
+    if sys.platform != 'win32':
+        return None
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, REGISTRY_PATH, 0, winreg.KEY_READ)
+        value, _ = winreg.QueryValueEx(key, REGISTRY_VALUE_NAME)
+        winreg.CloseKey(key)
+        return value
+    except FileNotFoundError:
+        app.logger.info("Registry key not found. This is likely a true first run.")
+        return None
+    except Exception as e:
+        app.logger.error(f"Error reading from registry: {e}")
+        return None
+
+def set_registry_first_run_date(date_str):
+    """Writes the install date to the Windows Registry."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        # CreateKey will open the key if it exists or create it if it doesn't
+        key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, REGISTRY_PATH)
+        winreg.SetValueEx(key, REGISTRY_VALUE_NAME, 0, winreg.REG_SZ, date_str)
+        winreg.CloseKey(key)
+        app.logger.info(f"Successfully wrote install date '{date_str}' to registry.")
+        return True
+    except PermissionError:
+        app.logger.critical("CRITICAL: Permission denied to write to HKEY_LOCAL_MACHINE. Trial system will not be secure.")
+        # In a real app, you might want to alert the user they need to run as admin once.
+        return False
+    except Exception as e:
+        app.logger.error(f"Error writing to registry: {e}")
+        return False
+
+# --- MODIFIED: Trial initialization now uses the registry as an anchor ---
 def initialize_trial():
-    """Create trial file on first run with signature"""
-    if not os.path.exists(TRIAL_INFO_FILE):
+    """
+    Initializes the trial period, using the Windows Registry as the source of truth
+    to prevent tampering by deleting the trial.json file.
+    """
+    authoritative_first_run_date = get_registry_first_run_date()
+
+    if authoritative_first_run_date is None:
+        # This is a true first run.
+        app.logger.info("No registry entry found. Performing first-time trial initialization.")
+        authoritative_first_run_date = datetime.now().strftime("%Y-%m-%d")
+        
+        # Attempt to write to registry. If it fails, the trial won't be secure, but the app can still run.
+        set_registry_first_run_date(authoritative_first_run_date)
+    else:
+        # Registry entry exists. This is the authoritative date.
+        app.logger.info(f"Found authoritative install date in registry: {authoritative_first_run_date}. Verifying trial file.")
+
+    # At this point, we have the authoritative date. Ensure trial.json exists and matches.
+    signature_data = f"{authoritative_first_run_date}{APP_SECRET_KEY}".encode()
+    signature = hashlib.sha256(signature_data).hexdigest()
+    
+    trial_data_to_write = {
+        "first_run_date": authoritative_first_run_date,
+        "signature": signature
+    }
+
+    # Check if trial.json is missing or tampered with. If so, recreate it.
+    recreate_file = True
+    if os.path.exists(TRIAL_INFO_FILE):
         try:
-            first_run_date = datetime.now().strftime("%Y-%m-%d")
-            signature_data = f"{first_run_date}{APP_SECRET_KEY}".encode()
-            signature = hashlib.sha256(signature_data).hexdigest()
-            
+            with open(TRIAL_INFO_FILE, 'r') as f:
+                current_trial_data = json.load(f)
+            if current_trial_data == trial_data_to_write:
+                recreate_file = False
+        except (json.JSONDecodeError, KeyError):
+            # File is corrupt or malformed, so we'll recreate it.
+            app.logger.warning("Trial file is corrupt. Recreating from authoritative source.")
+            recreate_file = True
+
+    if recreate_file:
+        try:
             with open(TRIAL_INFO_FILE, 'w') as f:
-                json.dump({
-                    "first_run_date": first_run_date,
-                    "signature": signature
-                }, f)
-            app.logger.info("Initialized 30-day trial period")
+                json.dump(trial_data_to_write, f)
+            app.logger.info("Wrote/recreated trial.json based on authoritative date.")
         except Exception as e:
             app.logger.error(f"Error creating trial file: {e}")
+
 
 def word_wrap_text(text, max_width, initial_indent="", subsequent_indent=""):
     lines = []
@@ -237,9 +303,8 @@ def get_next_daily_order_number():
 def serve_index():
     return send_from_directory('.', 'POSPal.html')
 
-# --- NEW ENDPOINT for Login ---
 @app.route('/api/login', methods=['POST'])
-@limiter.limit("10 per minute") # Rate limit login attempts
+@limiter.limit("10 per minute")
 def login():
     data = request.get_json()
     password_attempt = data.get('password')
@@ -255,26 +320,21 @@ def login():
         return jsonify({"success": False, "message": "Invalid password."}), 401
 
 
-# --- NEW ENDPOINT to get app version ---
 @app.route('/api/version')
 def get_version():
     return jsonify({"version": CURRENT_VERSION})
 
 
-# --- NEW ENDPOINT FOR SHUTDOWN ---
 def shutdown_server():
     app.logger.info("Shutdown command received. Terminating server.")
     os._exit(0)
 
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown():
-    # Schedule shutdown for 1 second from now
     threading.Timer(1.0, shutdown_server).start()
-    # Immediately return a response
     return jsonify({"status": "success", "message": "Server is shutting down."})
 
 
-# --- NEW ENDPOINT to get the next order number ---
 @app.route('/api/order_status', methods=['GET'])
 def get_order_status():
     try:
@@ -287,7 +347,6 @@ def get_order_status():
                     if data.get('date') == today_str:
                         current_counter_val = data.get('counter', 0)
             except (json.JSONDecodeError, FileNotFoundError):
-                # File is corrupt or gone, will reset to 0
                 pass
         
         return jsonify({"next_order_number": current_counter_val + 1})
@@ -323,7 +382,6 @@ def get_menu():
 def save_menu():
     new_menu_data = request.json
     try:
-        # Ensure data directory exists
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR, exist_ok=True)
         os.makedirs(os.path.dirname(MENU_FILE), exist_ok=True)
@@ -341,8 +399,6 @@ def save_menu():
 
 
 def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
-    
-    # Check trial status first
     trial_status = check_trial_status()
     if not trial_status.get("active", False):
         app.logger.warning("Printing blocked - trial expired")
@@ -353,7 +409,7 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         ticket_content = bytearray()
         ticket_content += InitializePrinter
         NORMAL_FONT_LINE_WIDTH = 42 
-        SMALL_FONT_LINE_WIDTH = 56 # Approximate for Font B
+        SMALL_FONT_LINE_WIDTH = 56
 
         ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
         restaurant_name = "POSPal" 
@@ -390,57 +446,40 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             line_total = item_quantity * item_price_unit
             grand_total += line_total
 
-            # MODIFICATION: Smartly print large item name and normal price
             left_side = f"{item_quantity}x {item_name_orig}"
             right_side = f"{line_total:.2f}"
 
-            # Calculate space requirements
             large_text_width = len(left_side) * 2
             normal_text_width = len(right_side)
             
             if large_text_width + normal_text_width < NORMAL_FONT_LINE_WIDTH:
-                # --- It fits on one line ---
                 ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
                 ticket_content += to_bytes(left_side)
-                
-                # Switch to normal font for the price
                 ticket_content += NormalText + BoldOff
-                
-                # Calculate padding to push price to the right
                 padding_size = NORMAL_FONT_LINE_WIDTH - large_text_width - normal_text_width
                 padding = " " * padding_size
                 ticket_content += to_bytes(padding)
-                
-                # Print the normal-sized price
                 ticket_content += to_bytes(right_side + "\n")
             else:
-                # --- New handling for multi-line items ---
                 ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
                 DOUBLE_WIDTH_LINE_CHARS = NORMAL_FONT_LINE_WIDTH // 2
                 wrapped_name_lines = word_wrap_text(left_side, DOUBLE_WIDTH_LINE_CHARS)
                 
-                # Print all lines except last normally
                 for line in wrapped_name_lines[:-1]:
                     ticket_content += to_bytes(line + "\n")
                 
-                # Handle last line with price
                 last_line = wrapped_name_lines[-1]
                 last_line_width = len(last_line) * 2
                 
-                # Calculate available space for price
                 available_space = NORMAL_FONT_LINE_WIDTH - last_line_width
                 padding = " " * max(0, available_space - normal_text_width)
                 
-                # Print last line (item name) without newline
                 ticket_content += to_bytes(last_line)
-                
-                # Switch to normal font and add price
                 ticket_content += NormalText + BoldOff + to_bytes(padding + right_side + "\n")
-                ticket_content += AlignLeft  # Reset alignment
-            # Ensure font is reset for modifiers
+                ticket_content += AlignLeft
+
             ticket_content += NormalText + BoldOff 
 
-            # Print modifiers and comments (indented) in normal font
             general_options = item.get('generalSelectedOptions', [])
             if general_options:
                 for opt in general_options:
@@ -571,7 +610,6 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
 def record_order_in_csv(order_data, print_status_message):
     try:
-        # Ensure data directory exists
         if not os.path.exists(DATA_DIR):
             os.makedirs(DATA_DIR, exist_ok=True)
         printed_status_for_csv = print_status_message
@@ -640,7 +678,6 @@ def record_order_in_csv(order_data, print_status_message):
 
 @app.route('/api/orders', methods=['POST'])
 def handle_order():
-    # Check trial status
     trial_status = check_trial_status()
     if not trial_status.get("active", False):
         return jsonify({
@@ -744,26 +781,30 @@ def handle_order():
         "message": message
     }), 200
     
+# --- MODIFIED: check_trial_status now relies on the sanitized trial.json ---
 def check_trial_status():
-    """Check trial status with tamper protection"""
+    """
+    Checks trial status. Relies on initialize_trial() having already sanitized
+    the trial.json file against the registry.
+    """
     # License check (highest priority)
     if os.path.exists(LICENSE_FILE):
         try:
             with open(LICENSE_FILE) as f:
-                license = json.load(f)
-            # Validate signature
-            data = f"{license['hardware_id']}{APP_SECRET_KEY}".encode()
-            if hashlib.sha256(data).hexdigest() == license['signature']:
-                # Validate hardware
-                current_hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
-                                         for i in range(0, 8*6, 8))
-                if current_hw_id == license['hardware_id']:
+                license_data = json.load(f)
+            data = f"{license_data['hardware_id']}{APP_SECRET_KEY}".encode()
+            if hashlib.sha256(data).hexdigest() == license_data['signature']:
+                current_hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' for i in range(0, 8*6, 8))
+                if current_hw_id == license_data['hardware_id']:
                     return {"licensed": True, "active": True}
-        except:
-            app.logger.warning("Invalid license file")
+        except Exception as e:
+            app.logger.warning(f"Invalid license file: {e}")
     
     # Trial check
     if not os.path.exists(TRIAL_INFO_FILE):
+        # This case should theoretically not be hit often if initialize_trial runs first,
+        # but is a good fallback.
+        app.logger.warning("Trial info file not found during check. Forcing expiration.")
         return {"licensed": False, "active": False, "expired": True}
     
     try:
@@ -773,6 +814,7 @@ def check_trial_status():
         # Verify signature
         data = f"{trial['first_run_date']}{APP_SECRET_KEY}".encode()
         if hashlib.sha256(data).hexdigest() != trial['signature']:
+            app.logger.error("TRIAL TAMPERING DETECTED: Signature mismatch. Forcing expiration.")
             return {"licensed": False, "active": False, "expired": True}
         
         # Check dates
@@ -786,23 +828,21 @@ def check_trial_status():
             "days_left": max(0, days_left),
             "expired": days_left <= 0
         }
-    except:
+    except Exception as e:
+        app.logger.error(f"Error processing trial file during check: {e}. Forcing expiration.")
         return {"licensed": False, "active": False, "expired": True}
 
-# Add API endpoint
+
 @app.route('/api/trial_status')
 def get_trial_status():
     return jsonify(check_trial_status())
 
 @app.route('/api/hardware_id')
 def get_hardware_id():
-    """Get machine's hardware ID"""
-    hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
-                     for i in range(0, 8*6, 8))
+    hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' for i in range(0, 8*6, 8))
     return jsonify({"hardware_id": hw_id})
     
 
-# --- NEW ENDPOINTS FOR REPRINT ---
 @app.route('/api/todays_orders_for_reprint', methods=['GET'])
 def get_todays_orders_for_reprint():
     try:
@@ -968,7 +1008,6 @@ def get_daily_summary():
         return jsonify({"status": "error", "message": f"Could not generate daily summary: {str(e)}"}), 500
 
 
-# --- ANALYTICS ENDPOINT (CORRECTED & ENHANCED) ---
 @app.route('/api/analytics', methods=['GET'])
 def get_analytics():
     try:
@@ -976,7 +1015,6 @@ def get_analytics():
         start_date_str = request.args.get('start')
         end_date_str = request.args.get('end')
 
-        # --- 1. Determine Date Range and Filenames ---
         target_filenames = []
         now = datetime.now()
 
@@ -997,11 +1035,9 @@ def get_analytics():
             for i in range(delta.days + 1):
                 day = start_date + timedelta(days=i)
                 target_filenames.append(os.path.join(DATA_DIR, f"orders_{day.strftime('%Y-%m-%d')}.csv"))
-        else: # Default to today if params are weird
+        else:
              target_filenames.append(os.path.join(DATA_DIR, f"orders_{now.strftime('%Y-%m-%d')}.csv"))
 
-
-        # --- 2. Load Menu to get item-to-category mapping ---
         item_to_category_map = {}
         if os.path.exists(MENU_FILE):
             with open(MENU_FILE, 'r', encoding='utf-8') as f:
@@ -1010,7 +1046,6 @@ def get_analytics():
                     for item in items:
                         item_to_category_map[str(item.get('id'))] = category
         
-        # --- 3. Initialize Analytics Variables ---
         total_orders = 0
         gross_revenue = 0.0
         cash_total = 0.0
@@ -1020,10 +1055,9 @@ def get_analytics():
         item_revenue_counter = defaultdict(float)
         sales_by_hour = defaultdict(float)
 
-        # --- 4. Read and Aggregate Data from relevant CSV files ---
         for filename in target_filenames:
             if not os.path.exists(filename):
-                continue # Skip if file for a specific day doesn't exist
+                continue
 
             with open(filename, 'r', newline='', encoding='utf-8') as f_read:
                 reader = csv.DictReader(f_read)
@@ -1062,7 +1096,6 @@ def get_analytics():
                     except (ValueError, TypeError, json.JSONDecodeError) as e:
                         app.logger.warning(f"Could not parse row in analytics processing from {os.path.basename(filename)}: {row}. Error: {e}")
 
-        # --- 5. Calculate Final KPIs ---
         atv = (gross_revenue / total_orders) if total_orders > 0 else 0.0
         
         formatted_sales_by_cat = sorted(
@@ -1082,7 +1115,6 @@ def get_analytics():
             {"hour": hour, "total": sales_by_hour.get(hour, 0.0)} for hour in range(24)
         ]
 
-        # --- 6. Construct and Return JSON Response ---
         analytics_data = {
             "grossRevenue": gross_revenue,
             "totalOrders": total_orders,
@@ -1103,10 +1135,6 @@ def get_analytics():
 
 
 def check_for_updates():
-    """
-    Checks for a new release on GitHub, downloads it, and creates a batch script
-    to perform the update and clean up after itself.
-    """
     try:
         app.logger.info("Checking for application updates...")
         response = requests.get("https://api.github.com/repos/Radot1/POSPal/releases/latest")
@@ -1117,10 +1145,8 @@ def check_for_updates():
         latest_ver = response.json()['tag_name']
         app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version from GitHub: {latest_ver}")
         
-        # FIX: Compare versions after stripping any leading 'v' to prevent update loops.
         if latest_ver.lstrip('v') != CURRENT_VERSION.lstrip('v'):
             app.logger.info(f"New version {latest_ver} found. Starting update process.")
-            # Download the new executable from the release assets
             assets = response.json().get('assets', [])
             download_url = ""
             for asset in assets:
@@ -1134,57 +1160,42 @@ def check_for_updates():
 
             app.logger.info(f"Downloading new executable from: {download_url}")
             new_exe_response = requests.get(download_url)
-            new_exe_response.raise_for_status() # Will raise an exception for 4xx/5xx responses
+            new_exe_response.raise_for_status()
 
             new_exe_path = os.path.join(BASE_DIR, "POSPal_new.exe")
             with open(new_exe_path, "wb") as f:
                 f.write(new_exe_response.content)
             app.logger.info(f"New executable saved to {new_exe_path}")
             
-            # Create a more robust update script
             update_script_path = os.path.join(BASE_DIR, "update.bat")
             with open(update_script_path, "w") as bat:
                 bat.write(f"""@echo off
 echo Updating POSPal... Please wait.
 
-:: Give the main application a moment to close
 ping 127.0.0.1 -n 4 > nul
-
-:: Forcefully terminate the old process, hiding errors if it's already closed
 taskkill /f /im POSPal.exe > nul 2>&1
-
-:: Replace the old executable with the new one
 move /y "POSPal_new.exe" "POSPal.exe"
-
-:: Relaunch the new version
 echo Relaunching POSPal...
 start "" "POSPal.exe"
-
-:: Self-delete the batch file and exit the command prompt
 (goto) 2>nul & del "%~f0" & exit
 """)
             
             app.logger.info(f"Update script created at {update_script_path}")
-            
-            # Execute the update script in a new process
             os.system(f'start /B "" "{update_script_path}"')
             app.logger.info("Update script launched. The application will now exit.")
-            
-            # Exit the current application
             os._exit(0)
     except requests.exceptions.RequestException as e:
         app.logger.error(f"Update check failed due to a network error: {str(e)}")
     except Exception as e:
         app.logger.error(f"An unexpected error occurred during the update check: {str(e)}")
 
-# Add to startup logic
 if config.get("auto_update", False) and getattr(sys, 'frozen', False):
-    # Check for updates once, 5 seconds after startup
     threading.Timer(5, check_for_updates).start()
 
 if __name__ == '__main__':
+    # --- MODIFIED: Ensure trial is initialized on startup ---
     initialize_trial()
-    # Verify we can write to DATA_DIR
+    
     try:
         test_file = os.path.join(DATA_DIR, 'permission_test.tmp')
         with open(test_file, 'w') as f:
@@ -1192,8 +1203,6 @@ if __name__ == '__main__':
         os.remove(test_file)
     except Exception as e:
         app.logger.critical(f"CRITICAL: Cannot write to data directory: {DATA_DIR}. Error: {str(e)}")
-        # In a real GUI app, you'd show a message box here.
-        # For now, we exit with an error code.
         sys.exit(f"Error: Insufficient permissions to write to the data directory: {DATA_DIR}")
         
     from waitress import serve
