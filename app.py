@@ -181,8 +181,9 @@ def get_next_daily_order_number():
     lock_acquired = False
     for _ in range(10): 
         try:
+            # Attempt to create and exclusively open the lock file
             fd = os.open(ORDER_COUNTER_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-            os.close(fd) 
+            os.close(fd) # Close the file handle immediately, we just needed to create the file
             lock_acquired = True
             break
         except FileExistsError:
@@ -216,6 +217,7 @@ def get_next_daily_order_number():
         next_counter_val = current_counter_val + 1
         counter_data_to_save = {"date": today_str, "counter": next_counter_val}
         
+        # Atomic write using a temporary file
         temp_counter_file = ORDER_COUNTER_FILE + ".tmp"
         with open(temp_counter_file, 'w') as f:
             json.dump(counter_data_to_save, f)
@@ -226,6 +228,7 @@ def get_next_daily_order_number():
         app.logger.critical(f"CRITICAL COUNTER UPDATE FAILURE: {datetime.now()} - {e_update}")
         raise Exception(f"Failed to update order counter: {e_update}")
     finally:
+        # Release the lock by deleting the lock file
         if lock_acquired and os.path.exists(ORDER_COUNTER_LOCK_FILE):
             try:
                 os.remove(ORDER_COUNTER_LOCK_FILE)
@@ -340,21 +343,30 @@ def save_menu():
         return jsonify({"status": "error", "message": f"Failed to save menu: {str(e)}"}), 500
 
 
+# --- REFACTORED to prevent resource leaks and improve clarity ---
 def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
-    
-    # Check trial status first
+    """
+    Builds and prints a kitchen ticket. This function is refactored to ensure
+    all printer resources are properly closed in all scenarios.
+    """
+    # 1. Pre-flight checks (no resources opened yet)
     trial_status = check_trial_status()
     if not trial_status.get("active", False):
         app.logger.warning("Printing blocked - trial expired")
-        return {"success": False, "reason": "TRIAL_EXPIRED"}
-    
-    hprinter = None
+        return False
+
+    if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
+        app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print order #{order_data.get('number', 'N/A')}.")
+        return False
+
+    # 2. Build the ticket content (can fail without opening resources)
     try:
         ticket_content = bytearray()
         ticket_content += InitializePrinter
         NORMAL_FONT_LINE_WIDTH = 42 
-        SMALL_FONT_LINE_WIDTH = 56 # Approximate for Font B
+        SMALL_FONT_LINE_WIDTH = 56
 
+        # ... (rest of ticket content generation logic) ...
         ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
         restaurant_name = "POSPal" 
         ticket_content += to_bytes(restaurant_name + "\n")
@@ -390,82 +402,52 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             line_total = item_quantity * item_price_unit
             grand_total += line_total
 
-            # MODIFICATION: Smartly print large item name and normal price
             left_side = f"{item_quantity}x {item_name_orig}"
             right_side = f"{line_total:.2f}"
-
-            # Calculate space requirements
             large_text_width = len(left_side) * 2
             normal_text_width = len(right_side)
             
             if large_text_width + normal_text_width < NORMAL_FONT_LINE_WIDTH:
-                # --- It fits on one line ---
                 ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
                 ticket_content += to_bytes(left_side)
-                
-                # Switch to normal font for the price
                 ticket_content += NormalText + BoldOff
-                
-                # Calculate padding to push price to the right
                 padding_size = NORMAL_FONT_LINE_WIDTH - large_text_width - normal_text_width
                 padding = " " * padding_size
-                ticket_content += to_bytes(padding)
-                
-                # Print the normal-sized price
-                ticket_content += to_bytes(right_side + "\n")
+                ticket_content += to_bytes(padding + right_side + "\n")
             else:
-                # --- New handling for multi-line items ---
                 ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
                 DOUBLE_WIDTH_LINE_CHARS = NORMAL_FONT_LINE_WIDTH // 2
                 wrapped_name_lines = word_wrap_text(left_side, DOUBLE_WIDTH_LINE_CHARS)
-                
-                # Print all lines except last normally
                 for line in wrapped_name_lines[:-1]:
                     ticket_content += to_bytes(line + "\n")
-                
-                # Handle last line with price
                 last_line = wrapped_name_lines[-1]
                 last_line_width = len(last_line) * 2
-                
-                # Calculate available space for price
                 available_space = NORMAL_FONT_LINE_WIDTH - last_line_width
                 padding = " " * max(0, available_space - normal_text_width)
-                
-                # Print last line (item name) without newline
                 ticket_content += to_bytes(last_line)
-                
-                # Switch to normal font and add price
                 ticket_content += NormalText + BoldOff + to_bytes(padding + right_side + "\n")
-                ticket_content += AlignLeft  # Reset alignment
-            # Ensure font is reset for modifiers
+                ticket_content += AlignLeft
             ticket_content += NormalText + BoldOff 
 
-            # Print modifiers and comments (indented) in normal font
             general_options = item.get('generalSelectedOptions', [])
             if general_options:
                 for opt in general_options:
                     opt_name = opt.get('name', 'N/A')
                     opt_price_change = float(opt.get('priceChange', 0.0))
-                    price_change_str = ""
-                    if opt_price_change != 0:
-                        price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})"
-                    
+                    price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})" if opt_price_change != 0 else ""
                     option_line = f"  + {opt_name}{price_change_str}"
-                    wrapped_option_lines = word_wrap_text(option_line, NORMAL_FONT_LINE_WIDTH, initial_indent="  ", subsequent_indent="    ") 
-                    for opt_line_part in wrapped_option_lines:
+                    for opt_line_part in word_wrap_text(option_line, NORMAL_FONT_LINE_WIDTH, initial_indent="  ", subsequent_indent="    "):
                         ticket_content += to_bytes(opt_line_part + "\n")
 
             item_comment = item.get('comment', '').strip()
             if item_comment:
                 ticket_content += BoldOn
-                wrapped_comments = word_wrap_text(f"Note: {item_comment}", NORMAL_FONT_LINE_WIDTH, initial_indent="    ", subsequent_indent="    ")
-                for comment_line in wrapped_comments:
+                for comment_line in word_wrap_text(f"Note: {item_comment}", NORMAL_FONT_LINE_WIDTH, initial_indent="    ", subsequent_indent="    "):
                      ticket_content += to_bytes(comment_line + "\n")
                 ticket_content += BoldOff                  
             
             if item_idx < len(order_data.get('items', [])) - 1:
                 ticket_content += to_bytes("." * NORMAL_FONT_LINE_WIDTH + "\n")
-
 
         ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
         ticket_content += SelectFontA + DoubleHeightWidth + BoldOn + AlignRight
@@ -481,30 +463,32 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             ticket_content += SelectFontA + NormalText + BoldOn 
             ticket_content += to_bytes("ORDER NOTES:\n") + BoldOff 
             ticket_content += SelectFontA + NormalText 
-            wrapped_universal_comment_lines = word_wrap_text(universal_comment, NORMAL_FONT_LINE_WIDTH, initial_indent="", subsequent_indent="") 
-            for line in wrapped_universal_comment_lines:
+            for line in word_wrap_text(universal_comment, NORMAL_FONT_LINE_WIDTH, initial_indent="", subsequent_indent=""):
                 ticket_content += to_bytes(line + "\n")
             ticket_content += to_bytes("\n")
         
         ticket_content += to_bytes("\n")
         ticket_content += AlignCenter + SelectFontB
         disclaimer_text = "This is not a legal receipt of payment and is for informational purposes only."
-        wrapped_disclaimer_lines = word_wrap_text(disclaimer_text, SMALL_FONT_LINE_WIDTH)
-        for line in wrapped_disclaimer_lines:
+        for line in word_wrap_text(disclaimer_text, SMALL_FONT_LINE_WIDTH):
             ticket_content += to_bytes(line + "\n")
 
         ticket_content += SelectFontA + AlignLeft
-            
         ticket_content += to_bytes("\n\n\n\n") 
         ticket_content += FullCut
 
-        if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
-            app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print order #{order_data.get('number', 'N/A')}.")
-            return False
+    except Exception as e_build:
+        app.logger.error(f"Error building ticket content for order #{order_data.get('number', 'N/A')}: {str(e_build)}")
+        return False
 
+    # 3. Handle the printing with a guaranteed resource cleanup
+    hprinter = None
+    doc_started = False
+    try:
         app.logger.info(f"Attempting to open printer: '{PRINTER_NAME}' for order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}")
         hprinter = win32print.OpenPrinter(PRINTER_NAME)
-        
+
+        # Check printer status
         printer_info = win32print.GetPrinter(hprinter, 2)
         current_status = printer_info['Status']
         app.logger.info(f"Printer '{PRINTER_NAME}' current status code: {hex(current_status)}")
@@ -514,7 +498,6 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
         PRINTER_STATUS_DOOR_OPEN = 0x00000400; PRINTER_STATUS_NO_TONER = 0x00040000
         PRINTER_STATUS_PAUSED = 0x00000001
-
         problem_flags_map = {
             PRINTER_STATUS_OFFLINE: "Offline", PRINTER_STATUS_ERROR: "Error",
             PRINTER_STATUS_NOT_AVAILABLE: "Not Available/Disconnected", PRINTER_STATUS_PAPER_OUT: "Paper Out",
@@ -526,42 +509,35 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
         if active_problems:
             problems_string = ", ".join(active_problems)
-            app.logger.error(f"Printer '{PRINTER_NAME}' reported problem(s): {problems_string} (Status Code: {hex(current_status)}). Order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''} will not be printed.")
-            if hprinter: win32print.ClosePrinter(hprinter) 
-            return False 
+            app.logger.error(f"Printer '{PRINTER_NAME}' reported problem(s): {problems_string}. Order will not be printed.")
+            return False # Finally will close the handle
 
-        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with print for order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}.")
+        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with print.")
         
-        doc_started = False
-        try:
-            doc_name = f"Order_{order_data.get('number', 'N/A')}_Ticket{f'_{copy_info}'.replace(' ','_') if copy_info else ''}_ESCPOST"
-            win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
-            doc_started = True
-            win32print.StartPagePrinter(hprinter)
-            win32print.WritePrinter(hprinter, bytes(ticket_content))
-            win32print.EndPagePrinter(hprinter)
-            app.logger.info(f"Order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''} data sent to printer spooler for '{PRINTER_NAME}'.")
-            return True
-        except Exception as e_print_doc:
-            app.logger.error(f"Error during document printing phase for order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''} on '{PRINTER_NAME}': {str(e_print_doc)}")
-            return False
-        finally:
-            if doc_started:
-                win32print.EndDocPrinter(hprinter)
+        # Perform the print job
+        doc_name = f"Order_{order_data.get('number', 'N/A')}_Ticket{f'_{copy_info}'.replace(' ','_') if copy_info else ''}_ESCPOST"
+        win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
+        doc_started = True
+        
+        win32print.StartPagePrinter(hprinter)
+        win32print.WritePrinter(hprinter, bytes(ticket_content))
+        win32print.EndPagePrinter(hprinter)
+        
+        app.logger.info(f"Order #{order_data.get('number', 'N/A')} data sent to printer spooler for '{PRINTER_NAME}'.")
+        return True # Success
 
-    except win32print.error as e_win32: 
-        error_code = e_win32.winerror
-        error_msg = e_win32.strerror
+    except (win32print.error, Exception) as e:
         order_id_str = f"order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}"
-        if error_code == 1801:
-             app.logger.error(f"Printing failed for {order_id_str}: Invalid printer name '{PRINTER_NAME}'. Error {error_code}: {error_msg}")
-        else:
-             app.logger.error(f"A win32print error occurred for {order_id_str} with printer '{PRINTER_NAME}'. Error {error_code}: {error_msg}")
+        app.logger.error(f"A printing error occurred for {order_id_str} with printer '{PRINTER_NAME}'. Error: {str(e)}")
         return False
-    except Exception as e:
-        app.logger.error(f"General printing system error for order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''} with printer '{PRINTER_NAME}': {str(e)}")
-        return False
+        
     finally:
+        # This block ensures all opened resources are closed, in the correct order.
+        if doc_started:
+            try:
+                win32print.EndDocPrinter(hprinter)
+            except Exception as e_doc:
+                 app.logger.error(f"Error ending document on printer '{PRINTER_NAME}': {str(e_doc)}")
         if hprinter:
             try:
                 win32print.ClosePrinter(hprinter)
@@ -1104,78 +1080,107 @@ def get_analytics():
 
 def check_for_updates():
     """
-    Checks for a new release on GitHub, downloads it, and creates a batch script
-    to perform the update and clean up after itself.
+    Checks for a new release on a public GitHub repository, downloads it,
+    and creates a batch script to perform the update.
     """
     try:
-        app.logger.info("Checking for application updates...")
-        response = requests.get("https://api.github.com/repos/Radot1/POSPal/releases/latest")
+        app.logger.info("Checking for application updates from public GitHub repository...")
+
+        # This URL points to the latest release of a public repository.
+        # No Personal Access Token (PAT) is needed for public repos.
+        repo_url = "https://api.github.com/repos/Radot1/POSPal/releases/latest"
+
+        # It's good practice to set a User-Agent header when making API requests.
+        headers = {
+            "User-Agent": "POSPal-App-Updater/1.0",
+            "Accept": "application/vnd.github.v3+json"
+        }
+
+        # Make the request to the GitHub API. Added headers and a timeout.
+        response = requests.get(repo_url, headers=headers, timeout=15)
+
         if response.status_code != 200:
-            app.logger.error(f"Update check failed: GitHub API returned HTTP {response.status_code}")
+            app.logger.error(f"Update check failed: GitHub API returned HTTP {response.status_code}. Response: {response.text}")
             return
-            
-        latest_ver = response.json()['tag_name']
+
+        latest_release_data = response.json()
+        latest_ver = latest_release_data.get('tag_name')
+
+        if not latest_ver:
+            app.logger.error("Update check failed: Could not find 'tag_name' in the API response.")
+            return
+
         app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version from GitHub: {latest_ver}")
-        
-        # FIX: Compare versions after stripping any leading 'v' to prevent update loops.
+
+        # Compare versions after stripping any leading 'v' to prevent update loops.
         if latest_ver.lstrip('v') != CURRENT_VERSION.lstrip('v'):
             app.logger.info(f"New version {latest_ver} found. Starting update process.")
-            # Download the new executable from the release assets
-            assets = response.json().get('assets', [])
+
+            # Find the correct asset to download from the release.
+            assets = latest_release_data.get('assets', [])
             download_url = ""
+            # The asset should be the main executable file.
+            expected_asset_name = os.path.basename(sys.executable) # e.g., "POSPal.exe"
+            
             for asset in assets:
-                if asset.get('name') == 'POSPal.exe':
+                if asset.get('name') == expected_asset_name:
                     download_url = asset.get('browser_download_url')
                     break
-            
+
             if not download_url:
-                app.logger.error("Could not find 'POSPal.exe' in the latest release assets.")
+                app.logger.error(f"Could not find '{expected_asset_name}' in the latest release assets.")
                 return
 
             app.logger.info(f"Downloading new executable from: {download_url}")
-            new_exe_response = requests.get(download_url)
-            new_exe_response.raise_for_status() # Will raise an exception for 4xx/5xx responses
+            # Use a longer timeout for the download itself.
+            new_exe_response = requests.get(download_url, timeout=300)
+            new_exe_response.raise_for_status()  # Raise an exception for 4xx/5xx responses
 
+            # Save the new executable to a temporary file.
             new_exe_path = os.path.join(BASE_DIR, "POSPal_new.exe")
             with open(new_exe_path, "wb") as f:
                 f.write(new_exe_response.content)
             app.logger.info(f"New executable saved to {new_exe_path}")
-            
-            # Create a more robust update script
+
+            # Create a batch script to perform the update.
             update_script_path = os.path.join(BASE_DIR, "update.bat")
             with open(update_script_path, "w") as bat:
                 bat.write(f"""@echo off
 echo Updating POSPal... Please wait.
 
 :: Give the main application a moment to close
-ping 127.0.0.1 -n 4 > nul
+timeout /t 3 /nobreak > nul
 
-:: Forcefully terminate the old process, hiding errors if it's already closed
-taskkill /f /im POSPal.exe > nul 2>&1
+:: Forcefully terminate the old process if it's still running
+taskkill /f /im "{expected_asset_name}" > nul 2>&1
 
 :: Replace the old executable with the new one
-move /y "POSPal_new.exe" "POSPal.exe"
+move /y "{new_exe_path}" "{expected_asset_name}"
 
 :: Relaunch the new version
 echo Relaunching POSPal...
-start "" "POSPal.exe"
+start "" "{expected_asset_name}"
 
-:: Self-delete the batch file and exit the command prompt
+:: Self-delete the batch file and exit
 (goto) 2>nul & del "%~f0" & exit
 """)
-            
+
             app.logger.info(f"Update script created at {update_script_path}")
-            
-            # Execute the update script in a new process
+
+            # Execute the update script in a new, detached process.
             os.system(f'start /B "" "{update_script_path}"')
-            app.logger.info("Update script launched. The application will now exit.")
-            
-            # Exit the current application
+            app.logger.info("Update script launched. The application will now exit to allow the update.")
+
+            # Exit the current application.
             os._exit(0)
+        else:
+            app.logger.info("POSPal is up to date.")
+            
     except requests.exceptions.RequestException as e:
         app.logger.error(f"Update check failed due to a network error: {str(e)}")
     except Exception as e:
         app.logger.error(f"An unexpected error occurred during the update check: {str(e)}")
+
 
 # Add to startup logic
 if config.get("auto_update", False) and getattr(sys, 'frozen', False):
