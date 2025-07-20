@@ -245,7 +245,8 @@
     <!-- ===== HERO SECTION (RESTRUCTURED) ===== -->
     <main class="hero-map-bg">
         <!-- Flex container to manage vertical space and fill viewport height on mobile -->
-        <div class="container mx-auto px-4 flex flex-col md:block min-h-[calc(100vh-68px)] md:min-h-0 py-6 md:py-12">
+        <!-- KEY CHANGE: Changed min-h-[calc(...)] to h-[calc(...)] on mobile to enforce a fixed height, preventing overflow. -->
+        <div class="container mx-auto px-4 flex flex-col md:block h-[calc(100vh-68px)] md:h-auto py-6 md:py-12">
             
             <!-- Top Section: Headline (with fixed height on mobile) -->
             <div class="text-center">
@@ -280,7 +281,7 @@
                 </svg>
             </div>
 
-            <!-- Bottom Section: Controls (with redesigned buttons) -->
+            <!-- Bottom Section: Controls (pushed to the bottom by mt-auto) -->
             <div class="text-center mt-auto">
                 <div id="info-panel" class="text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-4 rounded-lg min-h-[95px]">
                     <p id="info-text">Click any station on the map to learn more about the journey.</p>
