@@ -35,10 +35,12 @@
             transition: all 0.3s ease;
             border-radius: 8px;
             font-weight: 600;
-            display: inline-block;
+            display: inline-flex; /* Use inline-flex for alignment */
+            align-items: center;
+            justify-content: center;
             text-align: center;
-            padding: 0.8rem 1.75rem;
-            font-size: 1.1rem;
+            padding: 0.7rem 1.25rem;
+            font-size: 1rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         .cta-primary {
@@ -178,38 +180,30 @@
             100% { box-shadow: 0 0 0 0 rgba(102, 204, 51, 0); }
         }
 
-        /* --- NEW: Content Flow Styles --- */
+        /* --- Content Flow Styles --- */
         .section-divider {
-            /* This container holds the SVG wave */
-            line-height: 0; /* Removes any extra space */
+            line-height: 0; 
             background-color: transparent;
         }
-
         .section-divider svg {
-            /* Ensures the SVG is responsive */
             width: 100%;
             height: auto;
         }
-
         .section-title {
-            /* Initial state for scroll animation */
             opacity: 0;
             transform: translateY(20px);
             transition: opacity 0.6s ease-out, transform 0.6s ease-out;
             will-change: opacity, transform;
         }
-
         .section-title.is-visible {
-            /* Visible state for scroll animation */
             opacity: 1;
             transform: translateY(0);
         }
-
     </style>
 </head>
 <body class="bg-light-gray">
 
-    <!-- Header (Unchanged) -->
+    <!-- Header -->
     <header class="bg-white/80 backdrop-blur-lg shadow-sm sticky top-0 z-50">
         <div class="container mx-auto px-6 py-3 flex justify-between items-center">
             <a href="#" class="flex items-center space-x-3">
@@ -230,7 +224,7 @@
         </div>
     </header>
 
-    <!-- Mobile Menu (Unchanged) -->
+    <!-- Mobile Menu -->
     <div id="mobile-menu" class="hidden fixed inset-0 bg-white z-50">
         <div class="flex justify-end p-6">
             <button id="close-menu-button">
@@ -248,18 +242,20 @@
         </div>
     </div>
 
-    <!-- ===== HERO SECTION (REORDERED) ===== -->
+    <!-- ===== HERO SECTION (RESTRUCTURED) ===== -->
     <main class="hero-map-bg">
-        <div class="container mx-auto px-4 pt-12 md:pt-16 pb-8 md:pb-12">
-            <!-- Top Section: Headline -->
+        <!-- Flex container to manage vertical space and fill viewport height on mobile -->
+        <div class="container mx-auto px-4 flex flex-col md:block min-h-[calc(100vh-68px)] md:min-h-0 py-6 md:py-12">
+            
+            <!-- Top Section: Headline (with fixed height on mobile) -->
             <div class="text-center">
-                <h2 id="hero-headline" class="text-3xl sm:text-4xl font-bold text-brand-dark leading-tight font-lora">
+                <h2 id="hero-headline" class="text-3xl sm:text-4xl font-bold text-brand-dark leading-tight font-lora h-20 md:h-auto flex items-center justify-center">
                     Your Risk-Free Path to a Better Business
                 </h2>
             </div>
 
-            <!-- Middle Section: SVG Map -->
-            <div class="relative h-[400px] md:h-[400px] mt-6">
+            <!-- Middle Section: SVG Map (takes up remaining space on mobile) -->
+            <div class="relative flex-grow w-full my-2 md:h-[400px] md:mt-6">
                 <!-- Desktop Map -->
                 <svg id="metro-map-desktop" class="hidden md:block absolute inset-0 w-full h-full" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
                     <path class="map-line exit-line" d="M850 200 C 950 200, 950 300, 1100 300" />
@@ -272,56 +268,60 @@
                     <circle id="train-marker-desktop" r="12" />
                 </svg>
                 <!-- Mobile Map -->
-                <svg id="metro-map-mobile" class="md:hidden absolute inset-0 w-full h-full" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid meet">
-                    <path class="map-line exit-line" d="M200 400 C 200 450, 300 450, 300 500" />
-                    <path class="map-line main-line" d="M200 50 L 200 400 C 200 450, 100 450, 100 500" />
+                <svg id="metro-map-mobile" class="md:hidden absolute inset-0 w-full h-full" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet">
+                    <path class="map-line exit-line" d="M200 275 C 200 325, 300 325, 300 375" />
+                    <path class="map-line main-line" d="M200 50 L 200 275 C 200 325, 100 325, 100 375" />
                     <g transform="translate(200, 50)"><g id="m-station1" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="20">Try Demo</text></g></g>
-                    <g transform="translate(200, 150)"><g id="m-station2" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="-20" text-anchor="end">Book Free Setup</text></g></g>
-                    <g transform="translate(200, 275)"><g id="m-station3" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="20">30-Day Journey</text></g></g>
-                    <g transform="translate(100, 500)"><g id="m-station4" class="station-group"><circle class="station-dot" r="15" fill="var(--brand-green)" stroke="#fff"/><text class="station-label" y="35" text-anchor="middle">Lifetime Ownership</text></g></g>
-                    <g transform="translate(300, 500)"><g id="m-station5" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--medium-gray)"/><text class="station-label" y="35" text-anchor="middle">No-Obligation Exit</text></g></g>
+                    <g transform="translate(200, 125)"><g id="m-station2" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="-20" text-anchor="end">Book Free Setup</text></g></g>
+                    <g transform="translate(200, 200)"><g id="m-station3" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="20">30-Day Journey</text></g></g>
+                    <g transform="translate(100, 375)"><g id="m-station4" class="station-group"><circle class="station-dot" r="15" fill="var(--brand-green)" stroke="#fff"/><text class="station-label" y="35" text-anchor="middle">Lifetime</text></g></g>
+                    <g transform="translate(300, 375)"><g id="m-station5" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--medium-gray)"/><text class="station-label" y="35" text-anchor="middle">Exit</text></g></g>
                     <circle id="train-marker-mobile" r="12" />
                 </svg>
             </div>
 
-            <!-- Bottom Section: Controls -->
-            <div class="text-center">
-                <div id="info-panel" class="mt-6 text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-4 md:p-6 rounded-lg min-h-[100px]">
+            <!-- Bottom Section: Controls (with redesigned buttons) -->
+            <div class="text-center mt-auto">
+                <div id="info-panel" class="text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-4 rounded-lg min-h-[95px]">
                     <p id="info-text">Click any station on the map to learn more about the journey.</p>
                 </div>
-                <div class="mt-8 flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4 cta-container">
-                    <a id="cta-step2" href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary w-full sm:w-auto">
+                <div class="mt-4 flex justify-center items-center gap-x-3 sm:gap-x-4 cta-container">
+                    <a id="cta-step2" href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary">
                         <i class="fas fa-calendar-check mr-2"></i>
-                        Start at Step 2
+                        <span>Start at Step 2</span>
                     </a>
-                    <a id="cta-step1" href="POSPal_Demo.html" target="_blank" class="cta-button cta-secondary w-full sm:w-auto">
+                    <a id="cta-step1" href="POSPal_Demo.html" target="_blank" class="cta-button cta-secondary">
                         <i class="fas fa-play-circle mr-2"></i>
-                        Start at Step 1
+                        <span>Start at Step 1</span>
                     </a>
                 </div>
             </div>
         </div>
     </main>
     
-    <!-- NEW: Wave Divider -->
+    <!-- Wave Divider -->
     <div class="section-divider bg-hero-bg">
         <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="white"/>
         </svg>
     </div>
 
-    <!-- The rest of the page with updated section classes -->
+    <!-- The rest of the page sections -->
     <section id="features" class="pt-16 pb-16 bg-white">
         <div class="container mx-auto px-6">
             <div class="text-center max-w-3xl mx-auto mb-12">
                 <h2 class="section-title text-3xl font-bold text-brand-dark">Why Business Owners Choose POSPal</h2>
                 <p class="mt-4 text-gray-600">The affordable alternative to complex, expensive systems</p>
             </div>
-            <div class="value-proposition"><div class="grid md:grid-cols-3 gap-8"><div class="value-card"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-euro-sign"></i></div><h4>Cost Effective</h4><p class="mt-3 text-gray-600">Avoid expensive subscriptions. One payment gives you lifetime ownership.</p></div><div class="value-card"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-plug"></i></div><h4>Easy Setup</h4><p class="mt-3 text-gray-600">We handle printer setup and installation - no technical skills needed.</p></div><div class="value-card"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-sync-alt"></i></div><h4>Always Updated</h4><p class="mt-3 text-gray-600">Free automatic updates with new features and improvements.</p></div></div></div>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="text-center p-4"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-euro-sign"></i></div><h4 class="text-xl font-semibold">Cost Effective</h4><p class="mt-3 text-gray-600">Avoid expensive subscriptions. One payment gives you lifetime ownership.</p></div>
+                <div class="text-center p-4"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-plug"></i></div><h4 class="text-xl font-semibold">Easy Setup</h4><p class="mt-3 text-gray-600">We handle printer setup and installation - no technical skills needed.</p></div>
+                <div class="text-center p-4"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-sync-alt"></i></div><h4 class="text-xl font-semibold">Always Updated</h4><p class="mt-3 text-gray-600">Free automatic updates with new features and improvements.</p></div>
+            </div>
         </div>
     </section>
 
-    <!-- NEW: Wave Divider -->
+    <!-- Wave Divider -->
     <div class="section-divider bg-white">
         <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="var(--light-gray)"/>
@@ -330,7 +330,7 @@
 
     <section id="how-it-works" class="pt-16 pb-16 bg-light-gray"><div class="container mx-auto px-6"><div class="text-center max-w-3xl mx-auto mb-12"><h2 class="section-title text-3xl font-bold text-brand-dark">Simple & Risk-Free</h2><p class="mt-4 text-gray-600">Try POSPal for 30 days with no obligation</p></div><div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto"><div class="text-center"><div class="bg-white rounded-full h-20 w-20 flex items-center justify-center mx-auto text-brand-primary text-3xl font-bold shadow-md">1</div><h4 class="mt-6 text-xl font-semibold">Book Setup</h4><p class="mt-2 text-gray-600">Quick meeting to schedule installation</p></div><div class="text-center"><div class="bg-white rounded-full h-20 w-20 flex items-center justify-center mx-auto text-brand-primary text-3xl font-bold shadow-md">2</div><h4 class="mt-6 text-xl font-semibold">30-Day Trial</h4><p class="mt-2 text-gray-600">Full access with our installation support</p></div><div class="text-center"><div class="bg-white rounded-full h-20 w-20 flex items-center justify-center mx-auto text-brand-primary text-3xl font-bold shadow-md">3</div><h4 class="mt-6 text-xl font-semibold">Pay Only If Convinced</h4><p class="mt-2 text-gray-600">€200 one-time payment after trial</p></div></div></div></section>
     
-    <!-- NEW: Wave Divider -->
+    <!-- Wave Divider -->
     <div class="section-divider bg-light-gray">
         <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="white"/>
@@ -339,7 +339,7 @@
 
     <section id="pricing" class="pt-16 pb-16 bg-white"><div class="container mx-auto px-6"><div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden"><div class="p-8"><div class="uppercase tracking-wide text-sm text-brand-green font-semibold">One-Time Payment</div><div class="mt-2 flex items-baseline"><span class="text-4xl font-extrabold">€200</span><span class="ml-2 text-gray-500">/ lifetime</span></div><p class="mt-2 text-gray-500">After 30-day free trial</p><ul class="mt-6 space-y-3"><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Free printer setup service</li><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Lifetime software license</li><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Automatic updates forever</li><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Email support</li></ul><div class="mt-8"><a href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary w-full py-3 text-center">Start Your Free Trial</a></div></div></div></div></section>
     
-    <!-- NEW: Wave Divider -->
+    <!-- Wave Divider -->
     <div class="section-divider bg-white">
         <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="var(--light-gray)"/>
@@ -353,7 +353,7 @@
     <footer class="bg-gray-900 text-gray-400 py-12"><div class="container mx-auto px-6"><div class="grid md:grid-cols-4 gap-8"><div><h4 class="text-white text-lg font-bold mb-4">POSPal</h4><p class="text-sm">Affordable POS solutions for small businesses</p></div><div><h4 class="text-white text-lg font-bold mb-4">Contact</h4><ul class="space-y-2 text-sm"><li><i class="fas fa-envelope mr-2"></i> support@pospal.gr</li><li><i class="fas fa-phone mr-2"></i> +30 123 456 7890</li><li><i class="fab fa-instagram mr-2"></i> @pospal_gr</li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Resources</h4><ul class="space-y-2 text-sm"><li><a href="#" class="hover:text-white">Documentation</a></li><li><a href="POSPal_Demo.html" target="_blank" class="hover:text-white">Interactive Demo</a></li><li><a href="#" class="hover:text-white">Installation Guide</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Legal</h4><ul class="space-y-2 text-sm"><li><a href="#" class="hover:text-white">Privacy Policy</a></li><li><a href="#" class="hover:text-white">Terms of Service</a></li><li><a href="#" class="hover:text-white">Refund Policy</a></li></ul></div></div><div class="border-t border-gray-800 mt-8 pt-8 text-center text-sm"><p>&copy; 2024 POSPal. All rights reserved.</p></div></div></footer>
 
     <script>
-        // --- Mobile Menu Script (Unchanged) ---
+        // --- Mobile Menu Script ---
         const mobileMenuButton = document.getElementById('mobile-menu-button');
         const closeMenuButton = document.getElementById('close-menu-button');
         const mobileMenu = document.getElementById('mobile-menu');
@@ -370,7 +370,7 @@
         closeMenuButton.addEventListener('click', closeMenu);
         mobileMenuLinks.forEach(link => link.addEventListener('click', closeMenu));
 
-        // --- Fixed Metro Map Script ---
+        // --- Metro Map Script ---
         document.addEventListener('DOMContentLoaded', () => {
             const desktopMarker = document.getElementById('train-marker-desktop');
             const mobileMarker = document.getElementById('train-marker-mobile');
@@ -384,6 +384,7 @@
             let isAutoPlaying = true;
             let currentStationId = '';
 
+            // Adjusted mobile positions for the new, more compact mobile SVG
             const stationData = {
                 station1: { 
                     headline: "Explore Every Feature, Instantly.",
@@ -397,28 +398,28 @@
                     text: "Ready to try it in your business? Book a free, no-obligation setup call.",
                     ctaId: 'cta-step2',
                     desktopPos: { x: 350, y: 200 },
-                    mobilePos: { x: 200, y: 150 }
+                    mobilePos: { x: 200, y: 125 }
                 },
                 station3: { 
                     headline: "Experience the Difference for 30 Days.",
                     text: "We install the system and you use it for 30 days, with full support.",
                     ctaId: 'cta-step2',
                     desktopPos: { x: 600, y: 200 },
-                    mobilePos: { x: 200, y: 275 }
+                    mobilePos: { x: 200, y: 200 }
                 },
                 station4: { 
                     headline: "Your Business, Your System. Forever.",
                     text: "Love it? Pay once and own it forever. Includes all future updates.",
                     ctaId: 'cta-step2',
                     desktopPos: { x: 1100, y: 100 },
-                    mobilePos: { x: 100, y: 500 }
+                    mobilePos: { x: 100, y: 375 }
                 },
                 station5: { 
                     headline: "A Safe and Easy Exit.",
                     text: "Not for you? No problem. We part as friends, no questions asked.",
                     ctaId: null,
                     desktopPos: { x: 1100, y: 300 },
-                    mobilePos: { x: 300, y: 500 }
+                    mobilePos: { x: 300, y: 375 }
                 }
             };
 
@@ -441,8 +442,9 @@
                 mobileMarker.setAttribute('cy', data.mobilePos.y);
                 document.querySelectorAll('.station-group').forEach(s => {
                     s.classList.remove('active');
-                    if (s.id.substring(2) === stationId) {
-                        s.classList.add('active', 'completed');
+                    const baseId = s.id.substring(2); // e.g., 'd-station1' -> 'station1'
+                    if (baseId === stationId) {
+                        s.classList.add('active');
                     }
                 });
                 ctaStep1.classList.remove('cta-highlight');
@@ -475,13 +477,12 @@
                     stopAutoPlay();
                     handleStationClick(baseId);
                 }); 
-                
             });
 
             tourTimeout = setTimeout(startAutoPlay, 1500);
         });
 
-        // --- NEW: Intersection Observer for Section Title Animations ---
+        // --- Intersection Observer for Section Title Animations ---
         document.addEventListener('DOMContentLoaded', () => {
             const titles = document.querySelectorAll('.section-title');
             
@@ -489,12 +490,12 @@
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
                         entry.target.classList.add('is-visible');
-                        observer.unobserve(entry.target); // Optional: stop observing once visible
+                        observer.unobserve(entry.target);
                     }
                 });
             }, {
                 rootMargin: '0px',
-                threshold: 0.1 // Trigger when 10% of the element is visible
+                threshold: 0.1
             });
 
             titles.forEach(title => {
