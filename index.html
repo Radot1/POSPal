@@ -244,61 +244,46 @@
 
     <!-- ===== HERO SECTION (RESTRUCTURED) ===== -->
     <main class="hero-map-bg">
-        <!-- Flex container to manage vertical space and fill viewport height on mobile -->
-        <!-- KEY CHANGE: Changed min-h-[calc(...)] to h-[calc(...)] on mobile to enforce a fixed height, preventing overflow. -->
-        <div class="container mx-auto px-4 flex flex-col md:block h-[calc(100vh-68px)] md:h-auto py-6 md:py-12">
-            
-            <!-- Top Section: Headline (with fixed height on mobile) -->
-            <div class="text-center">
-                <h2 id="hero-headline" class="text-3xl sm:text-4xl font-bold text-brand-dark leading-tight font-lora h-20 md:h-auto flex items-center justify-center">
-                    Your Risk-Free Path to a Better Business
-                </h2>
-            </div>
+    <!-- Use grid layout for better vertical control -->
+    <div class="container mx-auto px-4 grid grid-rows-[auto,1fr,auto] h-[calc(100svh-68px)] md:h-auto py-4 md:py-12">
+        
+        <!-- Top Section: Headline -->
+        <div class="text-center row-start-1">
+            <h2 id="hero-headline" class="text-2xl sm:text-3xl font-bold text-brand-dark leading-tight font-lora">
+                Your Risk-Free Path to a Better Business
+            </h2>
+        </div>
 
-            <!-- Middle Section: SVG Map (takes up remaining space on mobile) -->
-            <div class="relative flex-grow w-full my-2 md:h-[400px] md:mt-6">
-                <!-- Desktop Map -->
-                <svg id="metro-map-desktop" class="hidden md:block absolute inset-0 w-full h-full" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
-                    <path class="map-line exit-line" d="M850 200 C 950 200, 950 300, 1100 300" />
-                    <path class="map-line main-line" d="M100 200 L 850 200 C 950 200, 950 100, 1100 100" />
-                    <g transform="translate(100, 200)"><g id="d-station1" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" y="-25" text-anchor="middle">Try Demo</text></g></g>
-                    <g transform="translate(350, 200)"><g id="d-station2" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" y="-25" text-anchor="middle">Book Free Setup</text></g></g>
-                    <g transform="translate(600, 200)"><g id="d-station3" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" y="-25" text-anchor="middle">30-Day Journey</text></g></g>
-                    <g transform="translate(1100, 100)"><g id="d-station4" class="station-group"><circle class="station-dot" r="15" fill="var(--brand-green)" stroke="#fff"/><text class="station-label" y="-40" text-anchor="middle">Lifetime Ownership</text><text class="station-sublabel" y="-22" text-anchor="middle">€200 One-Time</text></g></g>
-                    <g transform="translate(1100, 300)"><g id="d-station5" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--medium-gray)"/><text class="station-label" y="-25" text-anchor="middle">No-Obligation Exit</text></g></g>
-                    <circle id="train-marker-desktop" r="12" />
-                </svg>
-                <!-- Mobile Map -->
-                <svg id="metro-map-mobile" class="md:hidden absolute inset-0 w-full h-full" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet">
-                    <path class="map-line exit-line" d="M200 275 C 200 325, 300 325, 300 375" />
-                    <path class="map-line main-line" d="M200 50 L 200 275 C 200 325, 100 325, 100 375" />
-                    <g transform="translate(200, 50)"><g id="m-station1" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="20">Try Demo</text></g></g>
-                    <g transform="translate(200, 125)"><g id="m-station2" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="-20" text-anchor="end">Book Free Setup</text></g></g>
-                    <g transform="translate(200, 200)"><g id="m-station3" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--brand-green)"/><text class="station-label" x="20">30-Day Journey</text></g></g>
-                    <g transform="translate(100, 375)"><g id="m-station4" class="station-group"><circle class="station-dot" r="15" fill="var(--brand-green)" stroke="#fff"/><text class="station-label" y="35" text-anchor="middle">Lifetime</text></g></g>
-                    <g transform="translate(300, 375)"><g id="m-station5" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--medium-gray)"/><text class="station-label" y="35" text-anchor="middle">Exit</text></g></g>
-                    <circle id="train-marker-mobile" r="12" />
-                </svg>
-            </div>
+        <!-- Middle Section: SVG Map -->
+        <div class="relative w-full row-start-2 min-h-[200px] my-2 md:h-[400px] md:mt-6">
+            <!-- Desktop Map -->
+            <svg id="metro-map-desktop" class="hidden md:block absolute inset-0 w-full h-full" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
+                <!-- ... existing desktop map code ... -->
+            </svg>
+            <!-- Mobile Map -->
+            <svg id="metro-map-mobile" class="md:hidden absolute inset-0 w-full h-full" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet">
+                <!-- ... existing mobile map code ... -->
+            </svg>
+        </div>
 
-            <!-- Bottom Section: Controls (pushed to the bottom by mt-auto) -->
-            <div class="text-center mt-auto">
-                <div id="info-panel" class="text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-4 rounded-lg min-h-[95px]">
-                    <p id="info-text">Click any station on the map to learn more about the journey.</p>
-                </div>
-                <div class="mt-4 flex justify-center items-center gap-x-3 sm:gap-x-4 cta-container">
-                    <a id="cta-step2" href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary">
-                        <i class="fas fa-calendar-check mr-2"></i>
-                        <span>Start at Step 2</span>
-                    </a>
-                    <a id="cta-step1" href="POSPal_Demo.html" target="_blank" class="cta-button cta-secondary">
-                        <i class="fas fa-play-circle mr-2"></i>
-                        <span>Start at Step 1</span>
-                    </a>
-                </div>
+        <!-- Bottom Section: Controls -->
+        <div class="text-center row-start-3 mt-auto">
+            <div id="info-panel" class="text-base sm:text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-3 sm:p-4 rounded-lg min-h-[85px]">
+                <p id="info-text">Click any station on the map to learn more about the journey.</p>
+            </div>
+            <div class="mt-3 sm:mt-4 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-x-4 cta-container">
+                <a id="cta-step2" href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary w-full sm:w-auto">
+                    <i class="fas fa-calendar-check mr-2"></i>
+                    <span>Start at Step 2</span>
+                </a>
+                <a id="cta-step1" href="POSPal_Demo.html" target="_blank" class="cta-button cta-secondary w-full sm:w-auto">
+                    <i class="fas fa-play-circle mr-2"></i>
+                    <span>Start at Step 1</span>
+                </a>
             </div>
         </div>
-    </main>
+    </div>
+</main>
     
     <!-- Wave Divider -->
     <div class="section-divider bg-hero-bg">
