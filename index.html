@@ -248,30 +248,18 @@
         </div>
     </div>
 
-    <!-- ===== HERO SECTION ===== -->
+    <!-- ===== HERO SECTION (REORDERED) ===== -->
     <main class="hero-map-bg">
         <div class="container mx-auto px-4 pt-12 md:pt-16 pb-8 md:pb-12">
-            <!-- Top Section: Text Content -->
+            <!-- Top Section: Headline -->
             <div class="text-center">
                 <h2 id="hero-headline" class="text-3xl sm:text-4xl font-bold text-brand-dark leading-tight font-lora">
                     Your Risk-Free Path to a Better Business
                 </h2>
-                <div id="info-panel" class="mt-6 text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-6 rounded-lg min-h-[100px]">
-                    <p id="info-text">Click any station on the map to learn more about the journey.</p>
-                </div>
-                <div class="mt-8 flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4 cta-container">
-                    <a id="cta-step2" href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary w-full sm:w-auto">
-                        <i class="fas fa-calendar-check mr-2"></i>
-                        Start at Step 2
-                    </a>
-                    <a id="cta-step1" href="POSPal_Demo.html" target="_blank" class="cta-button cta-secondary w-full sm:w-auto">
-                        <i class="fas fa-play-circle mr-2"></i>
-                        Start at Step 1
-                    </a>
-                </div>
             </div>
-            <!-- Bottom Section: SVG Map -->
-            <div class="relative h-[400px] md:h-[400px] mt-8">
+
+            <!-- Middle Section: SVG Map -->
+            <div class="relative h-[400px] md:h-[400px] mt-6">
                 <!-- Desktop Map -->
                 <svg id="metro-map-desktop" class="hidden md:block absolute inset-0 w-full h-full" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
                     <path class="map-line exit-line" d="M850 200 C 950 200, 950 300, 1100 300" />
@@ -294,6 +282,23 @@
                     <g transform="translate(300, 500)"><g id="m-station5" class="station-group"><circle class="station-dot" r="10" fill="#fff" stroke="var(--medium-gray)"/><text class="station-label" y="35" text-anchor="middle">No-Obligation Exit</text></g></g>
                     <circle id="train-marker-mobile" r="12" />
                 </svg>
+            </div>
+
+            <!-- Bottom Section: Controls -->
+            <div class="text-center">
+                <div id="info-panel" class="mt-6 text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-4 md:p-6 rounded-lg min-h-[100px]">
+                    <p id="info-text">Click any station on the map to learn more about the journey.</p>
+                </div>
+                <div class="mt-8 flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4 cta-container">
+                    <a id="cta-step2" href="https://calendly.com/bzoumboulis/pospal-installation-service" target="_blank" class="cta-button cta-primary w-full sm:w-auto">
+                        <i class="fas fa-calendar-check mr-2"></i>
+                        Start at Step 2
+                    </a>
+                    <a id="cta-step1" href="POSPal_Demo.html" target="_blank" class="cta-button cta-secondary w-full sm:w-auto">
+                        <i class="fas fa-play-circle mr-2"></i>
+                        Start at Step 1
+                    </a>
+                </div>
             </div>
         </div>
     </main>
