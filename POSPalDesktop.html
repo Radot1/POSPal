@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sushaki - Order System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Base Styles */
+        * { box-sizing: border-box; margin: 0; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        :root { --primary: #E07A5F; --secondary: #81B29A; --background: #F5F5F5; --text: #2D2D2D; --highlight: #FFF8F6; }
+        body { display: flex; height: 100vh; background: var(--background); overflow: hidden; }
+        
+        /* Added to identify the UI in JS */
+        .sushaki-ui { }
+
+        /* Left Panel */
+        .order-panel { width: 33.33%; min-width: 320px; padding: 1.5rem; border-right: 2px solid #ddd; display: flex; flex-direction: column; gap: 1rem; }
+        .order-details { flex: 1; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); overflow-y: auto; }
+        #order-items-container { min-height: 100px; } /* Renamed from #order-items */
+
+        /* Numpad */
+        .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 1rem; width: 100%; }
+        .numpad button { min-height: 4rem; padding: 0.5rem; border: 1px solid #ddd; background: white; border-radius: 8px; font-size: 1.8rem; font-weight: 500; color: var(--text); cursor: pointer; transition: all 0.15s ease-out; box-shadow: 0 3px 6px rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: center; line-height: 1; }
+        .numpad button:active { transform: scale(0.96); background-color: #e9e9e9; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+        .numpad button.numpad-action-btn { background-color: var(--secondary); color: white; font-size: 1.5rem; }
+        .numpad button.numpad-action-btn:active { background-color: #6a9a80; }
+
+        /* Right Panel */
+        .menu-panel { width: 66.67%; padding: 1.5rem; overflow-y: auto; height: 100vh; }
+        .category-tabs { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e0e0e0; }
+        .category-tab { padding: 0.75rem 1.5rem; border: 1px solid #d0d0d0; border-radius: 24px; background: white; color: var(--text); cursor: pointer; font-size: 1rem; white-space: nowrap; transition: all 0.2s; }
+        .category-tab:hover { border-color: #a0a0a0; background-color: #f9f9f9; }
+        .category-tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+        .product-card { background: white; padding: 1.25rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); cursor: pointer; transition: all 0.2s; min-height: 6rem; display: flex; flex-direction: column; justify-content: space-between; }
+        .product-card:active { transform: scale(0.98); background: var(--highlight); }
+        .product-card h3 { margin-bottom: 0.5rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Order Item Styling */
+        .order-item { padding: 0.75rem 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; animation: fadeIn 0.3s ease-out; }
+        .order-item.selected-for-numpad { background: var(--highlight) !important; border-left: 3px solid var(--primary) !important; padding-left: 0.5rem; margin-left: -0.5rem; }
+        .order-item-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: 0.75rem; }
+        .order-item-actions .secondary-btn { padding: 0.6rem 0.8rem; font-size: 1.2rem; min-width: 2.8rem; min-height: 2.8rem; display: inline-flex; align-items: center; justify-content: center; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Buttons & Shared */
+        .action-buttons { display: flex; gap: 0.75rem; }
+        .action-buttons button { flex: 1; padding: 1.25rem; font-size: 1.1rem; }
+        .primary-btn { background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; }
+        .secondary-btn { background: #ddd; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; }
+        .price { color: var(--primary); font-weight: 700; }
+        .text-lg { font-size: 1.2rem; }
+        .text-bold { font-weight: 700; }
+        button { transition: transform 0.1s, background-color 0.2s; }
+        button:active { transform: scale(0.96); }
+        .primary-btn:active { background: #c0392b !important; }
+
+        /* Settings Icon */
+        .settings-gear { position: fixed; bottom: 1rem; right: 1rem; background: var(--primary); color: white; width: 3rem; height: 3rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1001; }
+        
+        /* Toast Notification */
+        .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--primary); color: white; padding: 1rem 2rem; border-radius: 8px; animation: slideDown 0.3s ease-out; display: none; z-index: 2000; }
+        @keyframes slideDown { from { top: -50px; } to { top: 20px; } }
+
+        /* MODAL STYLES (Copied from POSPal for consistency) */
+        .management-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; padding: 2rem; align-items: center; justify-content: center; }
+        .management-content { background: white; max-width: 800px; width: 100%; border-radius: 8px; padding: 1.5rem; max-height: calc(100vh - 4rem); overflow-y: auto; }
+        .management-tabs { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+        .management-tab { padding: 0.5rem 1rem; border: none; background: #eee; border-radius: 4px; cursor: pointer; }
+        .management-tab.active { background: var(--primary); color: white; }
+        .management-form { display: grid; gap: 1rem; }
+        .form-group { display: grid; gap: 0.5rem; }
+        input, select, textarea { padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; width: 100%; }
+        .item-list { margin-top: 1rem; border-top: 1px solid #eee; padding-top: 1rem; max-height: 300px; overflow-y: auto; }
+        .item-row { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid #eee; }
+        .options-badge { font-size: 0.65em; font-weight: 500; background-color: var(--secondary); color: white; padding: 2px 5px; border-radius: 3px; margin-left: 8px; white-space: nowrap; align-self: center; }
+        .option-pill { display: inline-flex; align-items: center; background-color: var(--secondary); color: white; padding: 0.4rem 0.8rem; border-radius: 16px; font-size: 0.9em; line-height: 1; }
+        .option-pill .remove-option-btn { background: none; border: none; color: white; margin-left: 0.6rem; cursor: pointer; font-size: 1.2em; padding: 0; line-height: 0.5; font-weight: bold; }
+        .option-pill .remove-option-btn:hover { color: #ffd0d0; }
+        .option-selectable.selected { border-color: var(--primary) !important; background-color: var(--highlight); }
+        .date-range-btn.active { background-color: var(--primary); color: white; font-weight: 600; }
+        .copy-btn { background-color: #ddd; color: var(--text); border: 1px solid #aaa; padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; }
+        .copy-btn:hover { background-color: #ccc; }
+        .btn-danger { background-color: #ef4444; color: white; }
+        .btn-warning { background-color: #f59e0b; color: white; }
+        .btn-success { background-color: #16a34a; color: white; }
+    </style>
+</head>
+<body class="sushaki-ui">
+    <div class="order-panel">
+        <div class="order-details">
+            <h2>Order #<span id="order-number-sushaki">1</span></h2>
+            <div id="order-items-container">
+                <p id="empty-order-message" class="text-gray-600 text-center py-4" style="color: #777; font-style: italic;">Your order is empty.</p>
+            </div>
+            <div id="order-total" class="text-lg text-bold" style="margin-top: 1rem;">Total: €0.00</div>
+        </div>
+        
+        <div class="numpad">
+           <button onclick="handleNumpad_sushaki(1)">1</button>
+           <button onclick="handleNumpad_sushaki(2)">2</button>
+           <button onclick="handleNumpad_sushaki(3)">3</button>
+           <button onclick="handleNumpad_sushaki(4)">4</button>
+           <button onclick="handleNumpad_sushaki(5)">5</button>
+           <button onclick="handleNumpad_sushaki(6)">6</button>
+           <button onclick="handleNumpad_sushaki(7)">7</button>
+           <button onclick="handleNumpad_sushaki(8)">8</button>
+           <button onclick="handleNumpad_sushaki(9)">9</button>
+           <button class="numpad-action-btn" onclick="handleNumpadClear_sushaki()">C</button>
+           <button onclick="handleNumpad_sushaki(0)">0</button>
+           <button class="numpad-action-btn" onclick="handleNumpadBackspace_sushaki()">←</button>
+        </div>
+		
+		<div class="form-group" style="margin-top: 1rem; margin-bottom: 0.5rem;">
+			<label for="universalOrderCommentInput_sushaki" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Order Notes:</label>
+			<textarea id="universalOrderCommentInput_sushaki" rows="3"></textarea>
+		</div>
+
+        <div class="action-buttons">
+            <button class="secondary-btn" onclick="newOrder()">New Order</button>
+            <button id="sendOrderBtn" class="primary-btn" onclick="sendOrder()">Send Order</button>
+        </div>
+    </div>
+
+    <div class="menu-panel">
+        <div id="categories" class="category-tabs"></div>
+        <div id="products" class="product-grid"></div>
+    </div>
+    
+    <div id="toast" class="toast">
+        <span id="toast-message">Toast message here</span>
+    </div>
+
+    <div id="settings-gear-container" class="settings-gear" onclick="openLoginModal()">
+        <i class="fas fa-cog text-xl"></i>
+    </div>
+
+    <!-- MODALS (Copied from POSPal.html for full functionality) -->
+    <div id="loginModal" class="management-modal">
+        <div class="management-content" style="max-width: 400px;">
+            <h3 style="font-size: 1.5rem; font-weight: 600; text-align: center; margin-bottom: 1rem;">Management Access</h3>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="passwordInput">Password</label>
+                    <input type="password" id="passwordInput" name="password" required>
+                </div>
+                <p id="loginError" style="color: red; text-align: center; display: none; margin-top: 0.5rem;"></p>
+                <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <button type="button" class="secondary-btn" style="flex: 1; padding: 0.8rem;" onclick="closeLoginModal()">Cancel</button>
+                    <button type="submit" id="loginSubmitBtn" class="primary-btn" style="flex: 1; padding: 0.8rem;">Login</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="itemOptionSelectModal" class="management-modal">
+        <div class="management-content" style="max-width: 450px;">
+            <h3 id="optionModalItemName" style="font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; margin-bottom: 0.5rem;">Select Option</h3>
+            <p id="optionModalItemDescription" style="font-size: 0.9em; color: #555; margin-bottom: 1rem;">Please choose an option:</p>
+            <div id="optionModalOptionsContainer" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
+                <button type="button" class="secondary-btn" onclick="cancelOptionSelection()">Cancel</button>
+                <button type="button" id="confirmOptionBtn" class="primary-btn" onclick="confirmOptionSelection()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="managementModal" class="management-modal">
+        <div class="management-content">
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                 <h2 style="font-size: 1.5rem; font-weight: 600;">Management</h2>
+                 <button onclick="closeManagementModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <div class="management-tabs">
+                <button onclick="switchManagementTab('analytics', this)" class="management-tab">Analytics</button>
+                <button onclick="switchManagementTab('items', this)" class="management-tab">Items</button>
+                <button onclick="switchManagementTab('categories', this)" class="management-tab">Categories</button>
+                <button onclick="switchManagementTab('orderHistory', this)" class="management-tab">Order History</button>
+                <button onclick="openDaySummaryModal()" class="management-tab" style="background-color: #ddeeff;">Day Summary</button>
+            </div>
+            <div class="management-content-inner" style="padding-top: 1rem;">
+                <div id="analyticsManagement" style="display: none;">
+                    <!-- Analytics content will be dynamically generated by JS -->
+                    <p>Analytics View (Content from pospal-core.js)</p>
+                </div>
+                <div id="itemsManagement" style="display: none;">
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+                        <button onclick="openItemFormModal()" class="primary-btn" style="background-color: #16a34a; padding: 0.5rem 1rem;">Add New Item</button>
+                    </div>
+                    <h4 style="font-size: 1.1rem; font-weight: 500; margin-bottom: 0.5rem;">Existing Items</h4>
+                    <div id="existingItemsListModal" class="item-list"></div>
+                </div>
+                <div id="categoriesManagement" style="display: none;">
+                    <form id="categoryManagementForm" class="management-form">
+                        <div class="form-group"><label for="categoryName">Category Name</label><input type="text" id="categoryName" required></div>
+                        <button type="button" onclick="saveCategory()" class="primary-btn" style="margin-top: 1rem;">📁 Save Category</button>
+                    </form>
+                    <h4 style="font-size: 1.1rem; font-weight: 500; margin-top: 1.5rem; margin-bottom: 0.5rem;">Existing Categories</h4>
+                    <div id="existingCategoriesListModal" class="item-list"></div>
+                </div>
+                <div id="orderHistoryManagement" style="display: none;">
+                     <h3 style="font-size: 1.2rem; font-weight: 500; margin-bottom: 1rem;">Today's Orders</h3>
+                    <button onclick="loadTodaysOrdersForReprint()" class="secondary-btn" style="margin-bottom: 1rem;"><i class="fas fa-sync-alt mr-1"></i> Refresh</button>
+                    <div id="todaysOrdersList" class="item-list"></div>
+                </div>
+                <div id="licenseManagement" style="display: none;">
+                    <!-- License content will be dynamically generated by JS -->
+                     <p>License View (Content from pospal-core.js)</p>
+                </div>
+            </div>
+            <div id="appVersionContainer" style="text-align: right; font-size: 0.8rem; color: #777; margin-top: 2rem; border-top: 1px solid #eee; padding-top: 0.5rem;">
+                <span>Version: <span id="appVersion">...</span></span>
+                <span id="footer-trial-status" style="margin-left: 1rem;"></span>
+                <button onclick="switchManagementTab('license', this)" style="background:none; border:none; color: #777; text-decoration: underline; cursor: pointer; margin-left: 1rem;">License Info</button>
+                <button onclick="shutdownApplication()" class="btn-danger" style="float: left; padding: 0.3rem 0.6rem; font-size: 0.8rem;">Shutdown</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Add/Edit Modal -->
+    <div id="itemFormModal" class="management-modal">
+        <div class="management-content">
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 id="itemFormModalTitle" style="font-size: 1.5rem; font-weight: 600;">Add/Edit Item</h2>
+                <button onclick="closeItemFormModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <form id="itemManagementForm" class="management-form">
+                <input type="hidden" id="itemId">
+                <div class="form-group"><label for="itemName">Item Name</label><input type="text" id="itemName" required></div>
+                <div class="form-group"><label for="itemPrice">Base Price (€)</label><input type="number" step="0.01" id="itemPrice" required></div>
+                <div class="form-group"><label for="itemCategory">Category</label><select id="itemCategory" required></select></div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" id="itemHasOptionsModal" onchange="toggleItemOptionsUIInModal()" style="width: auto;"> Has General Options
+                    </label>
+                </div>
+                <div id="itemOptionsModalContainer" style="display:none; border: 1px dashed #ccc; padding: 1rem; border-radius: 4px;">
+                    <label>General Item Options:</label>
+                    <div id="itemOptionsListDisplayModal" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.5rem; padding: 0.5rem; border: 1px solid #eee; min-height: 40px; border-radius: 4px;"></div>
+                    <div style="display:grid; grid-template-columns: 2fr 1fr auto; gap:0.5rem; margin-top:0.25rem;">
+                        <input type="text" id="newOptionNameInputModal" placeholder="Option name">
+                        <input type="number" id="newOptionPriceInputModal" placeholder="Price (€)" step="0.01">
+                        <button type="button" class="secondary-btn" onclick="addOptionToItemFormTempModal()">Add</button>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 1.5rem; border-top: 1px solid #eee; padding-top: 1rem;">
+                    <button type="button" id="saveItemBtn" onclick="saveItem()" class="primary-btn" style="flex: 1; padding: 0.8rem;">Save</button>
+                    <button type="button" onclick="closeItemFormModal()" class="secondary-btn" style="flex: 1; padding: 0.8rem;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Day Summary Modal -->
+    <div id="daySummaryModal" class="management-modal">
+        <div class="management-content" style="max-width: 400px;">
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.5rem; font-weight: 600;">Day Summary</h2>
+                <button onclick="closeDaySummaryModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <div id="daySummaryContent"></div>
+        </div>
+    </div>
+
+    <script src="pospal-core.js"></script>
+</body>
+</html>
