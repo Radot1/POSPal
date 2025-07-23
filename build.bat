@@ -81,10 +81,10 @@ pyinstaller ^
     --onefile ^
     --noconsole ^
     --name "POSPal" ^
-    --add-data "..\index.html;." ^
+    --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
-    --add-data "..\sushaki.html;." ^
-    --add-data "..\pospal-core.js;." ^
+    --add-data "..\POSPalDesktop.html;." ^
+    --add-data "..\pospalCore.js;." ^
     --icon "..\app_icon.ico" ^
     ..\app.py
 
