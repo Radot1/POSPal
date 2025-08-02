@@ -2,18 +2,15 @@
 let menu = {};
 let selectedCategory = null;
 let editingItem = null;
-// Standardized localStorage keys
-const STORAGE_PREFIX = 'pospalApp_';
-const CURRENT_ORDER_KEY = `${STORAGE_PREFIX}currentOrder`;
-const ORDER_LINE_COUNTER_KEY = `${STORAGE_PREFIX}orderLineItemCounter`;
-const UNIVERSAL_COMMENT_KEY = `${STORAGE_PREFIX}universalOrderComment`;
-const SELECTED_TABLE_KEY = `${STORAGE_PREFIX}selectedTable`;
 
-let currentOrder = JSON.parse(localStorage.getItem(CURRENT_ORDER_KEY)) || [];
-let currentOrderLineItemCounter = parseInt(localStorage.getItem(ORDER_LINE_COUNTER_KEY)) || 0;
+// --- NEW: Centralized State Management ---
+// Generate unique device ID for this session
+const DEVICE_ID = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+let currentOrder = [];
+let currentOrderLineItemCounter = 0;
 let orderNumber = 1;
-let universalOrderComment = localStorage.getItem(UNIVERSAL_COMMENT_KEY) || "";
-let selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
+let universalOrderComment = "";
+let selectedTableNumber = "";
 let isPaidByCard = false;
 
 // --- State for Mobile UI (POSPal) ---
@@ -25,39 +22,185 @@ let numpadCurrentInput = "";
 let itemBeingConfigured = null;
 let currentOptionSelectionStep = null;
 
-// --- State for Desktop UI (Sushaki) ---
-let selectedItemId_sushaki = null;
-let numpadInput_sushaki = "";
+// --- State for Desktop UI ---
+let selectedItemId_desktop = null;
+let numpadInput_desktop = "";
 
+// --- NEW: Centralized State Management Functions ---
+async function loadCentralizedState() {
+    try {
+        const response = await fetch(`/api/state?device_id=${DEVICE_ID}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            currentOrder = data.state.current_order || [];
+            currentOrderLineItemCounter = data.state.order_line_counter || 0;
+            universalOrderComment = data.state.universal_comment || "";
+            selectedTableNumber = data.state.selected_table || "";
+            
+            console.log('Centralized state loaded:', data.state);
+            return true;
+        } else {
+            console.error('Failed to load centralized state:', data.message);
+            return false;
+        }
+    } catch (error) {
+        console.error('Error loading centralized state:', error);
+        return false;
+    }
+}
+
+async function saveCentralizedState(stateKey, value) {
+    try {
+        const response = await fetch(`/api/state/${stateKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ [stateKey]: value })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            console.log(`Centralized state saved: ${stateKey} =`, value);
+            return true;
+        } else {
+            console.error(`Failed to save centralized state ${stateKey}:`, data.message);
+            return false;
+        }
+    } catch (error) {
+        console.error(`Error saving centralized state ${stateKey}:`, error);
+        return false;
+    }
+}
+
+async function updateCurrentOrder() {
+    return await saveCentralizedState('current_order', currentOrder);
+}
+
+async function updateOrderLineCounter() {
+    return await saveCentralizedState('order_line_counter', currentOrderLineItemCounter);
+}
+
+async function updateUniversalComment() {
+    return await saveCentralizedState('universal_comment', universalOrderComment);
+}
+
+async function updateSelectedTable() {
+    return await saveCentralizedState('selected_table', selectedTableNumber);
+}
+
+async function clearCentralizedOrder() {
+    try {
+        const response = await fetch('/api/state/clear_order', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            currentOrder = [];
+            currentOrderLineItemCounter = 0;
+            console.log('Centralized order cleared');
+            return true;
+        } else {
+            console.error('Failed to clear centralized order:', data.message);
+            return false;
+        }
+    } catch (error) {
+        console.error('Error clearing centralized order:', error);
+        return false;
+    }
+}
+
+// --- Shared Management Component Loading ---
+// Management modals are now included directly in HTML files
+function loadManagementComponent() {
+    console.log('Management component is included directly in HTML');
+    return true;
+}
 
 // --- DOM Element Cache ---
 const elements = {};
 
 // --- Initialization ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('DOM Content Loaded - Starting initialization...');
+    
+    // Load centralized state first
+    console.log('Loading centralized state...');
+    const stateLoaded = await loadCentralizedState();
+    console.log('Centralized state loaded:', stateLoaded);
+    
+    // Management component is included directly in HTML
+    const componentLoaded = loadManagementComponent();
+    console.log('Management component loaded:', componentLoaded);
+    
+    // Cache DOM elements after component is loaded
     cacheDOMElements();
+    
+    // Re-cache modal elements specifically to ensure they're found
+    if (componentLoaded) {
+        console.log('Re-caching modal elements...');
+        // Re-cache all login modal elements
+        elements.loginModal = document.getElementById('loginModal');
+        elements.loginForm = document.getElementById('loginForm');
+        elements.passwordInput = document.getElementById('passwordInput');
+        elements.loginError = document.getElementById('loginError');
+        elements.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+        
+        // Re-cache all management modal elements
+        elements.managementModal = document.getElementById('managementModal');
+        elements.itemFormModal = document.getElementById('itemFormModal');
+        elements.itemFormModalTitle = document.getElementById('itemFormModalTitle');
+        elements.daySummaryModal = document.getElementById('daySummaryModal');
+        elements.daySummaryContent = document.getElementById('daySummaryContent');
+        elements.itemOptionSelectModal = document.getElementById('itemOptionSelectModal');
+        elements.optionModalItemName = document.getElementById('optionModalItemName');
+        elements.optionModalItemDescription = document.getElementById('optionModalItemDescription');
+        elements.optionModalOptionsContainer = document.getElementById('optionModalOptionsContainer');
+        elements.confirmOptionBtn = document.getElementById('confirmOptionBtn');
+        elements.itemNameInput = document.getElementById('itemName');
+        elements.itemPriceInput = document.getElementById('itemPrice');
+        elements.itemCategorySelect = document.getElementById('itemCategory');
+        elements.itemIdInput = document.getElementById('itemId');
+        elements.saveItemBtn = document.getElementById('saveItemBtn');
+        elements.existingItemsListModal = document.getElementById('existingItemsListModal');
+        elements.itemHasOptionsCheckboxModal = document.getElementById('itemHasOptionsModal');
+        elements.itemOptionsModalContainer = document.getElementById('itemOptionsModalContainer');
+        elements.itemOptionsListDisplayModal = document.getElementById('itemOptionsListDisplayModal');
+        elements.newOptionNameInputModal = document.getElementById('newOptionNameInputModal');
+        elements.newOptionPriceInputModal = document.getElementById('newOptionPriceInputModal');
+        elements.categoryNameInput = document.getElementById('categoryName');
+        elements.existingCategoriesListModal = document.getElementById('existingCategoriesListModal');
+        elements.licenseStatusDisplay = document.getElementById('license-status-display');
+        elements.hardwareIdDisplay = document.getElementById('hardware-id-display');
+        elements.copyHwidBtn = document.getElementById('copy-hwid-btn');
+        elements.footerTrialStatus = document.getElementById('footer-trial-status');
+        
+        // Add event listener for login form after re-caching
+        if (elements.loginForm) {
+            elements.loginForm.addEventListener('submit', handleLogin);
+        }
+    }
+    
     initializeAppState();
     loadMenu();
     startClock();
     checkAndDisplayTrialStatus();
-
-    // --- Event Listeners ---
-    // Universal Comment Input (works for both UIs if ID is the same)
     if (elements.universalOrderCommentInput) {
-        elements.universalOrderCommentInput.addEventListener('input', (e) => {
+        elements.universalOrderCommentInput.addEventListener('input', async (e) => {
             universalOrderComment = e.target.value;
-            localStorage.setItem(UNIVERSAL_COMMENT_KEY, universalOrderComment);
+            await updateUniversalComment();
         });
     }
-
-    // Paid by Card Checkbox (POSPal UI)
     if (elements.paidByCardCheckbox) {
         elements.paidByCardCheckbox.addEventListener('change', (e) => {
             isPaidByCard = e.target.checked;
         });
     }
-
-    // Table Input (POSPal UI)
     if (elements.headerTableInput) {
         elements.headerTableInput.addEventListener('change', handleTableNumberChange);
         elements.headerTableInput.addEventListener('keydown', (e) => {
@@ -67,21 +210,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
-    // Login Form (Universal)
-    if (elements.loginForm) {
-        elements.loginForm.addEventListener('submit', handleLogin);
-    }
-    
-    // Sushaki UI specific comment input
-    if(document.getElementById('universalOrderCommentInput_sushaki')) {
-         document.getElementById('universalOrderCommentInput_sushaki').addEventListener('input', (e) => {
+    if(document.getElementById('universalOrderCommentInput_desktop')) {
+         document.getElementById('universalOrderCommentInput_desktop').addEventListener('input', async (e) => {
             universalOrderComment = e.target.value;
-            localStorage.setItem(UNIVERSAL_COMMENT_KEY, universalOrderComment);
+            await updateUniversalComment();
         });
     }
-
-    // Final UI update on load
     updateOrderDisplay();
 });
 
@@ -100,8 +234,8 @@ function cacheDOMElements() {
     elements.numpadItemNameDisplay = document.getElementById('numpad-item-name');
     elements.paidByCardCheckbox = document.getElementById('paidByCardCheckbox');
 
-    // --- Sushaki UI Elements ---
-    elements.orderNumber_sushaki = document.getElementById('order-number-sushaki');
+    // --- Desktop UI Elements ---
+    elements.orderNumber_desktop = document.getElementById('order-number-desktop');
 
     // --- Universal/Shared Elements (must have same IDs in both HTML files) ---
     elements.categoriesContainer = document.getElementById('categories');
@@ -124,6 +258,8 @@ function cacheDOMElements() {
     elements.passwordInput = document.getElementById('passwordInput');
     elements.loginError = document.getElementById('loginError');
     elements.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+    
+
     elements.managementModal = document.getElementById('managementModal');
     elements.itemFormModal = document.getElementById('itemFormModal');
     elements.itemFormModalTitle = document.getElementById('itemFormModalTitle');
@@ -174,12 +310,12 @@ async function fetchAndUpdateOrderNumber() {
             orderNumber = data.next_order_number;
             // Update UI based on which element is present
             if (elements.headerOrderNumber) elements.headerOrderNumber.textContent = orderNumber;
-            if (elements.orderNumber_sushaki) elements.orderNumber_sushaki.textContent = orderNumber;
+            if (elements.orderNumber_desktop) elements.orderNumber_desktop.textContent = orderNumber;
         }
     } catch (error) {
         console.error("Could not fetch next order number:", error);
         if (elements.headerOrderNumber) elements.headerOrderNumber.textContent = "Err";
-        if (elements.orderNumber_sushaki) elements.orderNumber_sushaki.textContent = "Err";
+        if (elements.orderNumber_desktop) elements.orderNumber_desktop.textContent = "Err";
         showToast("Could not sync order number with server.", "error");
     }
 }
@@ -194,9 +330,9 @@ function initializeAppState() {
     if (elements.universalOrderCommentInput) {
         elements.universalOrderCommentInput.value = savedComment;
     }
-    const sushakiCommentInput = document.getElementById('universalOrderCommentInput_sushaki');
-     if (sushakiCommentInput) {
-        sushakiCommentInput.value = savedComment;
+    const desktopCommentInput = document.getElementById('universalOrderCommentInput_desktop');
+     if (desktopCommentInput) {
+        desktopCommentInput.value = savedComment;
     }
 }
 
@@ -258,10 +394,10 @@ function renderCategories() {
     }
 
     // Detect which UI is active by checking for a unique element
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
-    if (isSushakiUI) {
-        // Render tabs for Sushaki UI
+    if (isDesktopUI) {
+        // Render tabs for Desktop UI
         Object.keys(menu).forEach(category => {
             const btn = document.createElement('button');
             btn.className = `category-tab ${category === selectedCategory ? 'active' : ''}`;
@@ -310,14 +446,14 @@ function renderProductsForSelectedCategory() {
         return;
     }
 
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
     menu[selectedCategory].forEach(item => {
         const card = document.createElement('div');
         card.onclick = () => addToOrder(item.id);
 
-        if (isSushakiUI) {
-            // Sushaki card rendering
+        if (isDesktopUI) {
+            // Desktop card rendering
             card.className = 'product-card';
             let optionsBadgeHTML = '';
             if (item.hasGeneralOptions && item.generalOptions && Array.isArray(item.generalOptions) && item.generalOptions.length > 0) {
@@ -361,7 +497,7 @@ function renderProductsForSelectedCategory() {
     });
 }
 
-function addToOrder(itemId) {
+async function addToOrder(itemId) {
     let menuItem;
     for (const categoryKey in menu) {
         const found = (menu[categoryKey] || []).find(i => i.id === itemId);
@@ -386,14 +522,14 @@ function addToOrder(itemId) {
         currentOptionSelectionStep = 'general';
         openItemOptionSelectModal(itemBeingConfigured, 'general_item_option');
     } else {
-        finalizeAndAddOrderItem(itemBeingConfigured, []);
+        await finalizeAndAddOrderItem(itemBeingConfigured, []);
         resetMultiStepSelection();
     }
 }
 
-function finalizeAndAddOrderItem(baseItem, generalChoicesWithOptions) {
+async function finalizeAndAddOrderItem(baseItem, generalChoicesWithOptions) {
     currentOrderLineItemCounter++;
-    localStorage.setItem(ORDER_LINE_COUNTER_KEY, currentOrderLineItemCounter.toString());
+    await updateOrderLineCounter();
 
     let uniqueSuffixParts = [];
     if (generalChoicesWithOptions && generalChoicesWithOptions.length > 0) {
@@ -432,7 +568,7 @@ function updateOrderDisplay() {
     elements.orderItemsContainer.innerHTML = '';
     let total = 0;
 
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
     if (currentOrder.length === 0) {
         if (elements.emptyOrderMessage) elements.emptyOrderMessage.style.display = 'block';
@@ -447,10 +583,10 @@ function updateOrderDisplay() {
             let optionDisplayHTML = '';
             let commentText = item.comment ? `<span class="block text-xs text-gray-600 ml-4 break-all"><em>Note: ${item.comment}</em></span>` : '';
             
-            if (isSushakiUI) {
-                 // Sushaki order item rendering
-                div.className = `order-item ${item.orderId === selectedItemId_sushaki ? 'selected-for-numpad' : ''}`;
-                div.onclick = () => selectItemByOrderId_sushaki(item.orderId);
+            if (isDesktopUI) {
+                 // Desktop order item rendering
+                div.className = `order-item p-3 border border-gray-200 rounded-lg ${item.orderId === selectedItemId_desktop ? 'selected-for-numpad bg-blue-50 border-blue-300' : 'bg-white hover:bg-gray-50'} cursor-pointer transition-colors`;
+                div.onclick = () => selectItemByOrderId_desktop(item.orderId);
 
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                     item.generalSelectedOptions.forEach(opt => {
@@ -461,15 +597,35 @@ function updateOrderDisplay() {
                  commentText = item.comment ? `<div style="font-size: 0.8em; color: #555; margin-left: 10px;"><em>Note: ${item.comment}</em></div>` : '';
 
                 div.innerHTML = `
-                    <div style="flex: 1;">
-                        <span>${item.quantity}x ${item.name}</span>
-                        ${optionDisplayHTML}
-                        ${commentText}
-                    </div>
-                    <span class="price" style="text-align: right;">€${itemTotal.toFixed(2)}</span>
-                    <div class="order-item-actions">
-                        <button onclick="event.stopPropagation(); promptForItemComment('${item.orderId}')" class="secondary-btn" title="Add Note">✎</button>
-                        <button onclick="event.stopPropagation(); removeItemByOrderId('${item.orderId}')" class="secondary-btn" title="Remove Item">×</button>
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <div class="flex items-center space-x-2">
+                                <span class="font-semibold text-gray-800">${item.quantity}x ${item.name}</span>
+                                <span class="text-sm text-gray-500">(€${parseFloat(item.price || 0).toFixed(2)} each)</span>
+                            </div>
+                            ${optionDisplayHTML}
+                            ${commentText}
+                        </div>
+                        <div class="flex flex-col items-end space-y-2">
+                            <span class="font-bold text-gray-900">€${itemTotal.toFixed(2)}</span>
+                            <div class="flex items-center space-x-1">
+                                <button onclick="event.stopPropagation(); decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600 transition-colors" title="Decrease Quantity">
+                                    <i class="fas fa-minus-circle text-sm"></i>
+                                </button>
+                                <span class="font-semibold text-gray-800 w-8 text-center">${item.quantity}</span>
+                                <button onclick="event.stopPropagation(); incrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-green-600 transition-colors" title="Increase Quantity">
+                                    <i class="fas fa-plus-circle text-sm"></i>
+                                </button>
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                <button onclick="event.stopPropagation(); promptForItemComment('${item.orderId}')" class="p-1 text-gray-500 hover:text-blue-600 transition-colors" title="Add Note">
+                                    <i class="fas fa-comment-dots text-sm"></i>
+                                </button>
+                                <button onclick="event.stopPropagation(); removeItemByOrderId('${item.orderId}')" class="p-1 text-red-500 hover:text-red-700 transition-colors" title="Remove Item">
+                                    <i class="fas fa-trash-alt text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 `;
 
@@ -507,7 +663,9 @@ function updateOrderDisplay() {
     }
 
     if (elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = `€${total.toFixed(2)}`;
-    localStorage.setItem(CURRENT_ORDER_KEY, JSON.stringify(currentOrder));
+    
+    // Save to centralized state
+    updateCurrentOrder();
     
     // UI-specific updates
     if (elements.mobileOrderCountBadge) {
@@ -537,7 +695,7 @@ function removeItemByOrderId(orderId) {
     currentOrder = currentOrder.filter(item => item.orderId !== orderId);
     // Hide numpad if the removed item was selected (for both UIs)
     if (itemForNumpad && itemForNumpad.orderId === orderId) hideNumpad();
-    if (selectedItemId_sushaki === orderId) selectedItemId_sushaki = null;
+    if (selectedItemId_desktop === orderId) selectedItemId_desktop = null;
     
     updateOrderDisplay();
     showToast('Item removed from order.', 'info');
@@ -558,32 +716,34 @@ function promptForItemComment(orderId) {
     }
 }
 
-function clearOrderData() {
+async function clearOrderData() {
     currentOrder = [];
     universalOrderComment = "";
     if (elements.universalOrderCommentInput) elements.universalOrderCommentInput.value = "";
-    const sushakiCommentInput = document.getElementById('universalOrderCommentInput_sushaki');
-    if (sushakiCommentInput) sushakiCommentInput.value = "";
-    localStorage.removeItem(UNIVERSAL_COMMENT_KEY);
+    const desktopCommentInput = document.getElementById('universalOrderCommentInput_desktop');
+    if (desktopCommentInput) desktopCommentInput.value = "";
 
     currentOrderLineItemCounter = 0;
-    localStorage.setItem(ORDER_LINE_COUNTER_KEY, '0');
     isPaidByCard = false;
     if (elements.paidByCardCheckbox) elements.paidByCardCheckbox.checked = false;
 
     hideNumpad();
-    selectedItemId_sushaki = null;
-    numpadInput_sushaki = "";
+    selectedItemId_desktop = null;
+    numpadInput_desktop = "";
+
+    // Clear centralized state
+    await clearCentralizedOrder();
+    await updateUniversalComment();
 
     updateOrderDisplay();
     fetchAndUpdateOrderNumber();
 }
 
-function newOrder() {
+async function newOrder() {
     if (currentOrder.length > 0 && !confirm("Clear current order and start a new one? This will clear all items and notes.")) {
         return;
     }
-    clearOrderData();
+    await clearOrderData();
     showToast('Order cleared. Ready for the next order.', 'info');
 }
 
@@ -595,11 +755,11 @@ async function sendOrder() {
         return;
     }
     
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
     let tableNumberForOrder = selectedTableNumber;
 
-    if (isSushakiUI) {
-        // Sushaki UI doesn't have a table input, so we might need a default or prompt
+    if (isDesktopUI) {
+        // Desktop UI doesn't have a table input, so we might need a default or prompt
         if (!tableNumberForOrder) {
             tableNumberForOrder = prompt("Please enter a Table Number for this order:", "1");
             if (!tableNumberForOrder) {
@@ -780,69 +940,69 @@ function confirmNumpadInput() {
     hideNumpad();
 }
 
-function handleTableNumberChange(event) {
+async function handleTableNumberChange(event) {
     const newTableNumber = event.target.value.trim();
     if (selectedTableNumber !== newTableNumber) {
         selectedTableNumber = newTableNumber;
-        localStorage.setItem(SELECTED_TABLE_KEY, selectedTableNumber);
+        await updateSelectedTable();
     }
 }
 
-// Sushaki UI Functions
-function selectItemByOrderId_sushaki(orderId) {
-    if (selectedItemId_sushaki === orderId) {
-        selectedItemId_sushaki = null; // Deselect if clicked again
-        numpadInput_sushaki = "";
+// Desktop UI Functions
+function selectItemByOrderId_desktop(orderId) {
+    if (selectedItemId_desktop === orderId) {
+        selectedItemId_desktop = null; // Deselect if clicked again
+        numpadInput_desktop = "";
     } else {
-        selectedItemId_sushaki = orderId;
-        numpadInput_sushaki = "";
+        selectedItemId_desktop = orderId;
+        numpadInput_desktop = "";
     }
     updateOrderDisplay();
 }
 
-function handleNumpad_sushaki(digit) {
-    if (!selectedItemId_sushaki) {
+function handleNumpad_desktop(digit) {
+    if (!selectedItemId_desktop) {
         showToast('Select an item from the order first', 'warning');
-        numpadInput_sushaki = "";
+        numpadInput_desktop = "";
         return;
     }
-    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_sushaki);
+    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
     if (!item) {
         showToast('Error: Selected item not found.', 'error');
-        numpadInput_sushaki = "";
+        numpadInput_desktop = "";
         return;
     }
 
-    numpadInput_sushaki += String(digit);
-    let newQuantity = Number(numpadInput_sushaki);
+    numpadInput_desktop += String(digit);
+    let newQuantity = Number(numpadInput_desktop);
 
     if (isNaN(newQuantity) || newQuantity <= 0) {
         item.quantity = 1;
-        numpadInput_sushaki = newQuantity > 0 ? newQuantity.toString() : "1";
+        numpadInput_desktop = newQuantity > 0 ? newQuantity.toString() : "1";
     } else {
         item.quantity = newQuantity;
     }
     updateOrderDisplay();
 }
 
-function handleNumpadClear_sushaki() {
-    if (!selectedItemId_sushaki) return;
-    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_sushaki);
+function handleNumpadClear_desktop() {
+    if (!selectedItemId_desktop) return;
+    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
     if (item) {
-        numpadInput_sushaki = "";
+        numpadInput_desktop = "";
         item.quantity = 1;
         updateOrderDisplay();
     }
 }
 
-function handleNumpadBackspace_sushaki() {
-    if (!selectedItemId_sushaki) return;
-    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_sushaki);
+function handleNumpadBackspace_desktop() {
+    if (!selectedItemId_desktop) return;
+    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
     if (item) {
-        if (numpadInput_sushaki.length > 0) {
-            numpadInput_sushaki = numpadInput_sushaki.slice(0, -1);
+        if (numpadInput_desktop.length > 0) {
+            numpadInput_desktop = numpadInput_desktop.slice(0, -1);
         }
-        item.quantity = Number(numpadInput_sushaki) > 0 ? Number(numpadInput_sushaki) : 1;
+        item.quantity = Number(numpadInput_desktop) > 0 ? Number(numpadInput_desktop) : 1;
         updateOrderDisplay();
     }
 }
@@ -895,7 +1055,7 @@ function openItemOptionSelectModal(itemForModal, context) {
             const optionId = `modal_item_opt_${itemForModal.id}_${context}_${optionName.replace(/\s+/g, '_')}_${index}`;
             const div = document.createElement('div');
             // This class is from POSPal's CSS, but we'll add it for consistency.
-            // It should be defined in sushaki.html's style block if needed.
+            // It should be defined in POSPalDesktop.html's style block if needed.
             div.className = "option-selectable p-3 border border-gray-300 rounded-md hover:bg-gray-100 cursor-pointer group focus-within:ring-2";
 
             const inputElement = document.createElement('input');
@@ -944,14 +1104,26 @@ function openItemOptionSelectModal(itemForModal, context) {
     } else {
         elements.optionModalOptionsContainer.innerHTML = `<p class="text-sm text-gray-500">No specific options defined for this item.</p>`;
     }
-    elements.itemOptionSelectModal.classList.remove('hidden');
-    elements.itemOptionSelectModal.classList.add('flex');
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.itemOptionSelectModal.style.display = 'flex';
+    } else {
+        elements.itemOptionSelectModal.classList.remove('hidden');
+        elements.itemOptionSelectModal.classList.add('flex');
+    }
 }
 
 function cancelOptionSelection() {
     if (elements.itemOptionSelectModal) {
-        elements.itemOptionSelectModal.classList.add('hidden');
-        elements.itemOptionSelectModal.classList.remove('flex');
+        // Handle different UI variants
+        const isDesktopUI = document.body.classList.contains('desktop-ui');
+        if (isDesktopUI) {
+            elements.itemOptionSelectModal.style.display = 'none';
+        } else {
+            elements.itemOptionSelectModal.classList.add('hidden');
+            elements.itemOptionSelectModal.classList.remove('flex');
+        }
     }
     currentItemOptionContext = null;
     resetMultiStepSelection();
@@ -984,18 +1156,166 @@ let currentManagementTab = 'analytics';
 let tempItemOptionsModal = [];
 
 function openLoginModal() {
-    if (!elements.loginModal) return;
+    console.log('Opening login modal...');
+    
+    // If loginModal is not found, try to find it again
+    if (!elements.loginModal) {
+        console.log('Login modal not found, searching for elements...');
+        elements.loginModal = document.getElementById('loginModal');
+        elements.loginForm = document.getElementById('loginForm');
+        elements.passwordInput = document.getElementById('passwordInput');
+        elements.loginError = document.getElementById('loginError');
+        elements.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+        
+        if (!elements.loginModal) {
+            console.log('Login modal still not found, creating fallback...');
+            createFallbackLoginModal();
+            return;
+        } else {
+            console.log('Login modal elements found and cached');
+        }
+    }
+    
     elements.passwordInput.value = '';
     elements.loginError.classList.add('hidden');
-    elements.loginModal.classList.remove('hidden');
-    elements.loginModal.classList.add('flex');
+    
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.loginModal.style.display = 'flex';
+    } else {
+        elements.loginModal.classList.remove('hidden');
+        elements.loginModal.classList.add('flex');
+    }
     elements.passwordInput.focus();
+    console.log('Login modal opened successfully');
+}
+
+function createFallbackLoginModal() {
+    const modalHTML = `
+        <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] flex items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-gray-800">
+                <h3 class="text-xl font-semibold mb-4 text-center">Management Access</h3>
+                <form id="loginForm">
+                    <div class="space-y-4">
+                        <div>
+                            <label for="passwordInput" class="block text-sm font-medium text-gray-700">Password</label>
+                            <input type="password" id="passwordInput" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                        </div>
+                        <p id="loginError" class="text-sm text-red-600 text-center hidden"></p>
+                        <div class="flex gap-2 pt-2">
+                            <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="closeLoginModal()">Cancel</button>
+                            <button type="submit" id="loginSubmitBtn" class="w-full py-2 px-4 btn-primary">Login</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Cache the new elements
+    elements.loginModal = document.getElementById('loginModal');
+    elements.loginForm = document.getElementById('loginForm');
+    elements.passwordInput = document.getElementById('passwordInput');
+    elements.loginError = document.getElementById('loginError');
+    elements.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+    
+    // Add event listener for the form
+    if (elements.loginForm) {
+        elements.loginForm.addEventListener('submit', handleLogin);
+    }
+    
+}
+
+function createFallbackManagementModal() {
+    const modalHTML = `
+        <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] flex flex-col justify-end sm:justify-center sm:items-center">
+            <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-6xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+                    <h2 class="text-xl font-semibold">Management</h2>
+                    <button onclick="closeManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
+                </div>
+                <div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
+                    <div class="flex flex-wrap gap-1 rounded-md bg-gray-100 p-1">
+                        <button onclick="switchManagementTab('analytics', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md bg-white shadow-sm text-gray-800">Analytics</button>
+                        <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Items</button>
+                        <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
+                        <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
+                        <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
+                    </div>
+                </div>
+                <div class="flex-grow overflow-y-auto p-4 management-content">
+                    <div id="analyticsManagement">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Analytics Dashboard</h3>
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                            <div class="flex items-center">
+                                <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                                <span class="text-yellow-800 font-medium">Limited Functionality</span>
+                            </div>
+                            <p class="text-yellow-700 text-sm mt-2">
+                                The management component could not be loaded. This may be due to browser security restrictions when opening files directly.
+                                <br><br>
+                                <strong>Solution:</strong> Serve the files through a local server:
+                                <br>
+                                <code class="bg-yellow-100 px-2 py-1 rounded text-xs">python -m http.server 8000</code>
+                                <br>
+                                Then access via: <code class="bg-yellow-100 px-2 py-1 rounded text-xs">http://localhost:8000</code>
+                            </p>
+                        </div>
+                        <p class="text-gray-600">Analytics content would be loaded here.</p>
+                    </div>
+                    <div id="itemsManagement" class="hidden">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Items Management</h3>
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                            <p class="text-yellow-700 text-sm">
+                                Items management functionality requires the full management component to be loaded.
+                            </p>
+                        </div>
+                        <p class="text-gray-600">Items management content would be loaded here.</p>
+                    </div>
+                    <div id="categoriesManagement" class="hidden">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Categories Management</h3>
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                            <p class="text-yellow-700 text-sm">
+                                Categories management functionality requires the full management component to be loaded.
+                            </p>
+                        </div>
+                        <p class="text-gray-600">Categories management content would be loaded here.</p>
+                    </div>
+                    <div id="orderHistoryManagement" class="hidden">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-4">Order History</h3>
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                            <p class="text-yellow-700 text-sm">
+                                Order history functionality requires the full management component to be loaded.
+                            </p>
+                        </div>
+                        <p class="text-gray-600">Order history content would be loaded here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Cache the new element
+    elements.managementModal = document.getElementById('managementModal');
+    
 }
 
 function closeLoginModal() {
     if (!elements.loginModal) return;
-    elements.loginModal.classList.add('hidden');
-    elements.loginModal.classList.remove('flex');
+    
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.loginModal.style.display = 'none';
+    } else {
+        elements.loginModal.classList.add('hidden');
+        elements.loginModal.classList.remove('flex');
+    }
 }
 
 async function handleLogin(event) {
@@ -1052,12 +1372,24 @@ async function loadAppVersion() {
 }
 
 function openManagementModal() {
-    if (!elements.managementModal) return;
-    elements.managementModal.classList.remove('hidden');
+    // If managementModal is not found, try to find it again
+    if (!elements.managementModal) {
+        elements.managementModal = document.getElementById('managementModal');
+        
+        if (!elements.managementModal) {
+            createFallbackManagementModal();
+            return;
+        }
+    }
     
-    // Use different display properties for each UI
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
-    elements.managementModal.style.display = isSushakiUI ? 'flex' : 'flex'; // Both use flex now
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.managementModal.style.display = 'flex';
+    } else {
+        elements.managementModal.classList.remove('hidden');
+        elements.managementModal.classList.add('flex');
+    }
 
     document.body.style.overflow = 'hidden';
     loadManagementData();
@@ -1072,7 +1404,15 @@ function openManagementModal() {
 
 function closeManagementModal() {
     if (!elements.managementModal) return;
-    elements.managementModal.style.display = 'none';
+    
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.managementModal.style.display = 'none';
+    } else {
+        elements.managementModal.classList.add('hidden');
+        elements.managementModal.classList.remove('flex');
+    }
     document.body.style.overflow = '';
 }
 
@@ -1080,9 +1420,9 @@ function closeManagementModal() {
 function switchManagementTab(tabName, clickedButton) {
     currentManagementTab = tabName;
     
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
-    if (isSushakiUI) {
+    if (isDesktopUI) {
         document.querySelectorAll('.management-tab').forEach(t => t.classList.remove('active'));
         if(clickedButton) clickedButton.classList.add('active');
     } else {
@@ -1143,12 +1483,12 @@ function renderExistingItemsInModal() {
     elements.existingItemsListModal.innerHTML = '';
     let itemCount = 0;
     
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
     Object.entries(menu).forEach(([category, items]) => {
         if (!items || items.length === 0) return;
 
-        if(!isSushakiUI) {
+        if(!isDesktopUI) {
             const categoryHeader = document.createElement('h5');
             categoryHeader.className = "font-bold text-gray-700 mt-3 mb-1 pb-1 border-b border-gray-300";
             categoryHeader.textContent = category;
@@ -1159,7 +1499,7 @@ function renderExistingItemsInModal() {
             itemCount++;
             const div = document.createElement('div');
             
-            if(isSushakiUI) {
+            if(isDesktopUI) {
                 div.className = `item-row`;
                 div.innerHTML = `
                     <span style="flex:1">${item.name}</span>
@@ -1249,7 +1589,7 @@ function renderExistingCategoriesInModal() {
     if (!elements.existingCategoriesListModal) return;
     elements.existingCategoriesListModal.innerHTML = '';
     const categoryKeys = Object.keys(menu);
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
     if (categoryKeys.length === 0) {
         elements.existingCategoriesListModal.innerHTML = '<p class="text-xs text-gray-500 italic">No categories created yet.</p>';
@@ -1258,7 +1598,7 @@ function renderExistingCategoriesInModal() {
 
     categoryKeys.forEach((categoryName, index) => {
         const div = document.createElement('div');
-        if(isSushakiUI) {
+        if(isDesktopUI) {
             div.className = "item-row";
             div.innerHTML = `
                 <span style="flex:1">${categoryName}</span>
@@ -1354,13 +1694,25 @@ function openItemFormModal(itemIdToEdit = null) {
         elements.itemFormModalTitle.textContent = 'Add New Item';
         if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save New Item';
     }
-    elements.itemFormModal.classList.remove('hidden');
-    elements.itemFormModal.classList.add('flex');
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.itemFormModal.style.display = 'flex';
+    } else {
+        elements.itemFormModal.classList.remove('hidden');
+        elements.itemFormModal.classList.add('flex');
+    }
 }
 
 function closeItemFormModal() {
-    elements.itemFormModal.classList.add('hidden');
-    elements.itemFormModal.classList.remove('flex');
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.itemFormModal.style.display = 'none';
+    } else {
+        elements.itemFormModal.classList.add('hidden');
+        elements.itemFormModal.classList.remove('flex');
+    }
     resetItemForm();
 }
 
@@ -1648,10 +2000,10 @@ function showToast(message, type = 'info', duration = 3000) {
 
     // Reset classes
     elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] opacity-0 transition-opacity duration-300';
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
     
-    if(isSushakiUI) {
-        elements.toast.className = 'toast'; // Use the sushaki class
+    if(isDesktopUI) {
+        elements.toast.className = 'toast'; // Use the desktop class
         switch (type) {
             case 'success': elements.toast.style.backgroundColor = '#16a34a'; break;
             case 'warning': elements.toast.style.backgroundColor = '#f59e0b'; break;
@@ -1670,11 +2022,11 @@ function showToast(message, type = 'info', duration = 3000) {
 
     elements.toast.style.display = 'block';
     setTimeout(() => {
-        if(!isSushakiUI) elements.toast.classList.remove('opacity-0')
+        if(!isDesktopUI) elements.toast.classList.remove('opacity-0')
     }, 10);
 
     toastTimeout = setTimeout(() => {
-        if(!isSushakiUI) elements.toast.classList.add('opacity-0');
+        if(!isDesktopUI) elements.toast.classList.add('opacity-0');
         setTimeout(() => elements.toast.style.display = 'none', 300);
     }, duration);
 }
@@ -1708,7 +2060,7 @@ function renderTodaysOrdersList(orders) {
         return;
     }
     
-    const isSushakiUI = document.body.classList.contains('sushaki-ui');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
     orders.forEach(order => {
         const div = document.createElement('div');
@@ -1724,7 +2076,7 @@ function renderTodaysOrdersList(orders) {
             }
         } catch (e) { /* keep original */ }
 
-        if(isSushakiUI) {
+        if(isDesktopUI) {
             div.className = 'item-row';
             div.innerHTML = `
                 <span style="flex:1">
@@ -1801,9 +2153,24 @@ async function reprintOrder(orderNumToReprint) {
 }
 
 async function openDaySummaryModal() {
-    if (!elements.daySummaryModal || !elements.daySummaryContent) return;
-    elements.daySummaryModal.classList.remove('hidden');
-    elements.daySummaryModal.classList.add('flex');
+    if (!elements.daySummaryModal || !elements.daySummaryContent) {
+        // Try to find them again
+        elements.daySummaryModal = document.getElementById('daySummaryModal');
+        elements.daySummaryContent = document.getElementById('daySummaryContent');
+        
+        if (!elements.daySummaryModal || !elements.daySummaryContent) {
+            return;
+        }
+    }
+    
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.daySummaryModal.style.display = 'flex';
+    } else {
+        elements.daySummaryModal.classList.remove('hidden');
+        elements.daySummaryModal.classList.add('flex');
+    }
     elements.daySummaryContent.innerHTML = '<p class="text-center italic">Loading summary...</p>';
 
     try {
@@ -1821,8 +2188,15 @@ async function openDaySummaryModal() {
 
 function closeDaySummaryModal() {
     if (!elements.daySummaryModal) return;
-    elements.daySummaryModal.classList.add('hidden');
-    elements.daySummaryModal.classList.remove('flex');
+    
+    // Handle different UI variants
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    if (isDesktopUI) {
+        elements.daySummaryModal.style.display = 'none';
+    } else {
+        elements.daySummaryModal.classList.add('hidden');
+        elements.daySummaryModal.classList.remove('flex');
+    }
 }
 
 function renderDaySummary(summary) {
@@ -1879,6 +2253,12 @@ function toggleCustomDateRangeUI(buttonEl) {
 
 async function fetchAnalytics(url) {
     const analyticsContainer = document.getElementById('analyticsManagement');
+    
+    if (!analyticsContainer) {
+        showToast('Analytics container not found', 'error');
+        return;
+    }
+    
     analyticsContainer.querySelectorAll('.font-bold.text-gray-900').forEach(el => el.textContent = '...');
     analyticsContainer.querySelectorAll('.max-h-48, .max-h-64, #analytics-chart-container').forEach(el => el.innerHTML = '<p class="text-xs text-gray-500 italic p-4">Loading data...</p>');
 
@@ -1927,6 +2307,8 @@ function fetchCustomDateRangeAnalytics() {
 
 
 function renderAnalytics(data) {
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    
     document.getElementById('kpi-gross-revenue').textContent = `€${(data.grossRevenue || 0).toFixed(2)}`;
     document.getElementById('kpi-total-orders').textContent = data.totalOrders || 0;
     document.getElementById('kpi-atv').textContent = `€${(data.atv || 0).toFixed(2)}`;
@@ -1934,51 +2316,88 @@ function renderAnalytics(data) {
     document.getElementById('kpi-payment-cash').textContent = `€${(data.paymentMethods.cash || 0).toFixed(2)}`;
     document.getElementById('kpi-payment-card').textContent = `€${(data.paymentMethods.card || 0).toFixed(2)}`;
 
-    renderList('kpi-sales-by-category', data.salesByCategory, item => `
-        <div class="flex justify-between text-sm">
-            <span class="text-gray-600 truncate pr-2">${item.category}</span>
-            <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.total || 0).toFixed(2)}</span>
-        </div>`, "No category sales yet.");
+    if (isDesktopUI) {
+        renderList('kpi-sales-by-category', data.salesByCategory, item => `
+            <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+                <span style="color: #4b5563; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-right: 0.5rem;">${item.category}</span>
+                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">€${(item.total || 0).toFixed(2)}</span>
+            </div>`, "No category sales yet.");
 
-    renderList('kpi-top-revenue-items', data.topRevenueItems, item => `
-        <div class="flex justify-between text-sm">
-            <span class="text-gray-600 truncate pr-2">${item.name}</span>
-            <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.revenue || 0).toFixed(2)}</span>
-        </div>`, "No items sold yet.");
+        renderList('kpi-top-revenue-items', data.topRevenueItems, item => `
+            <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+                <span style="color: #4b5563; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-right: 0.5rem;">${item.name}</span>
+                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">€${(item.revenue || 0).toFixed(2)}</span>
+            </div>`, "No items sold yet.");
 
-    renderList('kpi-best-sellers', data.bestSellers, item => `
-        <div class="flex justify-between text-sm">
-            <span class="text-gray-600 truncate pr-2">${item.name}</span>
-            <span class="font-medium text-gray-800 whitespace-nowrap">${item.quantity} sold</span>
-        </div>`, "No items sold yet.");
+        renderList('kpi-best-sellers', data.bestSellers, item => `
+            <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+                <span style="color: #4b5563; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-right: 0.5rem;">${item.name}</span>
+                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">${item.quantity} sold</span>
+            </div>`, "No items sold yet.");
 
-    renderList('kpi-worst-sellers', data.worstSellers, item => `
-        <div class="flex justify-between text-sm">
-            <span class="text-gray-600 truncate pr-2">${item.name}</span>
-            <span class="font-medium text-gray-800 whitespace-nowrap">${item.quantity} sold</span>
-        </div>`, "No underperforming items found.");
+        renderList('kpi-worst-sellers', data.worstSellers, item => `
+            <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+                <span style="color: #4b5563; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-right: 0.5rem;">${item.name}</span>
+                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">${item.quantity} sold</span>
+            </div>`, "No underperforming items found.");
+    } else {
+        renderList('kpi-sales-by-category', data.salesByCategory, item => `
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600 truncate pr-2">${item.category}</span>
+                <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.total || 0).toFixed(2)}</span>
+            </div>`, "No category sales yet.");
+
+        renderList('kpi-top-revenue-items', data.topRevenueItems, item => `
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600 truncate pr-2">${item.name}</span>
+                <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.revenue || 0).toFixed(2)}</span>
+            </div>`, "No items sold yet.");
+
+        renderList('kpi-best-sellers', data.bestSellers, item => `
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600 truncate pr-2">${item.name}</span>
+                <span class="font-medium text-gray-800 whitespace-nowrap">${item.quantity} sold</span>
+            </div>`, "No items sold yet.");
+
+        renderList('kpi-worst-sellers', data.worstSellers, item => `
+            <div class="flex justify-between text-sm">
+                <span class="text-gray-600 truncate pr-2">${item.name}</span>
+                <span class="font-medium text-gray-800 whitespace-nowrap">${item.quantity} sold</span>
+            </div>`, "No underperforming items found.");
+    }
 
     renderSalesByHourChart(data.salesByHour);
 }
 
 function renderList(containerId, items, templateFn, emptyMessage) {
     const container = document.getElementById(containerId);
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
     container.innerHTML = '';
+    
     if (items && items.length > 0) {
         items.forEach(item => {
             container.innerHTML += templateFn(item);
         });
     } else {
-        container.innerHTML = `<p class="text-xs text-gray-500 italic p-2">${emptyMessage}</p>`;
+        if (isDesktopUI) {
+            container.innerHTML = `<p style="font-size: 0.75rem; color: #6b7280; font-style: italic; padding: 0.5rem;">${emptyMessage}</p>`;
+        } else {
+            container.innerHTML = `<p class="text-xs text-gray-500 italic p-2">${emptyMessage}</p>`;
+        }
     }
 }
 
 function renderSalesByHourChart(salesByHour) {
     const container = document.getElementById('analytics-chart-container');
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
     container.innerHTML = '';
 
     if (!salesByHour || salesByHour.length === 0) {
-        container.innerHTML = '<p class="text-xs text-gray-500 italic w-full text-center self-center">No sales data for this period.</p>';
+        if (isDesktopUI) {
+            container.innerHTML = '<p style="font-size: 0.75rem; color: #6b7280; font-style: italic; width: 100%; text-align: center; align-self: center;">No sales data for this period.</p>';
+        } else {
+            container.innerHTML = '<p class="text-xs text-gray-500 italic w-full text-center self-center">No sales data for this period.</p>';
+        }
         container.style.minWidth = 'auto';
         return;
     }
@@ -1992,16 +2411,31 @@ function renderSalesByHourChart(salesByHour) {
     salesByHour.forEach(hourData => {
         const barHeight = maxRevenue > 0 ? (hourData.total / maxRevenue) * 100 : 0;
         const barWrapper = document.createElement('div');
-        barWrapper.className = 'w-10 flex flex-col items-center justify-end h-full';
-        barWrapper.innerHTML = `
-            <div class="w-full h-full flex items-end justify-center group relative">
-                <div class="bg-gray-200 hover:bg-indigo-400 w-3/4 rounded-t-sm transition-colors" style="height: ${barHeight}%"></div>
-                <div class="absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                    €${hourData.total.toFixed(2)}
+        
+        if (isDesktopUI) {
+            barWrapper.style.cssText = 'width: 2.5rem; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;';
+            barWrapper.innerHTML = `
+                <div style="width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative;">
+                    <div style="background-color: #e5e7eb; width: 75%; border-radius: 0.125rem 0.125rem 0 0; transition: background-color 0.2s; height: ${barHeight}%;" onmouseover="this.style.backgroundColor='#818cf8'" onmouseout="this.style.backgroundColor='#e5e7eb'"></div>
+                    <div style="position: absolute; bottom: 100%; margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">
+                        €${hourData.total.toFixed(2)}
+                    </div>
                 </div>
-            </div>
-            <span class="text-xs text-gray-500 mt-1">${String(hourData.hour).padStart(2, '0')}</span>
-        `;
+                <span style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">${String(hourData.hour).padStart(2, '0')}</span>
+            `;
+        } else {
+            barWrapper.className = 'w-10 flex flex-col items-center justify-end h-full';
+            barWrapper.innerHTML = `
+                <div class="w-full h-full flex items-end justify-center group relative">
+                    <div class="bg-gray-200 hover:bg-indigo-400 w-3/4 rounded-t-sm transition-colors" style="height: ${barHeight}%"></div>
+                    <div class="absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        €${hourData.total.toFixed(2)}
+                    </div>
+                </div>
+                <span class="text-xs text-gray-500 mt-1">${String(hourData.hour).padStart(2, '0')}</span>
+            `;
+        }
+        
         container.appendChild(barWrapper);
     });
 }

@@ -41,6 +41,13 @@ ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
 ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock file for order counter
 CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
 
+# --- NEW: Centralized State Management Files ---
+CURRENT_ORDER_FILE = os.path.join(DATA_DIR, 'current_order.json')
+ORDER_LINE_COUNTER_FILE = os.path.join(DATA_DIR, 'order_line_counter.json')
+UNIVERSAL_COMMENT_FILE = os.path.join(DATA_DIR, 'universal_comment.json')
+SELECTED_TABLE_FILE = os.path.join(DATA_DIR, 'selected_table.json')
+DEVICE_SESSIONS_FILE = os.path.join(DATA_DIR, 'device_sessions.json')
+
 # --- ESC/POS Commands ---
 ESC = b'\x1B'
 GS = b'\x1D'
@@ -61,6 +68,121 @@ PartialCut = GS + b'V\x01' # Or m=66 for some printers
 
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
+
+# --- NEW: Centralized State Management Functions ---
+def load_centralized_state():
+    """Load all centralized state from files"""
+    state = {
+        'current_order': [],
+        'order_line_counter': 0,
+        'universal_comment': "",
+        'selected_table': "",
+        'device_sessions': {}
+    }
+    
+    # Load current order
+    if os.path.exists(CURRENT_ORDER_FILE):
+        try:
+            with open(CURRENT_ORDER_FILE, 'r', encoding='utf-8') as f:
+                state['current_order'] = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            state['current_order'] = []
+    
+    # Load order line counter
+    if os.path.exists(ORDER_LINE_COUNTER_FILE):
+        try:
+            with open(ORDER_LINE_COUNTER_FILE, 'r', encoding='utf-8') as f:
+                state['order_line_counter'] = int(f.read().strip())
+        except (ValueError, FileNotFoundError):
+            state['order_line_counter'] = 0
+    
+    # Load universal comment
+    if os.path.exists(UNIVERSAL_COMMENT_FILE):
+        try:
+            with open(UNIVERSAL_COMMENT_FILE, 'r', encoding='utf-8') as f:
+                state['universal_comment'] = f.read().strip()
+        except FileNotFoundError:
+            state['universal_comment'] = ""
+    
+    # Load selected table
+    if os.path.exists(SELECTED_TABLE_FILE):
+        try:
+            with open(SELECTED_TABLE_FILE, 'r', encoding='utf-8') as f:
+                state['selected_table'] = f.read().strip()
+        except FileNotFoundError:
+            state['selected_table'] = ""
+    
+    # Load device sessions
+    if os.path.exists(DEVICE_SESSIONS_FILE):
+        try:
+            with open(DEVICE_SESSIONS_FILE, 'r', encoding='utf-8') as f:
+                state['device_sessions'] = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            state['device_sessions'] = {}
+    
+    return state
+
+def save_centralized_state(state_key, value):
+    """Save a specific state value to file"""
+    try:
+        if state_key == 'current_order':
+            with open(CURRENT_ORDER_FILE, 'w', encoding='utf-8') as f:
+                json.dump(value, f, indent=2)
+        elif state_key == 'order_line_counter':
+            with open(ORDER_LINE_COUNTER_FILE, 'w', encoding='utf-8') as f:
+                f.write(str(value))
+        elif state_key == 'universal_comment':
+            with open(UNIVERSAL_COMMENT_FILE, 'w', encoding='utf-8') as f:
+                f.write(str(value))
+        elif state_key == 'selected_table':
+            with open(SELECTED_TABLE_FILE, 'w', encoding='utf-8') as f:
+                f.write(str(value))
+        elif state_key == 'device_sessions':
+            with open(DEVICE_SESSIONS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(value, f, indent=2)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error saving {state_key}: {str(e)}")
+        return False
+
+def register_device_session(device_id, device_info):
+    """Register a device session for tracking"""
+    state = load_centralized_state()
+    state['device_sessions'][device_id] = {
+        'info': device_info,
+        'last_seen': datetime.now().isoformat(),
+        'active': True
+    }
+    return save_centralized_state('device_sessions', state['device_sessions'])
+
+def update_device_session(device_id):
+    """Update device session timestamp"""
+    state = load_centralized_state()
+    if device_id in state['device_sessions']:
+        state['device_sessions'][device_id]['last_seen'] = datetime.now().isoformat()
+        return save_centralized_state('device_sessions', state['device_sessions'])
+    return False
+
+def cleanup_inactive_sessions():
+    """Remove sessions older than 30 minutes"""
+    state = load_centralized_state()
+    cutoff_time = datetime.now() - timedelta(minutes=30)
+    active_sessions = {}
+    
+    for device_id, session in state['device_sessions'].items():
+        try:
+            last_seen = datetime.fromisoformat(session['last_seen'])
+            if last_seen > cutoff_time:
+                active_sessions[device_id] = session
+        except ValueError:
+            # Invalid timestamp, remove session
+            continue
+    
+    if len(active_sessions) != len(state['device_sessions']):
+        save_centralized_state('device_sessions', active_sessions)
+        app.logger.info(f"Cleaned up {len(state['device_sessions']) - len(active_sessions)} inactive sessions")
+    
+    return active_sessions
 
 
 def load_config():
@@ -238,7 +360,23 @@ def get_next_daily_order_number():
 
 @app.route('/')
 def serve_index():
+    return send_from_directory('.', 'UISelect.html')
+
+@app.route('/POSPal.html')
+def serve_pospal():
     return send_from_directory('.', 'POSPal.html')
+
+@app.route('/POSPalDesktop.html')
+def serve_pospal_desktop():
+    return send_from_directory('.', 'POSPalDesktop.html')
+
+@app.route('/pospalCore.js')
+def serve_pospal_core():
+    return send_from_directory('.', 'pospalCore.js')
+
+@app.route('/test_centralized.html')
+def serve_test_centralized():
+    return send_from_directory('.', 'test_centralized.html')
 
 # --- NEW ENDPOINT for Login ---
 @app.route('/api/login', methods=['POST'])
@@ -948,134 +1086,242 @@ def get_daily_summary():
 @app.route('/api/analytics', methods=['GET'])
 def get_analytics():
     try:
-        range_param = request.args.get('range', 'today')
-        start_date_str = request.args.get('start')
-        end_date_str = request.args.get('end')
-
-        # --- 1. Determine Date Range and Filenames ---
-        target_filenames = []
-        now = datetime.now()
-
-        if range_param == 'today':
-            target_filenames.append(os.path.join(DATA_DIR, f"orders_{now.strftime('%Y-%m-%d')}.csv"))
-        elif range_param == 'week':
-            for i in range(now.weekday() + 1):
-                d = now - timedelta(days=i)
-                target_filenames.append(os.path.join(DATA_DIR, f"orders_{d.strftime('%Y-%m-%d')}.csv"))
-        elif range_param == 'month':
-            for i in range(now.day):
-                d = now - timedelta(days=i)
-                target_filenames.append(os.path.join(DATA_DIR, f"orders_{d.strftime('%Y-%m-%d')}.csv"))
-        elif range_param == 'custom' and start_date_str and end_date_str:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
-            delta = end_date - start_date
-            for i in range(delta.days + 1):
-                day = start_date + timedelta(days=i)
-                target_filenames.append(os.path.join(DATA_DIR, f"orders_{day.strftime('%Y-%m-%d')}.csv"))
-        else: # Default to today if params are weird
-             target_filenames.append(os.path.join(DATA_DIR, f"orders_{now.strftime('%Y-%m-%d')}.csv"))
-
-
-        # --- 2. Load Menu to get item-to-category mapping ---
-        item_to_category_map = {}
-        if os.path.exists(MENU_FILE):
-            with open(MENU_FILE, 'r', encoding='utf-8') as f:
-                menu_data = json.load(f)
-                for category, items in menu_data.items():
-                    for item in items:
-                        item_to_category_map[str(item.get('id'))] = category
+        range_type = request.args.get('range', 'today')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
         
-        # --- 3. Initialize Analytics Variables ---
+        if range_type == 'custom' and start_date and end_date:
+            # Custom date range
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+        else:
+            # Today's analytics
+            start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=1)
+        
+        # Read orders from CSV file
+        orders_csv = os.path.join(DATA_DIR, 'orders.csv')
+        if not os.path.exists(orders_csv):
+            return jsonify({
+                "total_sales": 0,
+                "total_orders": 0,
+                "average_order_value": 0,
+                "sales_by_hour": {},
+                "top_items": [],
+                "payment_methods": {}
+            })
+        
+        total_sales = 0
         total_orders = 0
-        gross_revenue = 0.0
-        cash_total = 0.0
-        card_total = 0.0
-        sales_by_category = defaultdict(float)
-        item_sales_counter = Counter()
-        item_revenue_counter = defaultdict(float)
-        sales_by_hour = defaultdict(float)
-
-        # --- 4. Read and Aggregate Data from relevant CSV files ---
-        for filename in target_filenames:
-            if not os.path.exists(filename):
-                continue # Skip if file for a specific day doesn't exist
-
-            with open(filename, 'r', newline='', encoding='utf-8') as f_read:
-                reader = csv.DictReader(f_read)
-                for row in reader:
-                    try:
-                        total_orders += 1
-                        order_total = float(row.get('order_total', 0.0))
-                        gross_revenue += order_total
-                        
-                        payment_method = row.get('payment_method', 'Cash').strip().capitalize()
-                        if payment_method == 'Card':
-                            card_total += order_total
-                        else:
-                            cash_total += order_total
-
-                        timestamp_str = row.get('timestamp')
-                        if timestamp_str:
-                            hour = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S').hour
-                            sales_by_hour[hour] += order_total
-
-                        items_json = row.get('items_json', '[]')
-                        items_in_order = json.loads(items_json)
-                        
-                        for item in items_in_order:
-                            item_id_str = str(item.get('id'))
-                            item_name = item.get('name', 'Unknown Item')
-                            quantity = int(item.get('quantity', 0))
-                            item_total_price = float(item.get('itemPriceWithModifiers', 0.0)) * quantity
-                            
-                            item_sales_counter[item_name] += quantity
-                            item_revenue_counter[item_name] += item_total_price
-                            
-                            category = item_to_category_map.get(item_id_str, "Uncategorized")
-                            sales_by_category[category] += item_total_price
-
-                    except (ValueError, TypeError, json.JSONDecodeError) as e:
-                        app.logger.warning(f"Could not parse row in analytics processing from {os.path.basename(filename)}: {row}. Error: {e}")
-
-        # --- 5. Calculate Final KPIs ---
-        atv = (gross_revenue / total_orders) if total_orders > 0 else 0.0
+        sales_by_hour = defaultdict(int)
+        item_sales = Counter()
+        payment_methods = Counter()
         
-        formatted_sales_by_cat = sorted(
-            [{"category": cat, "total": total} for cat, total in sales_by_category.items()],
-            key=lambda x: x['total'], reverse=True
-        )
+        with open(orders_csv, 'r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                try:
+                    order_date = datetime.strptime(row['Date'], '%Y-%m-%d %H:%M:%S')
+                    if start <= order_date < end:
+                        order_total = float(row['Total'])
+                        total_sales += order_total
+                        total_orders += 1
+                        
+                        # Sales by hour
+                        hour = order_date.hour
+                        sales_by_hour[hour] += order_total
+                        
+                        # Payment methods
+                        payment_method = row.get('Payment Method', 'Cash')
+                        payment_methods[payment_method] += 1
+                        
+                        # Top items (parse items JSON)
+                        try:
+                            items = json.loads(row['Items'])
+                            for item in items:
+                                item_name = item.get('name', 'Unknown')
+                                quantity = item.get('quantity', 1)
+                                item_sales[item_name] += quantity
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+                            
+                except (ValueError, KeyError) as e:
+                    app.logger.warning(f"Error parsing order row: {e}")
+                    continue
+        
+        average_order_value = total_sales / total_orders if total_orders > 0 else 0
+        top_items = [{"name": item, "quantity": count} for item, count in item_sales.most_common(10)]
+        
+        return jsonify({
+            "total_sales": round(total_sales, 2),
+            "total_orders": total_orders,
+            "average_order_value": round(average_order_value, 2),
+            "sales_by_hour": dict(sales_by_hour),
+            "top_items": top_items,
+            "payment_methods": dict(payment_methods)
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error generating analytics: {str(e)}")
+        return jsonify({"status": "error", "message": f"Error generating analytics: {str(e)}"}), 500
 
-        sorted_items = item_sales_counter.most_common()
-        best_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[:10]]
-        worst_sellers = [{"name": name, "quantity": qty} for name, qty in sorted_items[-10:] if qty > 0]
-        worst_sellers.reverse()
+# --- NEW: Centralized State Management API Endpoints ---
 
-        sorted_revenue_items = sorted(item_revenue_counter.items(), key=lambda item: item[1], reverse=True)
-        top_revenue_items = [{"name": name, "revenue": rev} for name, rev in sorted_revenue_items[:10]]
-
-        formatted_sales_by_hour = [
-            {"hour": hour, "total": sales_by_hour.get(hour, 0.0)} for hour in range(24)
-        ]
-
-        # --- 6. Construct and Return JSON Response ---
-        analytics_data = {
-            "grossRevenue": gross_revenue,
-            "totalOrders": total_orders,
-            "atv": atv,
-            "paymentMethods": {"cash": cash_total, "card": card_total},
-            "salesByCategory": formatted_sales_by_cat,
-            "bestSellers": best_sellers,
-            "worstSellers": worst_sellers,
-            "topRevenueItems": top_revenue_items,
-            "salesByHour": formatted_sales_by_hour
+@app.route('/api/state', methods=['GET'])
+def get_state():
+    """Get current centralized state"""
+    try:
+        # Clean up inactive sessions first
+        cleanup_inactive_sessions()
+        
+        # Get device ID from request
+        device_id = request.args.get('device_id', 'unknown')
+        device_info = {
+            'user_agent': request.headers.get('User-Agent', 'Unknown'),
+            'ip': get_remote_address(),
+            'timestamp': datetime.now().isoformat()
         }
         
-        return jsonify(analytics_data)
-
+        # Register/update device session
+        if device_id != 'unknown':
+            register_device_session(device_id, device_info)
+        
+        state = load_centralized_state()
+        return jsonify({
+            "success": True,
+            "state": {
+                "current_order": state['current_order'],
+                "order_line_counter": state['order_line_counter'],
+                "universal_comment": state['universal_comment'],
+                "selected_table": state['selected_table'],
+                "active_devices": len(state['device_sessions'])
+            }
+        })
     except Exception as e:
-        app.logger.error(f"Error generating analytics data: {str(e)}")
-        return jsonify({"status": "error", "message": f"Could not generate analytics: {str(e)}"}), 500
+        app.logger.error(f"Error getting state: {str(e)}")
+        return jsonify({"success": False, "message": f"Error getting state: {str(e)}"}), 500
+
+@app.route('/api/state/current_order', methods=['GET', 'POST'])
+def handle_current_order():
+    """Get or update current order"""
+    try:
+        if request.method == 'GET':
+            state = load_centralized_state()
+            return jsonify({
+                "success": True,
+                "current_order": state['current_order']
+            })
+        else:  # POST
+            data = request.get_json()
+            if data is None:
+                return jsonify({"success": False, "message": "Invalid JSON data"}), 400
+            
+            new_order = data.get('current_order', [])
+            if save_centralized_state('current_order', new_order):
+                return jsonify({"success": True, "message": "Current order updated"})
+            else:
+                return jsonify({"success": False, "message": "Failed to save current order"}), 500
+    except Exception as e:
+        app.logger.error(f"Error handling current order: {str(e)}")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@app.route('/api/state/order_line_counter', methods=['GET', 'POST'])
+def handle_order_line_counter():
+    """Get or update order line counter"""
+    try:
+        if request.method == 'GET':
+            state = load_centralized_state()
+            return jsonify({
+                "success": True,
+                "order_line_counter": state['order_line_counter']
+            })
+        else:  # POST
+            data = request.get_json()
+            if data is None:
+                return jsonify({"success": False, "message": "Invalid JSON data"}), 400
+            
+            new_counter = data.get('order_line_counter', 0)
+            if save_centralized_state('order_line_counter', new_counter):
+                return jsonify({"success": True, "message": "Order line counter updated"})
+            else:
+                return jsonify({"success": False, "message": "Failed to save order line counter"}), 500
+    except Exception as e:
+        app.logger.error(f"Error handling order line counter: {str(e)}")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@app.route('/api/state/universal_comment', methods=['GET', 'POST'])
+def handle_universal_comment():
+    """Get or update universal comment"""
+    try:
+        if request.method == 'GET':
+            state = load_centralized_state()
+            return jsonify({
+                "success": True,
+                "universal_comment": state['universal_comment']
+            })
+        else:  # POST
+            data = request.get_json()
+            if data is None:
+                return jsonify({"success": False, "message": "Invalid JSON data"}), 400
+            
+            new_comment = data.get('universal_comment', "")
+            if save_centralized_state('universal_comment', new_comment):
+                return jsonify({"success": True, "message": "Universal comment updated"})
+            else:
+                return jsonify({"success": False, "message": "Failed to save universal comment"}), 500
+    except Exception as e:
+        app.logger.error(f"Error handling universal comment: {str(e)}")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@app.route('/api/state/selected_table', methods=['GET', 'POST'])
+def handle_selected_table():
+    """Get or update selected table"""
+    try:
+        if request.method == 'GET':
+            state = load_centralized_state()
+            return jsonify({
+                "success": True,
+                "selected_table": state['selected_table']
+            })
+        else:  # POST
+            data = request.get_json()
+            if data is None:
+                return jsonify({"success": False, "message": "Invalid JSON data"}), 400
+            
+            new_table = data.get('selected_table', "")
+            if save_centralized_state('selected_table', new_table):
+                return jsonify({"success": True, "message": "Selected table updated"})
+            else:
+                return jsonify({"success": False, "message": "Failed to save selected table"}), 500
+    except Exception as e:
+        app.logger.error(f"Error handling selected table: {str(e)}")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@app.route('/api/state/clear_order', methods=['POST'])
+def clear_current_order():
+    """Clear current order and reset counter"""
+    try:
+        if save_centralized_state('current_order', []) and save_centralized_state('order_line_counter', 0):
+            return jsonify({"success": True, "message": "Current order cleared"})
+        else:
+            return jsonify({"success": False, "message": "Failed to clear current order"}), 500
+    except Exception as e:
+        app.logger.error(f"Error clearing current order: {str(e)}")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+
+@app.route('/api/devices', methods=['GET'])
+def get_active_devices():
+    """Get list of active devices"""
+    try:
+        cleanup_inactive_sessions()
+        state = load_centralized_state()
+        return jsonify({
+            "success": True,
+            "active_devices": state['device_sessions']
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting active devices: {str(e)}")
+        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
 
 
 def check_for_updates():

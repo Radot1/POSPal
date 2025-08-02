@@ -1,0 +1,168 @@
+<!-- Shared Management Component -->
+<!-- This file contains the management modal structure shared between POSPal variants -->
+
+<!-- Login Modal -->
+<div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-gray-800">
+        <h3 class="text-xl font-semibold mb-4 text-center">Management Access</h3>
+        <form id="loginForm">
+            <div class="space-y-4">
+                <div>
+                    <label for="passwordInput" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="passwordInput" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                </div>
+                <p id="loginError" class="text-sm text-red-600 text-center hidden"></p>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="closeLoginModal()">Cancel</button>
+                    <button type="submit" id="loginSubmitBtn" class="w-full py-2 px-4 btn-primary">Login</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Item Option Select Modal -->
+<div id="itemOptionSelectModal" class="fixed inset-0 bg-black bg-opacity-70 z-[60] hidden items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl p-5 w-full max-w-md max-h-[80vh] flex flex-col text-gray-800">
+        <h3 id="optionModalItemName" class="text-lg font-semibold mb-1">Select Option</h3>
+        <p id="optionModalItemDescription" class="text-sm text-gray-600 mb-3">Please choose an option for the selected item:</p>
+        <div id="optionModalOptionsContainer" class="flex-grow overflow-y-auto space-y-2 mb-4 pr-1"></div>
+        <div class="flex gap-2 mt-auto">
+            <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="cancelOptionSelection()">Cancel</button>
+            <button type="button" id="confirmOptionBtn" class="w-full py-2 px-4 btn-primary" onclick="confirmOptionSelection()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Management Modal -->
+<div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] hidden flex flex-col justify-end sm:justify-center sm:items-center">
+    <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-6xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+            <h2 class="text-xl font-semibold">Management</h2>
+            <button onclick="closeManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
+        </div>
+        <div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
+            <div class="flex flex-wrap gap-1 rounded-md bg-gray-100 p-1">
+                <button onclick="switchManagementTab('analytics', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Analytics</button>
+                <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Items</button>
+                <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
+                <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
+                <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
+            </div>
+        </div>
+        <div class="flex-grow overflow-y-auto p-4 management-content">
+            <div id="analyticsManagement" class="hidden">
+                <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
+                    <h3 class="text-xl font-semibold text-gray-800">Performance Overview</h3>
+                    <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-lg flex-wrap">
+                        <button onclick="loadAnalyticsData('today', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">Today</button>
+                        <button onclick="loadAnalyticsData('week', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">This Week</button>
+                        <button onclick="loadAnalyticsData('month', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">This Month</button>
+                        <button onclick="toggleCustomDateRangeUI(this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">Custom</button>
+                    </div>
+                </div>
+                <div id="custom-date-range-picker" class="hidden my-4 p-4 bg-gray-100 rounded-lg border border-gray-200">
+                    <div class="flex flex-col sm:flex-row items-center gap-4">
+                        <div>
+                            <label for="startDate" class="block text-sm font-medium text-gray-700">Start Date</label>
+                            <input type="date" id="startDate" name="startDate" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="endDate" class="block text-sm font-medium text-gray-700">End Date</label>
+                            <input type="date" id="endDate" name="endDate" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
+                        </div>
+                        <div class="self-end pt-1 sm:pt-0">
+                            <button onclick="fetchCustomDateRangeAnalytics()" class="w-full sm:w-auto py-2 px-4 btn-primary rounded-md">Go</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
+                    <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Total Orders</h4><p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p></div>
+                    <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
+                    <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="font-semibold text-gray-700 mb-2">Payment Methods</h4><div class="space-y-2 mt-3"><div class="flex justify-between items-center"><span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span><span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span></div><div class="flex justify-between items-center"><span class="text-sm text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span><span id="kpi-payment-card" class="font-bold text-gray-800">€0.00</span></div></div></div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="bg-white p-4 rounded-lg border lg:col-span-2"><h4 class="font-semibold text-gray-700 mb-3">Sales by Hour</h4><div class="overflow-x-auto pb-2"><div id="analytics-chart-container" class="h-64 flex items-end space-x-4"><p class="text-xs text-gray-500 italic w-full text-center">Loading chart data...</p></div></div></div>
+                    <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4><div id="kpi-sales-by-category" class="space-y-2 max-h-64 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
+                    <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Top Items (by Revenue)</h4><div id="kpi-top-revenue-items" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
+                    <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Best Selling Items (by Qty)</h4><div id="kpi-best-sellers" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
+                    <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Underperforming Items (by Qty)</h4><div id="kpi-worst-sellers" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
+                </div>
+            </div>
+            <div id="itemsManagement" class="hidden">
+                <div class="flex justify-end mb-4"><button onclick="openItemFormModal()" class="btn-success py-2 px-4 rounded-md flex items-center"><i class="fas fa-plus mr-2"></i>Add New Item</button></div>
+                <h4 class="text-md font-medium text-gray-800 mb-2">Existing Items</h4>
+                <div id="existingItemsListModal" class="space-y-3 pr-2 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic">No items found.</p></div>
+            </div>
+            <div id="categoriesManagement" class="hidden">
+                <form id="categoryManagementForm" class="space-y-4 management-form">
+                    <div><label for="categoryName" class="block text-sm font-medium text-gray-700">Category Name</label><input type="text" id="categoryName" name="categoryName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
+                    <button type="button" onclick="saveCategory()" class="w-full py-2 px-4 btn-success">📁 Save Category</button>
+                </form>
+                <div class="mt-6">
+                    <h4 class="text-md font-medium text-gray-800 mb-2">Existing Categories</h4>
+                    <div id="existingCategoriesListModal" class="space-y-2 max-h-72 overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic">No categories found.</p></div>
+                </div>
+            </div>
+            <div id="orderHistoryManagement" class="hidden">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">Today's Orders</h3>
+                <button onclick="loadTodaysOrdersForReprint()" class="mb-4 px-4 py-2 btn-secondary text-sm"><i class="fas fa-sync-alt mr-1"></i> Refresh List</button>
+                <div id="todaysOrdersList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic">Loading today's orders...</p></div>
+            </div>
+            <div id="licenseManagement" class="hidden">
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">License Information</h3>
+                <div class="bg-gray-100 p-4 rounded-lg space-y-4">
+                    <div><h4 class="text-lg font-medium text-gray-700">Current Status</h4><p id="license-status-display" class="text-base font-semibold text-gray-900 mt-1">Loading...</p></div>
+                    <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700">Your Hardware ID</h4><p class="text-sm text-gray-600 mt-1">To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.</p><div class="mt-2 bg-white p-3 rounded-md flex items-center justify-between border border-gray-300"><code id="hardware-id-display" class="text-sm font-mono text-gray-800">Loading...</code><button id="copy-hwid-btn" class="copy-btn" onclick="copyHardwareId()"><i class="far fa-copy mr-1"></i> Copy</button></div></div>
+                    <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700">How to Activate</h4><ol class="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-2"><li>Copy your unique Hardware ID from above.</li><li>Email the Hardware ID to <a href="mailto:your-email@example.com" class="text-blue-600 hover:underline">your-email@example.com</a> to purchase a license.</li><li>You will receive a `license.key` file back.</li><li>Place the `license.key` file in the same folder as the `POSPal.exe` application.</li><li>Restart the POSPal application to activate the full version.</li></ol></div>
+                </div>
+            </div>
+        </div>
+        <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg">
+            <div class="flex items-center gap-4 flex-wrap"><span>POSPal Version: <span id="appVersion" class="font-medium text-gray-600">1.0.0</span></span><span id="footer-trial-status" class="font-medium"></span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">License Info</button></div>
+            <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold"><i class="fas fa-power-off mr-1.5"></i><span>Shutdown</span></button>
+        </div>
+    </div>
+</div>
+
+<!-- Item Form Modal -->
+<div id="itemFormModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div class="p-4 border-b border-gray-300 flex justify-between items-center"><h2 id="itemFormModalTitle" class="text-xl font-semibold">Add/Edit Item</h2><button onclick="closeItemFormModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button></div>
+        <div class="flex-grow overflow-y-auto p-4">
+            <form id="itemManagementForm" class="space-y-4 management-form">
+                <input type="hidden" id="itemId" name="itemId">
+                <div class="grid gap-4 md:grid-cols-2">
+                    <div><label for="itemName" class="block text-sm font-medium text-gray-700">Item Name</label><input type="text" id="itemName" name="itemName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
+                    <div><label for="itemPrice" class="block text-sm font-medium text-gray-700">Base Price (€)</label><input type="number" step="0.01" id="itemPrice" name="itemPrice" inputmode="decimal" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
+                </div>
+                <div><label for="itemCategory" class="block text-sm font-medium text-gray-700">Category</label><select id="itemCategory" name="itemCategory" class="mt-1 block w-full px-3 py-2 border border-gray-400 bg-white rounded-md shadow-sm sm:text-sm" required></select></div>
+                <div class="space-y-4">
+                    <div class="flex items-center space-x-4"><div class="flex items-center"><input type="checkbox" id="itemHasOptionsModal" name="itemHasOptionsModal" onchange="toggleItemOptionsUIInModal()" class="h-4 w-4 text-black border-gray-400 rounded focus:ring-black accent-black"><label for="itemHasOptionsModal" class="ml-2 block text-sm text-gray-800">Has General Options</label></div></div>
+                    <div id="itemOptionsModalContainer" class="hidden space-y-3 p-3 border border-gray-300 rounded-md bg-gray-50">
+                        <label class="block text-sm font-medium text-gray-700">General Item Options:</label>
+                        <div id="itemOptionsListDisplayModal" class="flex flex-wrap gap-2 mb-2 min-h-[40px] border border-gray-200 p-2 rounded-md bg-white"><p class="text-xs text-gray-500 italic w-full">No general options added</p></div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                            <div class="md:col-span-2"><label for="newOptionNameInputModal" class="block text-xs font-medium text-gray-600">Option Name</label><input type="text" id="newOptionNameInputModal" placeholder="e.g., Peppercorn Sauce" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm"></div>
+                            <div><label for="newOptionPriceInputModal" class="block text-xs font-medium text-gray-600">Price Change (€)</label><input type="number" step="0.01" id="newOptionPriceInputModal" placeholder="e.g., 2.00 or -0.50" inputmode="decimal" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm"></div>
+                        </div>
+                        <button type="button" onclick="addOptionToItemFormTempModal()" class="mt-2 px-4 py-2 btn-secondary text-sm w-full md:w-auto">Add Option</button>
+                    </div>
+                </div>
+                <div class="flex gap-2 pt-4 border-t border-gray-200">
+                    <button type="button" id="saveItemBtn" onclick="saveItem()" class="w-full py-2 px-4 btn-success">Save</button>
+                    <button type="button" onclick="closeItemFormModal()" class="w-full py-2 px-4 btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Day Summary Modal -->
+<div id="daySummaryModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col text-gray-800">
+        <div class="p-4 border-b border-gray-300 flex justify-between items-center"><h2 class="text-xl font-semibold">Day Summary</h2><button onclick="closeDaySummaryModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button></div>
+        <div id="daySummaryContent" class="p-6 space-y-4"><p class="text-center italic">Loading summary...</p></div>
+    </div>
+</div> 
