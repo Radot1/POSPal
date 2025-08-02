@@ -3,6 +3,10 @@ let menu = {};
 let selectedCategory = null;
 let editingItem = null;
 
+// --- Constants ---
+const SELECTED_TABLE_KEY = 'pospal_selected_table';
+const UNIVERSAL_COMMENT_KEY = 'pospal_universal_comment';
+
 // --- NEW: Centralized State Management ---
 // Generate unique device ID for this session
 const DEVICE_ID = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -139,7 +143,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Management component loaded:', componentLoaded);
     
     // Cache DOM elements after component is loaded
+    console.log('Caching DOM elements...');
     cacheDOMElements();
+    console.log('DOM elements cached. Checking critical elements:');
+    console.log('categoriesContainer:', elements.categoriesContainer);
+    console.log('productsContainer:', elements.productsContainer);
+    console.log('Is desktop-ui class present:', document.body.classList.contains('desktop-ui'));
     
     // Re-cache modal elements specifically to ensure they're found
     if (componentLoaded) {
@@ -186,9 +195,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
+    console.log('Initializing app state...');
     initializeAppState();
-    loadMenu();
+    console.log('Loading menu...');
+    await loadMenu();
+    console.log('Menu loaded. Current state:');
+    console.log('menu:', menu);
+    console.log('selectedCategory:', selectedCategory);
+    console.log('Starting clock...');
     startClock();
+    console.log('Checking trial status...');
     checkAndDisplayTrialStatus();
     if (elements.universalOrderCommentInput) {
         elements.universalOrderCommentInput.addEventListener('input', async (e) => {
@@ -216,11 +232,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             await updateUniversalComment();
         });
     }
+    console.log('Updating order display...');
     updateOrderDisplay();
+    console.log('Initialization complete!');
 });
 
 
 function cacheDOMElements() {
+    console.log('cacheDOMElements called');
+    
     // --- POSPal UI Elements ---
     elements.headerOrderNumber = document.getElementById('header-order-number');
     elements.headerTableInput = document.getElementById('header-table-input');
@@ -287,6 +307,11 @@ function cacheDOMElements() {
     elements.hardwareIdDisplay = document.getElementById('hardware-id-display');
     elements.copyHwidBtn = document.getElementById('copy-hwid-btn');
     elements.footerTrialStatus = document.getElementById('footer-trial-status');
+    
+    console.log('Critical elements found:');
+    console.log('categoriesContainer:', elements.categoriesContainer);
+    console.log('productsContainer:', elements.productsContainer);
+    console.log('orderItemsContainer:', elements.orderItemsContainer);
 }
 
 function startClock() {
@@ -321,27 +346,43 @@ async function fetchAndUpdateOrderNumber() {
 }
 
 function initializeAppState() {
+    console.log('initializeAppState called');
     fetchAndUpdateOrderNumber();
     selectedTableNumber = localStorage.getItem(SELECTED_TABLE_KEY) || "";
+    console.log('Selected table number:', selectedTableNumber);
     if (elements.headerTableInput) {
         elements.headerTableInput.value = selectedTableNumber;
+        console.log('Set header table input value');
+    } else {
+        console.log('headerTableInput not found');
     }
     const savedComment = localStorage.getItem(UNIVERSAL_COMMENT_KEY) || "";
+    console.log('Saved comment:', savedComment);
     if (elements.universalOrderCommentInput) {
         elements.universalOrderCommentInput.value = savedComment;
+        console.log('Set universal order comment input value');
+    } else {
+        console.log('universalOrderCommentInput not found');
     }
     const desktopCommentInput = document.getElementById('universalOrderCommentInput_desktop');
      if (desktopCommentInput) {
         desktopCommentInput.value = savedComment;
+        console.log('Set desktop comment input value');
+    } else {
+        console.log('universalOrderCommentInput_desktop not found');
     }
+    console.log('initializeAppState completed');
 }
 
 
 async function loadMenu() {
+    console.log('loadMenu called');
     try {
         const response = await fetch('/api/menu');
+        console.log('API response status:', response.status);
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         menu = await response.json() || {};
+        console.log('Menu loaded:', menu);
 
         if (Object.keys(menu).length > 0 && (!selectedCategory || !menu[selectedCategory])) {
             selectedCategory = Object.keys(menu)[0];
@@ -350,11 +391,34 @@ async function loadMenu() {
         }
         renderCategories();
         populateManagementCategorySelect();
+        // Ensure products are rendered for the initial category
+        if (selectedCategory) {
+            renderProductsForSelectedCategory();
+        }
     } catch (error) {
-        showToast(`Error loading menu: ${error.message}`, 'error');
-        console.error("Load menu error:", error);
-        if (elements.categoriesContainer) elements.categoriesContainer.innerHTML = '<p class="text-gray-500 italic">Could not load categories.</p>';
-        if (elements.productsContainer) elements.productsContainer.innerHTML = '<p class="text-gray-500 italic col-span-full text-center">Could not load items.</p>';
+        console.warn('API unavailable – falling back to stub data');
+        console.log('Error details:', error);
+        // Fallback menu data for development
+        menu = {
+            "Beverages": [
+                { id: 1, name: "Coffee", price: 2.50, hasGeneralOptions: false },
+                { id: 2, name: "Tea", price: 2.00, hasGeneralOptions: false }
+            ],
+            "Food": [
+                { id: 3, name: "Sandwich", price: 8.50, hasGeneralOptions: false },
+                { id: 4, name: "Pizza", price: 12.00, hasGeneralOptions: false }
+            ]
+        };
+        selectedCategory = Object.keys(menu)[0];
+        console.log('Fallback menu created:', menu);
+        console.log('Selected category:', selectedCategory);
+        renderCategories();
+        populateManagementCategorySelect();
+        // Ensure products are rendered for the initial category in fallback mode
+        if (selectedCategory) {
+            renderProductsForSelectedCategory();
+        }
+        showToast('Using demo menu data. Start server for full functionality.', 'warning');
     }
 }
 
@@ -382,10 +446,17 @@ async function saveMenuToServer() {
 }
 
 function renderCategories() {
-    if (!elements.categoriesContainer) return;
+    console.log('renderCategories called');
+    console.log('categoriesContainer:', elements.categoriesContainer);
+    if (!elements.categoriesContainer) {
+        console.error('categoriesContainer not found');
+        return;
+    }
     elements.categoriesContainer.innerHTML = '';
 
+    console.log('Menu keys:', Object.keys(menu));
     if (Object.keys(menu).length === 0) {
+        console.log('No categories in menu');
         elements.categoriesContainer.innerHTML = '<p class="text-gray-500 italic">No categories defined.</p>';
         if (elements.productsContainer) {
             elements.productsContainer.innerHTML = '<p class="text-gray-600 italic col-span-full text-center py-8">Please add categories and items in Management.</p>';
@@ -404,7 +475,13 @@ function renderCategories() {
             btn.textContent = category;
             btn.onclick = () => {
                 selectedCategory = category;
-                renderCategories(); // Re-render to update active state
+                // Update active state of all tabs
+                elements.categoriesContainer.querySelectorAll('.category-tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                btn.classList.add('active');
+                // Render products for the selected category
+                renderProductsForSelectedCategory();
             };
             elements.categoriesContainer.appendChild(btn);
         });
@@ -439,14 +516,26 @@ function renderCategories() {
 
 
 function renderProductsForSelectedCategory() {
-    if (!elements.productsContainer) return;
+    console.log('renderProductsForSelectedCategory called');
+    console.log('selectedCategory:', selectedCategory);
+    console.log('menu:', menu);
+    console.log('elements.productsContainer:', elements.productsContainer);
+    
+    if (!elements.productsContainer) {
+        console.error('productsContainer not found');
+        return;
+    }
     elements.productsContainer.innerHTML = '';
     if (!selectedCategory || !menu[selectedCategory] || menu[selectedCategory].length === 0) {
+        console.log('No items in category:', selectedCategory);
         elements.productsContainer.innerHTML = `<p class="text-gray-600 italic col-span-full text-center py-8">No items in "${selectedCategory || 'this'}" category.</p>`;
         return;
     }
 
     const isDesktopUI = document.body.classList.contains('desktop-ui');
+    console.log('Rendering products for category:', selectedCategory);
+    console.log('Items in category:', menu[selectedCategory]);
+    console.log('Is Desktop UI:', isDesktopUI);
 
     menu[selectedCategory].forEach(item => {
         const card = document.createElement('div');
@@ -454,7 +543,7 @@ function renderProductsForSelectedCategory() {
 
         if (isDesktopUI) {
             // Desktop card rendering
-            card.className = 'product-card';
+            card.className = 'product-card bg-white border border-gray-200 p-3 rounded-lg shadow hover:shadow-md transition cursor-pointer';
             let optionsBadgeHTML = '';
             if (item.hasGeneralOptions && item.generalOptions && Array.isArray(item.generalOptions) && item.generalOptions.length > 0) {
                 optionsBadgeHTML = `<span class="options-badge">Options</span>`;
@@ -493,8 +582,10 @@ function renderProductsForSelectedCategory() {
                 </div>
             `;
         }
+        console.log('Created card for item:', item.name);
         elements.productsContainer.appendChild(card);
     });
+    console.log('Finished rendering products');
 }
 
 async function addToOrder(itemId) {
@@ -585,7 +676,7 @@ function updateOrderDisplay() {
             
             if (isDesktopUI) {
                  // Desktop order item rendering
-                div.className = `order-item p-3 border border-gray-200 rounded-lg ${item.orderId === selectedItemId_desktop ? 'selected-for-numpad bg-blue-50 border-blue-300' : 'bg-white hover:bg-gray-50'} cursor-pointer transition-colors`;
+                div.className = `order-item p-2 border border-gray-200 rounded ${item.orderId === selectedItemId_desktop ? 'selected-for-numpad bg-blue-50 border-blue-300' : 'bg-white hover:bg-gray-50'} cursor-pointer transition-colors`;
                 div.onclick = () => selectItemByOrderId_desktop(item.orderId);
 
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
@@ -601,13 +692,12 @@ function updateOrderDisplay() {
                         <div class="flex-1">
                             <div class="flex items-center space-x-2">
                                 <span class="font-semibold text-gray-800">${item.quantity}x ${item.name}</span>
-                                <span class="text-sm text-gray-500">(€${parseFloat(item.price || 0).toFixed(2)} each)</span>
                             </div>
                             ${optionDisplayHTML}
                             ${commentText}
                         </div>
-                        <div class="flex flex-col items-end space-y-2">
-                            <span class="font-bold text-gray-900">€${itemTotal.toFixed(2)}</span>
+                        <div class="flex flex-col items-end">
+                            <span class="font-bold text-gray-900 mb-1">€${itemTotal.toFixed(2)}</span>
                             <div class="flex items-center space-x-1">
                                 <button onclick="event.stopPropagation(); decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600 transition-colors" title="Decrease Quantity">
                                     <i class="fas fa-minus-circle text-sm"></i>
@@ -616,8 +706,6 @@ function updateOrderDisplay() {
                                 <button onclick="event.stopPropagation(); incrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-green-600 transition-colors" title="Increase Quantity">
                                     <i class="fas fa-plus-circle text-sm"></i>
                                 </button>
-                            </div>
-                            <div class="flex items-center space-x-1">
                                 <button onclick="event.stopPropagation(); promptForItemComment('${item.orderId}')" class="p-1 text-gray-500 hover:text-blue-600 transition-colors" title="Add Note">
                                     <i class="fas fa-comment-dots text-sm"></i>
                                 </button>
@@ -961,49 +1049,68 @@ function selectItemByOrderId_desktop(orderId) {
 }
 
 function handleNumpad_desktop(digit) {
-    if (!selectedItemId_desktop) {
-        showToast('Select an item from the order first', 'warning');
-        numpadInput_desktop = "";
-        return;
-    }
-    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
-    if (!item) {
-        showToast('Error: Selected item not found.', 'error');
-        numpadInput_desktop = "";
-        return;
-    }
+    // Case 1: An order line item is currently selected – adjust its quantity
+    if (selectedItemId_desktop) {
+        const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
+        if (!item) {
+            showToast('Error: Selected item not found.', 'error');
+            numpadInput_desktop = "";
+            return;
+        }
 
-    numpadInput_desktop += String(digit);
-    let newQuantity = Number(numpadInput_desktop);
+        numpadInput_desktop += String(digit);
+        let newQuantity = Number(numpadInput_desktop);
 
-    if (isNaN(newQuantity) || newQuantity <= 0) {
-        item.quantity = 1;
-        numpadInput_desktop = newQuantity > 0 ? newQuantity.toString() : "1";
+        if (isNaN(newQuantity) || newQuantity <= 0) {
+            item.quantity = 1;
+            numpadInput_desktop = newQuantity > 0 ? newQuantity.toString() : "1";
+        } else {
+            item.quantity = newQuantity;
+        }
+        updateOrderDisplay();
     } else {
-        item.quantity = newQuantity;
+        // Case 2: No line item selected – treat the numpad input as the TABLE number
+        numpadInput_desktop += String(digit);
+        selectedTableNumber = numpadInput_desktop;
+        if (elements.headerTableInput) elements.headerTableInput.value = selectedTableNumber;
+        updateSelectedTable();
     }
-    updateOrderDisplay();
 }
 
 function handleNumpadClear_desktop() {
-    if (!selectedItemId_desktop) return;
-    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
-    if (item) {
+    if (selectedItemId_desktop) {
+        const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
+        if (item) {
+            numpadInput_desktop = "";
+            item.quantity = 1;
+            updateOrderDisplay();
+        }
+    } else {
+        // Clear the table number
         numpadInput_desktop = "";
-        item.quantity = 1;
-        updateOrderDisplay();
+        selectedTableNumber = "";
+        if (elements.headerTableInput) elements.headerTableInput.value = "";
+        updateSelectedTable();
     }
 }
 
 function handleNumpadBackspace_desktop() {
-    if (!selectedItemId_desktop) return;
-    const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
-    if (item) {
+    if (selectedItemId_desktop) {
+        const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
+        if (item) {
+            if (numpadInput_desktop.length > 0) {
+                numpadInput_desktop = numpadInput_desktop.slice(0, -1);
+            }
+            item.quantity = Number(numpadInput_desktop) > 0 ? Number(numpadInput_desktop) : 1;
+            updateOrderDisplay();
+        }
+    } else {
         if (numpadInput_desktop.length > 0) {
             numpadInput_desktop = numpadInput_desktop.slice(0, -1);
         }
-        item.quantity = Number(numpadInput_desktop) > 0 ? Number(numpadInput_desktop) : 1;
-        updateOrderDisplay();
+        selectedTableNumber = numpadInput_desktop;
+        if (elements.headerTableInput) elements.headerTableInput.value = selectedTableNumber;
+        updateSelectedTable();
     }
 }
 
@@ -2003,12 +2110,12 @@ function showToast(message, type = 'info', duration = 3000) {
     const isDesktopUI = document.body.classList.contains('desktop-ui');
     
     if(isDesktopUI) {
-        elements.toast.className = 'toast'; // Use the desktop class
+        elements.toast.className = 'fixed top-5 right-5 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[2000] transition-opacity duration-300';
         switch (type) {
             case 'success': elements.toast.style.backgroundColor = '#16a34a'; break;
             case 'warning': elements.toast.style.backgroundColor = '#f59e0b'; break;
             case 'error': elements.toast.style.backgroundColor = '#ef4444'; break;
-            default: elements.toast.style.backgroundColor = 'var(--primary)';
+            default: elements.toast.style.backgroundColor = '#1f2937';
         }
     } else {
         switch (type) {
@@ -2313,8 +2420,10 @@ function renderAnalytics(data) {
     document.getElementById('kpi-total-orders').textContent = data.totalOrders || 0;
     document.getElementById('kpi-atv').textContent = `€${(data.atv || 0).toFixed(2)}`;
 
-    document.getElementById('kpi-payment-cash').textContent = `€${(data.paymentMethods.cash || 0).toFixed(2)}`;
-    document.getElementById('kpi-payment-card').textContent = `€${(data.paymentMethods.card || 0).toFixed(2)}`;
+    // Safeguard in case paymentMethods is missing
+    const paymentMethods = data.paymentMethods || {};
+    document.getElementById('kpi-payment-cash').textContent = `€${(paymentMethods.cash || 0).toFixed(2)}`;
+    document.getElementById('kpi-payment-card').textContent = `€${(paymentMethods.card || 0).toFixed(2)}`;
 
     if (isDesktopUI) {
         renderList('kpi-sales-by-category', data.salesByCategory, item => `
