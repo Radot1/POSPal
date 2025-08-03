@@ -1,0 +1,62 @@
+[
+  {
+    "generalOptions": [],
+    "hasGeneralOptions": false,
+    "id": 1,
+    "name": "Garlic Bread with Cheese",
+    "price": 4.5,
+    "quantity": 1,
+    "comment": "",
+    "orderId": "1-noopts-line-1",
+    "generalSelectedOptions": [],
+    "itemPriceWithModifiers": 4.5
+  },
+  {
+    "generalOptions": [],
+    "hasGeneralOptions": false,
+    "id": 2,
+    "name": "Bruschetta",
+    "price": 5,
+    "quantity": 1,
+    "comment": "",
+    "orderId": "2-noopts-line-2",
+    "generalSelectedOptions": [],
+    "itemPriceWithModifiers": 5
+  },
+  {
+    "generalOptions": [],
+    "hasGeneralOptions": false,
+    "id": 3,
+    "name": "Calamari Fritti",
+    "price": 7.5,
+    "quantity": 1,
+    "comment": "",
+    "orderId": "3-noopts-line-3",
+    "generalSelectedOptions": [],
+    "itemPriceWithModifiers": 7.5
+  },
+  {
+    "generalOptions": [],
+    "hasGeneralOptions": false,
+    "id": 4,
+    "name": "Spring Rolls",
+    "price": 6,
+    "quantity": 1,
+    "comment": "",
+    "orderId": "4-noopts-line-4",
+    "generalSelectedOptions": [],
+    "itemPriceWithModifiers": 6
+  },
+  {
+    "generalOptions": [],
+    "hasGeneralOptions": false,
+    "id": 5,
+    "name": "Onion Rings",
+    "price": 4,
+    "quantity": 1,
+    "comment": "",
+    "orderId": "5-noopts-line-5",
+    "generalSelectedOptions": [],
+    "itemPriceWithModifiers": 4
+  }
+]

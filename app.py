@@ -34,7 +34,7 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 TRIAL_INFO_FILE = os.path.join(DATA_DIR, 'trial.json')
 LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
-APP_SECRET_KEY = 762378  # Use a strong secret key
+APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A  # Use a strong secret key
 
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
@@ -227,6 +227,31 @@ def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
         return s
     return s.encode(encoding, errors='replace') # 'replace' will put a ? for unmappable chars
     
+def store_trial_in_registry(first_run_date, signature):
+    """Store trial data in Windows Registry"""
+    try:
+        import winreg
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\POSPal\Trial")
+        winreg.SetValueEx(key, "FirstRunDate", 0, winreg.REG_SZ, first_run_date)
+        winreg.SetValueEx(key, "Signature", 0, winreg.REG_SZ, signature)
+        winreg.CloseKey(key)
+        return True
+    except Exception as e:
+        app.logger.warning(f"Could not store trial in registry: {e}")
+        return False
+
+def get_trial_from_registry():
+    """Get trial data from Windows Registry"""
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\POSPal\Trial")
+        first_run_date = winreg.QueryValueEx(key, "FirstRunDate")[0]
+        signature = winreg.QueryValueEx(key, "Signature")[0]
+        winreg.CloseKey(key)
+        return {"first_run_date": first_run_date, "signature": signature}
+    except:
+        return None
+
 def initialize_trial():
     """Create trial file on first run with signature"""
     if not os.path.exists(TRIAL_INFO_FILE):
@@ -235,11 +260,16 @@ def initialize_trial():
             signature_data = f"{first_run_date}{APP_SECRET_KEY}".encode()
             signature = hashlib.sha256(signature_data).hexdigest()
             
+            # Store in file (primary)
             with open(TRIAL_INFO_FILE, 'w') as f:
                 json.dump({
                     "first_run_date": first_run_date,
                     "signature": signature
                 }, f)
+            
+            # Store in registry (backup)
+            store_trial_in_registry(first_run_date, signature)
+            
             app.logger.info("Initialized 30-day trial period")
         except Exception as e:
             app.logger.error(f"Error creating trial file: {e}")
@@ -868,29 +898,40 @@ def check_trial_status():
             # Validate signature
             data = f"{license['hardware_id']}{APP_SECRET_KEY}".encode()
             if hashlib.sha256(data).hexdigest() == license['signature']:
-                # Validate hardware
-                current_hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
-                                         for i in range(0, 8*6, 8))
+                                # Validate hardware using enhanced fingerprint
+                current_hw_id = get_enhanced_hardware_id()
                 if current_hw_id == license['hardware_id']:
                     return {"licensed": True, "active": True}
         except:
             app.logger.warning("Invalid license file")
     
-    # Trial check
-    if not os.path.exists(TRIAL_INFO_FILE):
+    # Trial check - try multiple storage locations
+    trial_data = None
+    
+    # Try file first
+    if os.path.exists(TRIAL_INFO_FILE):
+        try:
+            with open(TRIAL_INFO_FILE) as f:
+                trial_data = json.load(f)
+        except:
+            pass
+    
+    # If file failed, try registry
+    if not trial_data:
+        trial_data = get_trial_from_registry()
+    
+    # If no trial data found anywhere
+    if not trial_data:
         return {"licensed": False, "active": False, "expired": True}
     
     try:
-        with open(TRIAL_INFO_FILE) as f:
-            trial = json.load(f)
-        
         # Verify signature
-        data = f"{trial['first_run_date']}{APP_SECRET_KEY}".encode()
-        if hashlib.sha256(data).hexdigest() != trial['signature']:
+        data = f"{trial_data['first_run_date']}{APP_SECRET_KEY}".encode()
+        if hashlib.sha256(data).hexdigest() != trial_data['signature']:
             return {"licensed": False, "active": False, "expired": True}
         
         # Check dates
-        first_run = datetime.strptime(trial['first_run_date'], "%Y-%m-%d")
+        first_run = datetime.strptime(trial_data['first_run_date'], "%Y-%m-%d")
         days_elapsed = (datetime.now() - first_run).days
         days_left = 30 - days_elapsed
         
@@ -908,11 +949,58 @@ def check_trial_status():
 def get_trial_status():
     return jsonify(check_trial_status())
 
+def get_enhanced_hardware_id():
+    """Get enhanced hardware fingerprint using multiple identifiers"""
+    import subprocess
+    import platform
+    
+    # Get MAC address (current method)
+    mac = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
+                   for i in range(0, 8*6, 8))
+    
+    # Get CPU info
+    try:
+        cpu_info = platform.processor()
+        if not cpu_info:
+            cpu_info = platform.machine()
+    except:
+        cpu_info = "UNKNOWN"
+    
+    # Get disk serial (Windows specific)
+    disk_serial = "UNKNOWN"
+    try:
+        result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                disk_serial = lines[1].strip()
+    except:
+        pass
+    
+    # Get Windows installation ID
+    win_id = "UNKNOWN"
+    try:
+        result = subprocess.run(['wmic', 'os', 'get', 'SerialNumber'], 
+                              capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > 1:
+                win_id = lines[1].strip()
+    except:
+        pass
+    
+    # Combine all identifiers and hash
+    combined = f"{mac}|{cpu_info}|{disk_serial}|{win_id}"
+    enhanced_id = hashlib.sha256(combined.encode()).hexdigest()[:16]
+    
+    return enhanced_id
+
 @app.route('/api/hardware_id')
 def get_hardware_id():
     """Get machine's hardware ID"""
-    hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
-                     for i in range(0, 8*6, 8))
+    # Return enhanced hardware ID
+    hw_id = get_enhanced_hardware_id()
     return jsonify({"hardware_id": hw_id})
     
 

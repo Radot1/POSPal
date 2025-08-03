@@ -59,7 +59,6 @@ if not exist "app_icon.ico" (
     echo [CHECK] Icon file found.
 )
 
-
 REM --- 1. Clean and Prepare Build Directory ---
 echo.
 echo [SETUP] Preparing a clean build environment...
@@ -134,7 +133,6 @@ echo.
 echo [PACKAGE] Assembling final application folder...
 mkdir "%RELEASE_DIR%"
 mkdir "%RELEASE_DIR%\data"
-mkdir "%RELEASE_DIR%\logs"
 
 rem Copy the executable from the temporary dist folder to the final release folder
 copy "dist\POSPal.exe" "%RELEASE_DIR%\"
@@ -147,290 +145,135 @@ if exist "..\config.json" (
     (
         echo {
         echo     "printer_name": "POSPalPDFTest",
-        echo     "auto_update": false,
+        echo     "auto_update": true,
         echo     "port": 5000,
         echo     "management_password": "9999"
         echo }
     ) > "%RELEASE_DIR%\config.json"
 )
+
+rem Copy existing data files if they exist
 if exist "..\data\menu.json" (
     copy "..\data\menu.json" "%RELEASE_DIR%\data\"
+    echo [COPY] Copied existing menu.json
 ) else (
     echo [SETUP] No existing menu.json found. Creating a default menu.
     (
         echo {
         echo   "Appetizers": [
         echo     { "id": 1, "name": "Garlic Bread with Cheese", "price": 4.50, "hasGeneralOptions": false, "generalOptions": [] },
-        echo     { "id": 2, "name": "Bruschetta", "price": 5.00, "hasGeneralOptions": false, "generalOptions": [] }
+        echo     { "id": 2, "name": "Bruschetta", "price": 5.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 3, "name": "Calamari Fritti", "price": 7.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 4, "name": "Spring Rolls", "price": 6.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 5, "name": "Onion Rings", "price": 4.00, "hasGeneralOptions": false, "generalOptions": [] }
+        echo   ],
+        echo   "Soups ^& Salads": [
+        echo     { "id": 10, "name": "Tomato Soup", "price": 4.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 11, "name": "Caesar Salad", "price": 8.00, "hasGeneralOptions": true, "generalOptions": [ { "name": "Add Chicken", "priceChange": 2.50 }, { "name": "Add Shrimp", "priceChange": 3.50 } ] },
+        echo     { "id": 12, "name": "Greek Salad", "price": 7.50, "hasGeneralOptions": false, "generalOptions": [] }
         echo   ],
         echo   "Main Courses": [
+        echo     { "id": 20, "name": "Spaghetti Carbonara", "price": 12.00, "hasGeneralOptions": false, "generalOptions": [] },
         echo     { "id": 21, "name": "Chicken Alfredo", "price": 13.50, "hasGeneralOptions": false, "generalOptions": [] },
-        echo     { "id": 22, "name": "Fish and Chips", "price": 14.00, "hasGeneralOptions": false, "generalOptions": [] }
+        echo     { "id": 22, "name": "Fish and Chips", "price": 14.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 23, "name": "Vegetable Lasagna", "price": 11.00, "hasGeneralOptions": false, "generalOptions": [] }
         echo   ],
         echo   "From The Grill": [
-        echo     { "id": 30, "name": "Ribeye Steak (250g)", "price": 22.50, "hasGeneralOptions": true, "generalOptions": [ { "name": "Peppercorn Sauce", "priceChange": 1.50 }, { "name": "Mushroom Sauce", "priceChange": 1.50 } ] }
+        echo     { "id": 30, "name": "Ribeye Steak (250g)", "price": 22.50, "hasGeneralOptions": true, "generalOptions": [ { "name": "Peppercorn Sauce", "priceChange": 1.50 }, { "name": "Mushroom Sauce", "priceChange": 1.50 }, { "name": "Blue Cheese Sauce", "priceChange": 2.00 } ] },
+        echo     { "id": 31, "name": "Filet Mignon (200g)", "price": 28.00, "hasGeneralOptions": true, "generalOptions": [ { "name": "Peppercorn Sauce", "priceChange": 1.50 }, { "name": "Mushroom Sauce", "priceChange": 1.50 }, { "name": "Blue Cheese Sauce", "priceChange": 2.00 } ] },
+        echo     { "id": 32, "name": "Grilled Salmon", "price": 18.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 33, "name": "BBQ Ribs", "price": 17.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 34, "name": "Cheeseburger", "price": 10.50, "hasGeneralOptions": true, "generalOptions": [ { "name": "Add Bacon", "priceChange": 1.00 }, { "name": "Extra Cheese", "priceChange": 0.50 } ] }
+        echo   ],
+        echo   "Sides": [
+        echo     { "id": 40, "name": "French Fries", "price": 3.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 41, "name": "Mashed Potatoes", "price": 3.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 42, "name": "Steamed Vegetables", "price": 4.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 43, "name": "Side Salad", "price": 3.50, "hasGeneralOptions": false, "generalOptions": [] }
+        echo   ],
+        echo   "Desserts": [
+        echo     { "id": 50, "name": "Chocolate Lava Cake", "price": 6.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 51, "name": "Cheesecake", "price": 5.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 52, "name": "Ice Cream", "price": 3.00, "hasGeneralOptions": true, "generalOptions": [ { "name": "Chocolate Syrup", "priceChange": 0.50 }, { "name": "Sprinkles", "priceChange": 0.25 } ] }
         echo   ],
         echo   "Beverages": [
         echo     { "id": 60, "name": "Coca-Cola", "price": 2.50, "hasGeneralOptions": false, "generalOptions": [] },
-        echo     { "id": 61, "name": "Sprite", "price": 2.50, "hasGeneralOptions": false, "generalOptions": [] }
+        echo     { "id": 61, "name": "Sprite", "price": 2.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 62, "name": "Still Water", "price": 2.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 63, "name": "Sparkling Water", "price": 2.50, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 64, "name": "Orange Juice", "price": 3.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 65, "name": "Beer", "price": 4.00, "hasGeneralOptions": false, "generalOptions": [] },
+        echo     { "id": 66, "name": "Glass of Wine", "price": 5.00, "hasGeneralOptions": false, "generalOptions": [] }
         echo   ]
         echo }
     ) > "%RELEASE_DIR%\data\menu.json"
 )
 
-REM --- 5. Generate Dummy Data for Management Modal ---
+rem Copy other existing data files
+if exist "..\data\trial.json" (
+    copy "..\data\trial.json" "%RELEASE_DIR%\data\"
+    echo [COPY] Copied existing trial.json
+)
+if exist "..\data\current_order.json" (
+    copy "..\data\current_order.json" "%RELEASE_DIR%\data\"
+    echo [COPY] Copied existing current_order.json
+)
+if exist "..\data\device_sessions.json" (
+    copy "..\data\device_sessions.json" "%RELEASE_DIR%\data\"
+    echo [COPY] Copied existing device_sessions.json
+)
+
+rem Create essential files if they don't exist
+if not exist "%RELEASE_DIR%\data\trial.json" (
+    echo [SETUP] Creating trial.json
+    echo {"trial_active": true, "days_remaining": 30} > "%RELEASE_DIR%\data\trial.json"
+)
+if not exist "%RELEASE_DIR%\data\current_order.json" (
+    echo [SETUP] Creating current_order.json
+    echo {"items": [], "total": 0} > "%RELEASE_DIR%\data\current_order.json"
+)
+if not exist "%RELEASE_DIR%\data\device_sessions.json" (
+    echo [SETUP] Creating device_sessions.json
+    echo {"sessions": []} > "%RELEASE_DIR%\data\device_sessions.json"
+)
+
+echo [SUCCESS] Final package created in "%RELEASE_DIR%"
+
+REM --- 5. Final Cleanup and Move to Root ---
 echo.
-echo [SETUP] Generating dummy data for management modal functionality...
-call venv\Scripts\python.exe -c "
-import csv
-import json
-import random
-from datetime import datetime, timedelta
-import os
+echo [CLEANUP] Moving final release to root and cleaning up...
+REM Move the final release folder to the root directory
+move "%RELEASE_DIR%" "..\"
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to move release folder to root directory.
+    pause
+    popd
+    exit /b 1
+)
 
-# Create data directory if it doesn't exist
-data_dir = '%RELEASE_DIR%\\data'
-os.makedirs(data_dir, exist_ok=True)
-
-# Generate today's date
-today = datetime.now()
-today_str = today.strftime('%Y-%m-%d')
-
-# Sample menu items for generating orders
-menu_items = [
-    {'name': 'Garlic Bread with Cheese', 'price': 4.50},
-    {'name': 'Bruschetta', 'price': 5.00},
-    {'name': 'Chicken Alfredo', 'price': 13.50},
-    {'name': 'Fish and Chips', 'price': 14.00},
-    {'name': 'Ribeye Steak (250g)', 'price': 22.50},
-    {'name': 'Coca-Cola', 'price': 2.50},
-    {'name': 'Sprite', 'price': 2.50},
-    {'name': 'House Red Wine', 'price': 7.00},
-    {'name': 'Craft Beer', 'price': 6.50},
-    {'name': 'Caesar Salad', 'price': 8.50},
-    {'name': 'Tiramisu', 'price': 6.00},
-    {'name': 'Chocolate Cake', 'price': 5.50}
-]
-
-# Generate orders for today
-orders_file = os.path.join(data_dir, f'orders_{today_str}.csv')
-fieldnames = ['order_number', 'table_number', 'timestamp', 'items_summary', 
-              'universal_comment', 'order_total', 'payment_method', 'printed_status', 'items_json']
-
-with open(orders_file, 'w', newline='', encoding='utf-8') as f:
-    writer = csv.DictWriter(f, fieldnames=fieldnames)
-    writer.writeheader()
-    
-    # Generate 15-25 orders for today
-    num_orders = random.randint(15, 25)
-    
-    for order_num in range(1, num_orders + 1):
-        # Generate random time between 11:00 AM and 10:00 PM
-        hour = random.randint(11, 22)
-        minute = random.randint(0, 59)
-        order_time = today.replace(hour=hour, minute=minute, second=random.randint(0, 59))
-        
-        # Generate 1-4 items per order
-        num_items = random.randint(1, 4)
-        order_items = []
-        items_summary_parts = []
-        order_total = 0
-        
-        for _ in range(num_items):
-            item = random.choice(menu_items)
-            quantity = random.randint(1, 3)
-            item_total = item['price'] * quantity
-            
-            order_items.append({
-                'name': item['name'],
-                'quantity': quantity,
-                'basePrice': item['price'],
-                'itemPriceWithModifiers': item['price'],
-                'comment': '',
-                'generalSelectedOptions': []
-            })
-            
-            items_summary_parts.append(f'{quantity}x {item["name"]} [Unit EUR {item["price"]:.2f}]')
-            order_total += item_total
-        
-        # Add some orders with options (for steak)
-        if any('Steak' in item['name'] for item in order_items):
-            steak_items = [item for item in order_items if 'Steak' in item['name']]
-            for steak_item in steak_items:
-                if random.random() < 0.7:  # 70% chance of adding sauce
-                    sauce = random.choice(['Peppercorn Sauce', 'Mushroom Sauce'])
-                    sauce_price = 1.50
-                    steak_item['generalSelectedOptions'].append({
-                        'name': sauce,
-                        'priceChange': sauce_price
-                    })
-                    steak_item['itemPriceWithModifiers'] += sauce_price
-                    order_total += sauce_price
-                    items_summary_parts.append(f'  - {sauce} (+EUR {sauce_price:.2f})')
-        
-        # Random payment method
-        payment_method = random.choice(['Cash', 'Card'])
-        
-        # Random table number
-        table_number = str(random.randint(1, 12))
-        
-        # Random universal comment (20% chance)
-        universal_comment = ''
-        if random.random() < 0.2:
-            comments = ['Extra napkins please', 'No onions', 'Allergic to nuts', 'Birthday celebration', 'Anniversary']
-            universal_comment = random.choice(comments)
-        
-        writer.writerow({
-            'order_number': str(order_num),
-            'table_number': table_number,
-            'timestamp': order_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'items_summary': ' | '.join(items_summary_parts),
-            'universal_comment': universal_comment,
-            'order_total': f'{order_total:.2f}',
-            'payment_method': payment_method,
-            'printed_status': 'Printed',
-            'items_json': json.dumps(order_items)
-        })
-
-# Generate orders for yesterday (for week/month analytics)
-yesterday = today - timedelta(days=1)
-yesterday_str = yesterday.strftime('%Y-%m-%d')
-yesterday_orders_file = os.path.join(data_dir, f'orders_{yesterday_str}.csv')
-
-with open(yesterday_orders_file, 'w', newline='', encoding='utf-8') as f:
-    writer = csv.DictWriter(f, fieldnames=fieldnames)
-    writer.writeheader()
-    
-    # Generate 10-20 orders for yesterday
-    num_orders = random.randint(10, 20)
-    
-    for order_num in range(1, num_orders + 1):
-        hour = random.randint(11, 22)
-        minute = random.randint(0, 59)
-        order_time = yesterday.replace(hour=hour, minute=minute, second=random.randint(0, 59))
-        
-        num_items = random.randint(1, 3)
-        order_items = []
-        items_summary_parts = []
-        order_total = 0
-        
-        for _ in range(num_items):
-            item = random.choice(menu_items)
-            quantity = random.randint(1, 2)
-            item_total = item['price'] * quantity
-            
-            order_items.append({
-                'name': item['name'],
-                'quantity': quantity,
-                'basePrice': item['price'],
-                'itemPriceWithModifiers': item['price'],
-                'comment': '',
-                'generalSelectedOptions': []
-            })
-            
-            items_summary_parts.append(f'{quantity}x {item["name"]} [Unit EUR {item["price"]:.2f}]')
-            order_total += item_total
-        
-        payment_method = random.choice(['Cash', 'Card'])
-        table_number = str(random.randint(1, 12))
-        
-        writer.writerow({
-            'order_number': str(order_num),
-            'table_number': table_number,
-            'timestamp': order_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'items_summary': ' | '.join(items_summary_parts),
-            'universal_comment': '',
-            'order_total': f'{order_total:.2f}',
-            'payment_method': payment_method,
-            'printed_status': 'Printed',
-            'items_json': json.dumps(order_items)
-        })
-
-# Generate orders for last week (for month analytics)
-for days_ago in range(2, 8):
-    past_date = today - timedelta(days=days_ago)
-    past_date_str = past_date.strftime('%Y-%m-%d')
-    past_orders_file = os.path.join(data_dir, f'orders_{past_date_str}.csv')
-    
-    with open(past_orders_file, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        
-        # Generate 5-15 orders for each past day
-        num_orders = random.randint(5, 15)
-        
-        for order_num in range(1, num_orders + 1):
-            hour = random.randint(11, 22)
-            minute = random.randint(0, 59)
-            order_time = past_date.replace(hour=hour, minute=minute, second=random.randint(0, 59))
-            
-            num_items = random.randint(1, 3)
-            order_items = []
-            items_summary_parts = []
-            order_total = 0
-            
-            for _ in range(num_items):
-                item = random.choice(menu_items)
-                quantity = random.randint(1, 2)
-                item_total = item['price'] * quantity
-                
-                order_items.append({
-                    'name': item['name'],
-                    'quantity': quantity,
-                    'basePrice': item['price'],
-                    'itemPriceWithModifiers': item['price'],
-                    'comment': '',
-                    'generalSelectedOptions': []
-                })
-                
-                items_summary_parts.append(f'{quantity}x {item["name"]} [Unit EUR {item["price"]:.2f}]')
-                order_total += item_total
-            
-            payment_method = random.choice(['Cash', 'Card'])
-            table_number = str(random.randint(1, 12))
-            
-            writer.writerow({
-                'order_number': str(order_num),
-                'table_number': table_number,
-                'timestamp': order_time.strftime('%Y-%m-%d %H:%M:%S'),
-                'items_summary': ' | '.join(items_summary_parts),
-                'universal_comment': '',
-                'order_total': f'{order_total:.2f}',
-                'payment_method': payment_method,
-                'printed_status': 'Printed',
-                'items_json': json.dumps(order_items)
-            })
-
-print(f'Generated dummy data for management modal functionality:')
-print(f'- Today: {num_orders} orders')
-print(f'- Yesterday: {num_orders} orders') 
-print(f'- Past week: 6 additional days with orders')
-print(f'- All data saved to {data_dir}')
-"
-
-echo [SUCCESS] Dummy data generated successfully.
-
-REM --- 6. Final Cleanup (within the build directory) ---
-echo.
-echo [CLEANUP] Removing temporary build files...
+REM Remove all temporary build files and folders
 if exist "build" rd /s /q build
 if exist "dist" rd /s /q dist
+if exist "venv" rd /s /q venv
 if exist "POSPal.spec" del "POSPal.spec"
 
 REM Return to the original directory
 popd
 
+REM Remove the now-empty build_output directory
+if exist "%BUILD_DIR%" rd /s /q "%BUILD_DIR%"
+
 echo.
 echo ============================================================================
 echo  Build Complete!
 echo  Your final, runnable application is located in the folder:
-echo  %BUILD_DIR%\%RELEASE_DIR%
+echo  %RELEASE_DIR%
 echo.
-echo  The application now includes dummy data for:
-echo  - Order history and reprinting functionality
-echo  - Analytics dashboard with sample sales data
-echo  - Management modal with functional tabs
-echo  - Sample menu items and categories
+echo  The application includes:
+echo  - All essential HTML and JavaScript files
+echo  - Default menu with sample items
+echo  - Configuration file
+echo  - Trial and session management files
 echo ============================================================================
 echo.
 pause
