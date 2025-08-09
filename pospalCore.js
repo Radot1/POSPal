@@ -542,18 +542,26 @@ function renderProductsForSelectedCategory() {
         card.onclick = () => addToOrder(item.id);
 
         if (isDesktopUI) {
-            // Desktop card rendering
-            card.className = 'product-card bg-white border border-gray-200 p-3 rounded-lg shadow hover:shadow-md transition cursor-pointer';
-            let optionsBadgeHTML = '';
-            if (item.hasGeneralOptions && item.generalOptions && Array.isArray(item.generalOptions) && item.generalOptions.length > 0) {
-                optionsBadgeHTML = `<span class="options-badge">Options</span>`;
-            }
+            // Desktop card rendering (parity with mobile)
+            card.className = 'product-card bg-white rounded-lg shadow hover:shadow-md transition-shadow overflow-hidden flex flex-col cursor-pointer border border-gray-200 h-full';
+            const hasGenOptions = item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0;
+            const badgeIconsHTML = hasGenOptions ? `
+                    <div class="absolute bottom-2 right-2 flex flex-col space-y-1">
+                        <span class="options-badge inline-flex items-center justify-center p-1 w-6 h-6 rounded"><i class="fas fa-cogs text-sm"></i></span>
+                    </div>
+                ` : '';
             card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <h3 title="${item.name}">${item.name}</h3>
-                    ${optionsBadgeHTML}
+                <div class="relative p-3 flex-grow flex flex-col h-full">
+                    <div class="flex-grow flex flex-col pr-8">
+                        <div class="flex-grow">
+                            <h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
+                        </div>
+                        <div class="mt-auto">
+                           <p class="text-lg font-bold text-black">€${(item.price || 0).toFixed(2)}</p>
+                        </div>
+                    </div>
+                    ${badgeIconsHTML}
                 </div>
-                <div class="price">€${(item.price || 0).toFixed(2)}</div>
             `;
         } else {
             // POSPal card rendering
@@ -1590,56 +1598,44 @@ function renderExistingItemsInModal() {
     elements.existingItemsListModal.innerHTML = '';
     let itemCount = 0;
     
-    const isDesktopUI = document.body.classList.contains('desktop-ui');
-
     Object.entries(menu).forEach(([category, items]) => {
         if (!items || items.length === 0) return;
 
-        if(!isDesktopUI) {
-            const categoryHeader = document.createElement('h5');
-            categoryHeader.className = "font-bold text-gray-700 mt-3 mb-1 pb-1 border-b border-gray-300";
-            categoryHeader.textContent = category;
-            elements.existingItemsListModal.appendChild(categoryHeader);
-        }
+        // Category header (shown on both UIs for consistent grouping)
+        const categoryHeader = document.createElement('h5');
+        categoryHeader.className = "font-bold text-gray-700 mt-3 mb-1 pb-1 border-b border-gray-300";
+        categoryHeader.textContent = category;
+        elements.existingItemsListModal.appendChild(categoryHeader);
 
         (items || []).forEach((item, index) => {
             itemCount++;
             const div = document.createElement('div');
-            
-            if(isDesktopUI) {
-                div.className = `item-row`;
-                div.innerHTML = `
-                    <span style="flex:1">${item.name}</span>
-                    <span>€${(item.price || 0).toFixed(2)}</span>
-                    <button onclick="openItemFormModal(${item.id})">Edit</button>
-                    <button onclick="deleteItem(${item.id})" class="secondary-btn">Delete</button>
-                `;
-            } else {
-                div.className = `p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50`;
-                let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
-                                   <span class="text-xs text-gray-500 ml-1">- €${(item.price || 0).toFixed(2)}</span>`;
-                if (item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0) {
-                    itemDetails += `<span class="text-xs text-blue-600 ml-2">(+ Options)</span>`;
-                }
+            div.className = `p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50`;
 
-                const isFirst = index === 0;
-                const isLast = index === items.length - 1;
-                const reorderButtons = `
-                    <div class="flex items-center">
-                        <button onclick="moveItemPosition(${item.id}, 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
-                        <button onclick="moveItemPosition(${item.id}, 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
-                    </div>`;
-
-                div.innerHTML = `
-                    <div class="flex items-center">
-                        ${reorderButtons}
-                        <div class="ml-2">${itemDetails}</div>
-                    </div>
-                    <div class="space-x-1 flex-shrink-0">
-                        <button onclick="openItemFormModal(${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
-                        <button onclick="deleteItem(${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
-                    </div>`;
+            let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
+                               <span class="text-xs text-gray-500 ml-1">- €${(item.price || 0).toFixed(2)}</span>`;
+            if (item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0) {
+                itemDetails += `<span class="text-xs text-blue-600 ml-2">(+ Options)</span>`;
             }
+
+            const isFirst = index === 0;
+            const isLast = index === items.length - 1;
+            const reorderButtons = `
+                <div class="flex items-center">
+                    <button onclick="moveItemPosition(${item.id}, 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
+                    <button onclick="moveItemPosition(${item.id}, 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
+                </div>`;
+
+            div.innerHTML = `
+                <div class="flex items-center">
+                    ${reorderButtons}
+                    <div class="ml-2">${itemDetails}</div>
+                </div>
+                <div class="space-x-1 flex-shrink-0">
+                    <button onclick="openItemFormModal(${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
+                    <button onclick="deleteItem(${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
+                </div>`;
+
             elements.existingItemsListModal.appendChild(div);
         });
     });
@@ -1696,7 +1692,6 @@ function renderExistingCategoriesInModal() {
     if (!elements.existingCategoriesListModal) return;
     elements.existingCategoriesListModal.innerHTML = '';
     const categoryKeys = Object.keys(menu);
-    const isDesktopUI = document.body.classList.contains('desktop-ui');
 
     if (categoryKeys.length === 0) {
         elements.existingCategoriesListModal.innerHTML = '<p class="text-xs text-gray-500 italic">No categories created yet.</p>';
@@ -1705,29 +1700,21 @@ function renderExistingCategoriesInModal() {
 
     categoryKeys.forEach((categoryName, index) => {
         const div = document.createElement('div');
-        if(isDesktopUI) {
-            div.className = "item-row";
-            div.innerHTML = `
-                <span style="flex:1">${categoryName}</span>
-                <button onclick="deleteCategory('${categoryName}')" class="secondary-btn">Delete</button>
-            `;
-        } else {
-            const isFirst = index === 0;
-            const isLast = index === categoryKeys.length - 1;
-            const reorderButtons = `
-                <div class="flex items-center">
-                    <button onclick="moveCategoryPosition('${categoryName}', 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
-                    <button onclick="moveCategoryPosition('${categoryName}', 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
-                </div>`;
-            div.className = "p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
-            div.innerHTML = `
-                <div class="flex items-center">
-                    ${reorderButtons}
-                    <span class="font-medium text-gray-800 ml-2">${categoryName}</span>
-                </div>
-                <button onclick="deleteCategory('${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
-            `;
-        }
+        const isFirst = index === 0;
+        const isLast = index === categoryKeys.length - 1;
+        const reorderButtons = `
+            <div class="flex items-center">
+                <button onclick="moveCategoryPosition('${categoryName}', 'up')" class="px-2 py-1 text-gray-500 hover:text-black ${isFirst ? 'opacity-25 cursor-not-allowed' : ''}" ${isFirst ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
+                <button onclick="moveCategoryPosition('${categoryName}', 'down')" class="px-2 py-1 text-gray-500 hover:text-black ${isLast ? 'opacity-25 cursor-not-allowed' : ''}" ${isLast ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
+            </div>`;
+        div.className = "p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
+        div.innerHTML = `
+            <div class="flex items-center">
+                ${reorderButtons}
+                <span class="font-medium text-gray-800 ml-2">${categoryName}</span>
+            </div>
+            <button onclick="deleteCategory('${categoryName}')" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
+        `;
         elements.existingCategoriesListModal.appendChild(div);
     });
 }
@@ -2183,30 +2170,18 @@ function renderTodaysOrdersList(orders) {
             }
         } catch (e) { /* keep original */ }
 
-        if(isDesktopUI) {
-            div.className = 'item-row';
-            div.innerHTML = `
-                <span style="flex:1">
-                    <strong>Order #${order.order_number}</strong>
-                    <span style="font-size: 0.8em; color: #555; margin-left: 8px;">Table: ${order.table_number || 'N/A'} at ${formattedTimestamp}</span>
-                </span>
-                <button onclick="reprintOrder('${order.order_number}')" class="primary-btn">
-                    <i class="fas fa-print"></i> Reprint
-                </button>
-            `;
-        } else {
-            div.className = "p-2.5 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
-            div.innerHTML = `
-                <div>
-                    <span class="font-semibold text-gray-800">Order #${order.order_number}</span>
-                    <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
-                    <span class="text-xs text-gray-500 ml-2">Time: ${formattedTimestamp}</span>
-                </div>
-                <button onclick="reprintOrder('${order.order_number}')" class="px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition">
-                    <i class="fas fa-print mr-1"></i> Reprint
-                </button>
-            `;
-        }
+        // Unified mobile-style row for both UIs
+        div.className = "p-2.5 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
+        div.innerHTML = `
+            <div>
+                <span class="font-semibold text-gray-800">Order #${order.order_number}</span>
+                <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
+                <span class="text-xs text-gray-500 ml-2">Time: ${formattedTimestamp}</span>
+            </div>
+            <button onclick="reprintOrder('${order.order_number}')" class="px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition">
+                <i class="fas fa-print mr-1"></i> Reprint
+            </button>
+        `;
         elements.todaysOrdersList.appendChild(div);
     });
 }
@@ -2420,10 +2395,16 @@ function renderAnalytics(data) {
     document.getElementById('kpi-total-orders').textContent = data.totalOrders || 0;
     document.getElementById('kpi-atv').textContent = `€${(data.atv || 0).toFixed(2)}`;
 
-    // Safeguard in case paymentMethods is missing
-    const paymentMethods = data.paymentMethods || {};
-    document.getElementById('kpi-payment-cash').textContent = `€${(paymentMethods.cash || 0).toFixed(2)}`;
-    document.getElementById('kpi-payment-card').textContent = `€${(paymentMethods.card || 0).toFixed(2)}`;
+    // No card/cash metrics or fees/net revenue required
+
+    // Items per order
+    const itemsPerOrder = (data.totalItems && data.totalOrders) ? (data.totalItems / data.totalOrders) : 0;
+    const itemsPerOrderEl = document.getElementById('kpi-items-per-order');
+    if (itemsPerOrderEl) itemsPerOrderEl.textContent = itemsPerOrder > 0 ? itemsPerOrder.toFixed(2) : '-';
+
+    // Payment metrics removed per requirements
+
+    // Dine-in only deployment: remove takeaway-related UI and logic
 
     if (isDesktopUI) {
         renderList('kpi-sales-by-category', data.salesByCategory, item => `
@@ -2476,6 +2457,22 @@ function renderAnalytics(data) {
     }
 
     renderSalesByHourChart(data.salesByHour);
+
+    // Top add-ons/options
+    const addonsContainer = document.getElementById('kpi-top-addons');
+    if (addonsContainer) {
+        const items = data.topAddons || [];
+        if (items.length === 0) {
+            addonsContainer.innerHTML = isDesktopUI ? '<p style="font-size: 0.75rem; color: #6b7280; font-style: italic; padding: 0.5rem;">No add‑on data.</p>' : '<p class="text-xs text-gray-500 italic p-2">No add‑on data.</p>';
+        } else {
+            addonsContainer.innerHTML = items.map(a => `
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-600 truncate pr-2">${a.name}</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">€${(a.revenue || 0).toFixed(2)} • ${a.attachRate ? Math.round(a.attachRate*100) : 0}%</span>
+                </div>
+            `).join('');
+        }
+    }
 }
 
 function renderList(containerId, items, templateFn, emptyMessage) {
@@ -2513,9 +2510,30 @@ function renderSalesByHourChart(salesByHour) {
 
     const barWidth = 40;
     const spaceWidth = 16;
-    container.style.minWidth = `${salesByHour.length * (barWidth + spaceWidth)}px`;
+    container.style.minWidth = `${salesByHour.length * (barWidth + spaceWidth) + 60}px`; // extra for Y axis
+    container.style.maxHeight = '100%';
+    container.style.overflowY = 'hidden';
 
     const maxRevenue = Math.max(...salesByHour.map(h => h.total), 0);
+
+    // Y-axis (5 ticks)
+    const yAxis = document.createElement('div');
+    if (isDesktopUI) {
+        yAxis.style.cssText = 'display:flex; flex-direction:column; justify-content:space-between; height:100%; margin-right:8px; color:#6b7280; font-size:12px;';
+    } else {
+        yAxis.className = 'flex flex-col justify-between h-full mr-2 text-gray-500 text-xs';
+    }
+    const ticks = 5;
+    for (let i = ticks; i >= 0; i--) {
+        const val = (maxRevenue / ticks) * i;
+        const lbl = document.createElement('div');
+        lbl.textContent = `€${val.toFixed(0)}`;
+        if (isDesktopUI) {
+            lbl.style.cssText = 'height:1px; transform:translateY(6px)';
+        }
+        yAxis.appendChild(lbl);
+    }
+    container.appendChild(yAxis);
 
     salesByHour.forEach(hourData => {
         const barHeight = maxRevenue > 0 ? (hourData.total / maxRevenue) * 100 : 0;
@@ -2525,8 +2543,8 @@ function renderSalesByHourChart(salesByHour) {
             barWrapper.style.cssText = 'width: 2.5rem; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;';
             barWrapper.innerHTML = `
                 <div style="width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative;">
-                    <div style="background-color: #e5e7eb; width: 75%; border-radius: 0.125rem 0.125rem 0 0; transition: background-color 0.2s; height: ${barHeight}%;" onmouseover="this.style.backgroundColor='#818cf8'" onmouseout="this.style.backgroundColor='#e5e7eb'"></div>
-                    <div style="position: absolute; bottom: 100%; margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">
+                    <div style="background-color: #e5e7eb; width: 75%; border-radius: 0.125rem 0.125rem 0 0; transition: background-color 0.2s; height: ${barHeight}%" onmouseover="this.nextElementSibling.style.opacity='1'; this.style.backgroundColor='#818cf8'" onmouseout="this.nextElementSibling.style.opacity='0'; this.style.backgroundColor='#e5e7eb'"></div>
+                    <div style="position: absolute; bottom: calc(${barHeight}% + 6px); margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;">
                         €${hourData.total.toFixed(2)}
                     </div>
                 </div>
@@ -2536,10 +2554,8 @@ function renderSalesByHourChart(salesByHour) {
             barWrapper.className = 'w-10 flex flex-col items-center justify-end h-full';
             barWrapper.innerHTML = `
                 <div class="w-full h-full flex items-end justify-center group relative">
-                    <div class="bg-gray-200 hover:bg-indigo-400 w-3/4 rounded-t-sm transition-colors" style="height: ${barHeight}%"></div>
-                    <div class="absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                        €${hourData.total.toFixed(2)}
-                    </div>
+                    <div class="bg-gray-200 w-3/4 rounded-t-sm transition-colors" style="height: ${barHeight}%" onmouseover="this.nextElementSibling.classList.remove('opacity-0'); this.classList.add('bg-indigo-400')" onmouseout="this.nextElementSibling.classList.add('opacity-0'); this.classList.remove('bg-indigo-400')"></div>
+                    <div class="absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 transition-opacity pointer-events-none z-10">€${hourData.total.toFixed(2)}</div>
                 </div>
                 <span class="text-xs text-gray-500 mt-1">${String(hourData.hour).padStart(2, '0')}</span>
             `;
@@ -2547,6 +2563,89 @@ function renderSalesByHourChart(salesByHour) {
         
         container.appendChild(barWrapper);
     });
+}
+
+function renderDaypartChart(dayparts) {
+    const container = document.getElementById('analytics-daypart-container');
+    if (!container) return;
+    const isDesktopUI = document.body.classList.contains('desktop-ui');
+    container.innerHTML = '';
+    container.style.position = 'relative';
+    container.style.overflow = 'hidden';
+
+    const data = dayparts && dayparts.length ? dayparts : [
+        { label: 'Morning', total: 0 },
+        { label: 'Lunch', total: 0 },
+        { label: 'Afternoon', total: 0 },
+        { label: 'Evening', total: 0 }
+    ];
+
+    const max = Math.max(...data.map(d => d.total), 0) || 1;
+
+    // Y-axis (5 ticks)
+    const yAxis = document.createElement('div');
+    if (isDesktopUI) {
+        yAxis.style.cssText = 'display:flex; flex-direction:column; justify-content:space-between; height:100%; margin-right:8px; color:#6b7280; font-size:12px;';
+    } else {
+        yAxis.className = 'flex flex-col justify-between h-full mr-2 text-gray-500 text-xs';
+    }
+    const ticks = 5;
+    for (let i = ticks; i >= 0; i--) {
+        const val = (max / ticks) * i;
+        const lbl = document.createElement('div');
+        lbl.textContent = `€${val.toFixed(0)}`;
+        if (isDesktopUI) {
+            lbl.style.cssText = 'height:1px; transform:translateY(6px)';
+        }
+        yAxis.appendChild(lbl);
+    }
+    container.appendChild(yAxis);
+
+    const bars = document.createElement('div');
+    if (isDesktopUI) {
+        bars.style.cssText = 'display:flex; align-items:flex-end; height:100%; gap:12px;';
+    } else {
+        bars.className = 'h-full flex items-end gap-3';
+    }
+
+    data.forEach(d => {
+        const h = (d.total / max) * 100;
+        const wrap = document.createElement('div');
+        if (isDesktopUI) {
+            wrap.style.cssText = 'width:56px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;';
+            wrap.innerHTML = `
+                <div style=\"width:100%; height:100%; display:flex; align-items:flex-end; justify-content:center; position:relative;\">
+                    <div style=\"background-color:#111827; width:70%; height:${h}%; border-radius:2px; transition:background-color 0.2s;\" onmouseover=\"this.nextElementSibling.style.opacity='1'; this.style.backgroundColor='#3b82f6'\" onmouseout=\"this.nextElementSibling.style.opacity='0'; this.style.backgroundColor='#111827'\"></div>
+                    <div style=\"position:absolute; bottom: 100%; margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;\">€${(d.total || 0).toFixed(2)}</div>
+                </div>
+                <span style=\"font-size:12px; color:#6b7280; margin-top:4px;\">${d.label}</span>
+            `;
+        } else {
+            wrap.className = 'w-14 flex flex-col items-center justify-end h-full';
+            wrap.innerHTML = `
+                <div class=\"w-full h-full flex items-end justify-center relative\">
+                    <div class=\"bg-gray-900 w-3/4\" style=\"height:${h}%; border-radius:2px\" onmouseover=\"this.nextElementSibling.classList.remove('opacity-0'); this.classList.add('bg-indigo-600')\" onmouseout=\"this.nextElementSibling.classList.add('opacity-0'); this.classList.remove('bg-indigo-600')\"></div>
+                    <div class=\"absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 transition-opacity pointer-events-none z-10\">€${(d.total || 0).toFixed(2)}</div>
+                </div>
+                <span class=\"text-xs text-gray-500 mt-1\">${d.label}</span>
+            `;
+        }
+        bars.appendChild(wrap);
+    });
+
+    container.appendChild(bars);
+
+    // X-axis line just above labels area
+    const xAxis = document.createElement('div');
+    if (isDesktopUI) {
+        xAxis.style.cssText = 'position:absolute; left:0; right:0; bottom:22px; height:1px; background:#e5e7eb;';
+    } else {
+        xAxis.className = 'absolute left-0 right-0';
+        xAxis.style.bottom = '22px';
+        xAxis.style.height = '1px';
+        xAxis.style.background = '#e5e7eb';
+    }
+    container.appendChild(xAxis);
 }
 
 async function shutdownApplication() {

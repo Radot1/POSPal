@@ -7,7 +7,7 @@
 <p align="center">
 A lightweight, web-based Point of Sale (POS) system designed for small restaurants and cafes. POSPal runs locally on a Windows machine and provides a fast, touch-friendly interface for taking orders and printing kitchen tickets.
 <br><br>
-<img src="https://img.shields.io/badge/version-1.0.4-blue" alt="Version">
+<img src="https://img.shields.io/badge/version-1.0.5-blue" alt="Version">
 <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
@@ -67,7 +67,6 @@ It is highly recommended to change the default management_password to something 
 
 {
     "printer_name": "Your Printer Name Here",
-    "auto_update": true,
     "port": 5000,
     "management_password": "YourSecurePassword"
 }

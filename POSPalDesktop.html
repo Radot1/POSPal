@@ -19,6 +19,7 @@
             display: -webkit-box;
             -webkit-box-orient: vertical;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             overflow: hidden;
             text-overflow: ellipsis;
             min-height: 2.5em;
@@ -215,7 +216,7 @@
                 <!-- Categories will load here -->
             </div>
         </div>
-        <div id="products" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 overflow-y-auto flex-1 items-start">
+        <div id="products" class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 overflow-y-auto flex-1 content-start">
             <!-- Products will load here -->
         </div>
     </div>
@@ -314,14 +315,22 @@
                         <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
                         <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Total Orders</h4><p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p></div>
                         <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="font-semibold text-gray-700 mb-2">Payment Methods</h4><div class="space-y-2 mt-3"><div class="flex justify-between items-center"><span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span><span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span></div><div class="flex justify-between items-center"><span class="text-sm text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span><span id="kpi-payment-card" class="font-bold text-gray-800">€0.00</span></div></div></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Items per Order</h4><p id="kpi-items-per-order" class="text-3xl font-bold text-gray-900 mt-1">-</p></div>
                     </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <div class="bg-white p-4 rounded-lg border lg:col-span-2"><h4 class="font-semibold text-gray-700 mb-3">Sales by Hour</h4><div class="overflow-x-auto pb-2"><div id="analytics-chart-container" class="h-64 flex items-end space-x-4"><p class="text-xs text-gray-500 italic w-full text-center">Loading chart data...</p></div></div></div>
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4><div id="kpi-sales-by-category" class="space-y-2 max-h-64 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Top Items (by Revenue)</h4><div id="kpi-top-revenue-items" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Best Selling Items (by Qty)</h4><div id="kpi-best-sellers" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Underperforming Items (by Qty)</h4><div id="kpi-worst-sellers" class="space-y-2 max-h-48 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>
+                    <div class="space-y-4">
+                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-3">Sales by Hour</h4><div class="overflow-x-auto" style="overflow-y:hidden; padding-bottom:0.5rem"><div id="analytics-chart-container" class="flex items-end space-x-4" style="height:14rem"><p style="font-size:12px; color:#6b7280; font-style:italic; width:100%; text-align:center">Loading chart data...</p></div></div></div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4><div id="kpi-sales-by-category" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Top Items (by Revenue)</h4><div id="kpi-top-revenue-items" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Best Selling Items (by Qty)</h4><div id="kpi-best-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Underperforming Items (by Qty)</h4><div id="kpi-worst-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Top Add‑ons / Options</h4><div id="kpi-top-addons" class="space-y-2"><p style="font-size:12px; color:#6b7280; font-style:italic">No add‑on data.</p></div></div>
                     </div>
                 </div>
                 <div id="itemsManagement" class="hidden">

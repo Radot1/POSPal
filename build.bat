@@ -4,7 +4,7 @@ REM Build script for POSPal
 REM Description: This script creates a new 'build_output' directory and performs
 REM              the entire build process within it, keeping the root
 REM              directory clean.
-REM Version: 1.9.0 (Containerized Build Process)
+REM Version: 1.0.5 (Containerized Build Process)
 REM ============================================================================
 setlocal
 
@@ -145,7 +145,6 @@ if exist "..\config.json" (
     (
         echo {
         echo     "printer_name": "POSPalPDFTest",
-        echo     "auto_update": true,
         echo     "port": 5000,
         echo     "management_password": "9999"
         echo }

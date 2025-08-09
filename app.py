@@ -185,13 +185,35 @@ def cleanup_inactive_sessions():
     return active_sessions
 
 
+def is_version_newer(latest_version, current_version):
+    """
+    Return True if latest_version is strictly newer than current_version.
+    Compares dot-separated numeric versions, ignoring a leading 'v'.
+    """
+    def parse_version(version_string):
+        parts = version_string.lstrip('v').split('.')
+        numbers = []
+        for part in parts:
+            try:
+                numbers.append(int(part))
+            except ValueError:
+                numbers.append(0)
+        return numbers
+
+    latest_numbers = parse_version(latest_version)
+    current_numbers = parse_version(current_version)
+
+    max_len = max(len(latest_numbers), len(current_numbers))
+    latest_numbers += [0] * (max_len - len(latest_numbers))
+    current_numbers += [0] * (max_len - len(current_numbers))
+    return latest_numbers > current_numbers
+
 def load_config():
     # Ensure data directory exists BEFORE loading config
     os.makedirs(DATA_DIR, exist_ok=True)
     
     defaults = {
         "printer_name": "80mm Series Printer",
-        "auto_update": True,
         "port": 5000,
         "management_password": "9999" # Default password
     }
@@ -1188,48 +1210,168 @@ def get_analytics():
             end = start + timedelta(days=1)
         
         # Read orders from CSV file
-        orders_csv = os.path.join(DATA_DIR, 'orders.csv')
+        # Use today's CSV snapshot; if not exists generate dummy data for testing
+        today_path = os.path.join(DATA_DIR, f"orders_{datetime.now().strftime('%Y-%m-%d')}.csv")
+        orders_csv = today_path
         if not os.path.exists(orders_csv):
-            return jsonify({
-                "total_sales": 0,
-                "total_orders": 0,
-                "average_order_value": 0,
-                "sales_by_hour": {},
-                "top_items": [],
-                "payment_methods": {}
-            })
+            # Generate dummy data for the day to allow testing analytics
+            os.makedirs(DATA_DIR, exist_ok=True)
+            fieldnames = ['order_number','table_number','timestamp','items_summary','universal_comment','order_total','payment_method','printed_status','items_json']
+            start_time = datetime.now().replace(hour=7, minute=0, second=0, microsecond=0)
+            demo_rows = []
+            # Create ~36 orders across the day with varying items, options, and payments
+            import random
+            products = [
+                {"name":"Cappuccino","price":3.2},
+                {"name":"Latte","price":3.5},
+                {"name":"Espresso","price":2.5},
+                {"name":"Croissant","price":2.2},
+                {"name":"Toastie","price":4.2},
+                {"name":"Sandwich","price":5.8},
+                {"name":"Tea","price":2.0}
+            ]
+            addons_catalog = [
+                {"name":"Extra Shot","priceChange":0.5},
+                {"name":"Syrup","priceChange":0.3},
+                {"name":"Almond Milk","priceChange":0.4}
+            ]
+            total_orders_to_create = 36
+            for i in range(1, total_orders_to_create + 1):
+                ts = start_time + timedelta(minutes=random.randint(0, 14) + (i-1)*20)
+                num_items = random.randint(1, 4)
+                items = []
+                total = 0.0
+                for _ in range(num_items):
+                    prod = random.choice(products)
+                    qty = random.randint(1, 2)
+                    # Randomly add paid options
+                    selected_options = []
+                    if random.random() < 0.5:
+                        # up to 2 addons
+                        for opt in random.sample(addons_catalog, k=random.randint(1, min(2, len(addons_catalog)))):
+                            selected_options.append({"name": opt["name"], "priceChange": opt["priceChange"]})
+                    unit_price = prod["price"] + sum(opt["priceChange"] for opt in selected_options)
+                    items.append({
+                        "name": prod["name"],
+                        "quantity": qty,
+                        "itemPriceWithModifiers": unit_price,
+                        "generalSelectedOptions": selected_options
+                    })
+                    total += unit_price * qty
+                payment_method = 'Card' if random.random() < 0.6 else 'Cash'
+                demo_rows.append({
+                    'order_number': i,
+                    'table_number': str(random.randint(1, 15)),
+                    'timestamp': ts.strftime('%Y-%m-%d %H:%M:%S'),
+                    'items_summary': '',
+                    'universal_comment': '',
+                    'order_total': f"{total:.2f}",
+                    'payment_method': payment_method,
+                    'printed_status': 'All Copies Printed',
+                    'items_json': json.dumps(items)
+                })
+            with open(orders_csv, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in demo_rows:
+                    writer.writerow(row)
+
+            # Create a default menu.json if none exists so category analytics work
+            if not os.path.exists(MENU_FILE):
+                default_menu = {
+                    "Coffee": [
+                        {"id": 1, "name": "Cappuccino", "price": 3.2},
+                        {"id": 2, "name": "Latte", "price": 3.5},
+                        {"id": 3, "name": "Espresso", "price": 2.5}
+                    ],
+                    "Tea": [
+                        {"id": 4, "name": "Tea", "price": 2.0}
+                    ],
+                    "Bakery": [
+                        {"id": 5, "name": "Croissant", "price": 2.2}
+                    ],
+                    "Food": [
+                        {"id": 6, "name": "Toastie", "price": 4.2},
+                        {"id": 7, "name": "Sandwich", "price": 5.8}
+                    ]
+                }
+                os.makedirs(DATA_DIR, exist_ok=True)
+                with open(MENU_FILE, 'w', encoding='utf-8') as mf:
+                    json.dump(default_menu, mf, indent=2)
         
-        total_sales = 0
+        total_sales = 0.0
         total_orders = 0
-        sales_by_hour = defaultdict(int)
-        item_sales = Counter()
+        sales_by_hour = defaultdict(float)
+        item_qty = Counter()
+        item_rev = defaultdict(float)
         payment_methods = Counter()
+        daypart_totals = defaultdict(float)
+        addon_rev = defaultdict(float)
+        addon_order_set = defaultdict(set)  # addon_name -> set(order_number)
+
+        # Build item name -> category map from menu if available
+        name_to_category = {}
+        try:
+            if os.path.exists(MENU_FILE):
+                with open(MENU_FILE, 'r', encoding='utf-8') as mf:
+                    menu_json = json.load(mf)
+                    if isinstance(menu_json, dict):
+                        for cat_name, items in menu_json.items():
+                            for it in items or []:
+                                nm = it.get('name')
+                                if nm:
+                                    name_to_category[nm] = cat_name
+        except Exception:
+            pass
         
         with open(orders_csv, 'r', newline='', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
                 try:
-                    order_date = datetime.strptime(row['Date'], '%Y-%m-%d %H:%M:%S')
+                    order_date = datetime.strptime(row.get('timestamp') or row.get('Date'), '%Y-%m-%d %H:%M:%S')
                     if start <= order_date < end:
-                        order_total = float(row['Total'])
+                        order_total = float(row.get('order_total') or row.get('Total') or 0.0)
                         total_sales += order_total
                         total_orders += 1
                         
                         # Sales by hour
                         hour = order_date.hour
                         sales_by_hour[hour] += order_total
+
+                        # Daypart removed per requirements
                         
                         # Payment methods
-                        payment_method = row.get('Payment Method', 'Cash')
+                        payment_method = row.get('payment_method') or row.get('Payment Method', 'Cash')
                         payment_methods[payment_method] += 1
                         
                         # Top items (parse items JSON)
                         try:
-                            items = json.loads(row['Items'])
+                            items = json.loads(row.get('items_json') or row.get('Items') or '[]')
+                            order_no = row.get('order_number') or row.get('OrderNumber') or str(uuid.uuid4())
                             for item in items:
                                 item_name = item.get('name', 'Unknown')
-                                quantity = item.get('quantity', 1)
-                                item_sales[item_name] += quantity
+                                quantity = int(item.get('quantity', 1))
+                                unit_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                                item_qty[item_name] += quantity
+                                item_rev[item_name] += unit_price * quantity
+
+                                # Add-ons/options revenue and attach rate
+                                try:
+                                    opts = item.get('generalSelectedOptions') or []
+                                    if isinstance(opts, list):
+                                        seen_addons_in_order = set()
+                                        for opt in opts:
+                                            opt_name = opt.get('name')
+                                            if not opt_name:
+                                                continue
+                                            price_change = float(opt.get('priceChange', 0.0))
+                                            if price_change > 0:
+                                                addon_rev[opt_name] += price_change * quantity
+                                            seen_addons_in_order.add(opt_name)
+                                        for opt_name in seen_addons_in_order:
+                                            addon_order_set[opt_name].add(order_no)
+                                except Exception:
+                                    pass
                         except (json.JSONDecodeError, KeyError):
                             pass
                             
@@ -1238,16 +1380,87 @@ def get_analytics():
                     continue
         
         average_order_value = total_sales / total_orders if total_orders > 0 else 0
-        top_items = [{"name": item, "quantity": count} for item, count in item_sales.most_common(10)]
+        # Build best and worst sellers by quantity
+        best_sellers = [{"name": name, "quantity": qty} for name, qty in item_qty.most_common(10)]
+        # For worst, pick bottom 10 among those sold at least once
+        worst_candidates = sorted([(name, qty) for name, qty in item_qty.items() if qty > 0], key=lambda x: x[1])[:10]
+        worst_sellers = [{"name": n, "quantity": q} for n, q in worst_candidates]
+
+        # Top items by revenue
+        top_revenue_items = sorted([{ "name": n, "revenue": r } for n, r in item_rev.items()], key=lambda x: x['revenue'], reverse=True)[:10]
+
+        # Sales by category (revenue)
+        def guess_category(item_name: str) -> str:
+            n = (item_name or '').lower()
+            if any(k in n for k in ['cappuccino','latte','espresso']):
+                return 'Coffee'
+            if 'tea' in n:
+                return 'Tea'
+            if any(k in n for k in ['croissant','muffin','pastry']):
+                return 'Bakery'
+            if any(k in n for k in ['sandwich','toastie','wrap','panini']):
+                return 'Food'
+            return 'Uncategorized'
+        category_rev = defaultdict(float)
+        for name, rev in item_rev.items():
+            cat = name_to_category.get(name) or guess_category(name)
+            category_rev[cat] += rev
+        sales_by_category_list = [{"category": c, "total": round(t,2)} for c, t in sorted(category_rev.items(), key=lambda x: x[1], reverse=True)]
+
+        # Dayparts removed
+
+        # Top addons with attach rate
+        top_addons = []
+        for name, rev in sorted(addon_rev.items(), key=lambda x: x[1], reverse=True)[:10]:
+            attach_rate = (len(addon_order_set.get(name, set())) / total_orders) if total_orders > 0 else 0.0
+            top_addons.append({"name": name, "revenue": round(rev,2), "attachRate": attach_rate})
         
-        return jsonify({
-            "total_sales": round(total_sales, 2),
-            "total_orders": total_orders,
-            "average_order_value": round(average_order_value, 2),
-            "sales_by_hour": dict(sales_by_hour),
-            "top_items": top_items,
-            "payment_methods": dict(payment_methods)
-        })
+        # Build frontend-compatible structure
+        sales_by_hour_list = [ {"hour": h, "total": round(v,2)} for h,v in sorted(sales_by_hour.items()) ]
+        payment_amounts = { 'cash': 0.0, 'card': 0.0 }
+        # Re-scan to sum payment amounts for fees/net revenue
+        try:
+            with open(orders_csv, 'r', newline='', encoding='utf-8') as csvfile2:
+                reader2 = csv.DictReader(csvfile2)
+                for row in reader2:
+                    try:
+                        order_date = datetime.strptime(row.get('timestamp') or row.get('Date'), '%Y-%m-%d %H:%M:%S')
+                        if start <= order_date < end:
+                            amt = float(row.get('order_total') or row.get('Total') or 0.0)
+                            pm = (row.get('payment_method') or row.get('Payment Method') or 'Cash').capitalize()
+                            if pm == 'Card':
+                                payment_amounts['card'] += amt
+                            else:
+                                payment_amounts['cash'] += amt
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        resp = {
+            "grossRevenue": round(total_sales, 2),
+            "totalOrders": total_orders,
+            "atv": round(average_order_value, 2),
+            "paymentMethods": {
+                "cash": round(payment_amounts['cash'], 2),
+                "card": round(payment_amounts['card'], 2)
+            },
+            "paymentCounts": { key: payment_methods.get(key.capitalize(), 0) for key in ['cash','card'] },
+            "salesByHour": sales_by_hour_list,
+            
+            "salesByCategory": sales_by_category_list,
+            "topRevenueItems": top_revenue_items,
+            "bestSellers": best_sellers,
+            "worstSellers": worst_sellers,
+            "topAddons": top_addons
+        }
+        # total items for items/order
+        try:
+            total_items = sum(item_qty.values())
+        except Exception:
+            total_items = 0
+        resp["totalItems"] = int(total_items)
+        return jsonify(resp)
         
     except Exception as e:
         app.logger.error(f"Error generating analytics: {str(e)}")
@@ -1446,8 +1659,8 @@ def check_for_updates():
 
         app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version from GitHub: {latest_ver}")
 
-        # Compare versions after stripping any leading 'v' to prevent update loops.
-        if latest_ver.lstrip('v') != CURRENT_VERSION.lstrip('v'):
+        # Update only if GitHub version is strictly newer; never downgrade or lateral update.
+        if is_version_newer(latest_ver, CURRENT_VERSION):
             app.logger.info(f"New version {latest_ver} found. Starting update process.")
 
             # Find the correct asset to download from the release.
@@ -1516,8 +1729,8 @@ start "" "{expected_asset_name}"
         app.logger.error(f"An unexpected error occurred during the update check: {str(e)}")
 
 
-# Add to startup logic
-if config.get("auto_update", False) and getattr(sys, 'frozen', False):
+# Add to startup logic (always check for updates when running as packaged executable)
+if getattr(sys, 'frozen', False):
     # Check for updates once, 5 seconds after startup
     threading.Timer(5, check_for_updates).start()
 
