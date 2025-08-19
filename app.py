@@ -34,6 +34,9 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 TRIAL_INFO_FILE = os.path.join(DATA_DIR, 'trial.json')
 LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
+# Additional hardening: also store a copy of the trial info under ProgramData
+PROGRAM_DATA_DIR = os.path.join(os.environ.get('PROGRAMDATA', r'C:\\ProgramData'), 'POSPal')
+PROGRAM_TRIAL_FILE = os.path.join(PROGRAM_DATA_DIR, 'trial.json')
 APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A  # Use a strong secret key
 
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
@@ -319,27 +322,120 @@ def get_trial_from_registry():
     except:
         return None
 
-def initialize_trial():
-    """Create trial file on first run with signature"""
-    if not os.path.exists(TRIAL_INFO_FILE):
-        try:
-            first_run_date = datetime.now().strftime("%Y-%m-%d")
-            signature_data = f"{first_run_date}{APP_SECRET_KEY}".encode()
-            signature = hashlib.sha256(signature_data).hexdigest()
-            
-            # Store in file (primary)
+def store_trial_in_programdata(first_run_date: str, signature: str) -> bool:
+    """Store trial data under ProgramData for additional persistence."""
+    try:
+        os.makedirs(PROGRAM_DATA_DIR, exist_ok=True)
+        temp_path = PROGRAM_TRIAL_FILE + '.tmp'
+        with open(temp_path, 'w') as f:
+            json.dump({"first_run_date": first_run_date, "signature": signature}, f)
+        os.replace(temp_path, PROGRAM_TRIAL_FILE)
+        return True
+    except Exception as e:
+        app.logger.warning(f"Could not store trial in ProgramData: {e}")
+        return False
+
+def get_trial_from_programdata():
+    """Get trial data from ProgramData if present."""
+    try:
+        if os.path.exists(PROGRAM_TRIAL_FILE):
+            with open(PROGRAM_TRIAL_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        app.logger.warning(f"Could not read ProgramData trial file: {e}")
+    return None
+
+def _validate_and_parse_trial(trial_dict):
+    """Validate signature and parse date. Returns dict with 'first_run_date','signature','date_obj' or None."""
+    try:
+        if not trial_dict:
+            return None
+        first_run_date = trial_dict.get('first_run_date')
+        signature = trial_dict.get('signature')
+        if not first_run_date or not signature:
+            return None
+        expected = hashlib.sha256(f"{first_run_date}{APP_SECRET_KEY}".encode()).hexdigest()
+        if signature != expected:
+            return None
+        date_obj = datetime.strptime(first_run_date, "%Y-%m-%d")
+        return {"first_run_date": first_run_date, "signature": signature, "date_obj": date_obj}
+    except Exception:
+        return None
+
+def _persist_trial_everywhere(earliest_first_run_date: str, signature: str):
+    """Write the given trial to file, registry, and ProgramData, but never move dates forward."""
+    # Primary file
+    try:
+        current_file = None
+        if os.path.exists(TRIAL_INFO_FILE):
+            try:
+                with open(TRIAL_INFO_FILE, 'r') as f:
+                    current_file = json.load(f)
+            except Exception:
+                current_file = None
+        current_file_valid = _validate_and_parse_trial(current_file)
+        should_write_file = (not current_file_valid) or (current_file_valid and current_file_valid['date_obj'] > datetime.strptime(earliest_first_run_date, "%Y-%m-%d"))
+        if should_write_file:
             with open(TRIAL_INFO_FILE, 'w') as f:
-                json.dump({
-                    "first_run_date": first_run_date,
-                    "signature": signature
-                }, f)
-            
-            # Store in registry (backup)
-            store_trial_in_registry(first_run_date, signature)
-            
-            app.logger.info("Initialized 30-day trial period")
-        except Exception as e:
-            app.logger.error(f"Error creating trial file: {e}")
+                json.dump({"first_run_date": earliest_first_run_date, "signature": signature}, f)
+    except Exception as e:
+        app.logger.warning(f"Failed persisting trial to primary file: {e}")
+
+    # Registry
+    try:
+        reg = _validate_and_parse_trial(get_trial_from_registry())
+        if (not reg) or (reg['date_obj'] > datetime.strptime(earliest_first_run_date, "%Y-%m-%d")):
+            store_trial_in_registry(earliest_first_run_date, signature)
+    except Exception as e:
+        app.logger.warning(f"Failed persisting trial to registry: {e}")
+
+    # ProgramData file
+    try:
+        prog = _validate_and_parse_trial(get_trial_from_programdata())
+        if (not prog) or (prog['date_obj'] > datetime.strptime(earliest_first_run_date, "%Y-%m-%d")):
+            store_trial_in_programdata(earliest_first_run_date, signature)
+    except Exception as e:
+        app.logger.warning(f"Failed persisting trial to ProgramData: {e}")
+
+def initialize_trial():
+    """Initialize trial without allowing resets via reinstall.
+
+    Strategy:
+    - Gather valid trial records from file, registry, and ProgramData.
+    - Use the earliest valid first_run_date found.
+    - If none exist, create a new record with today.
+    - Persist the chosen record everywhere, but never move dates forward.
+    """
+    try:
+        candidates = []
+        # Primary file
+        try:
+            if os.path.exists(TRIAL_INFO_FILE):
+                with open(TRIAL_INFO_FILE, 'r') as f:
+                    candidates.append(_validate_and_parse_trial(json.load(f)))
+        except Exception:
+            candidates.append(None)
+
+        # Registry
+        candidates.append(_validate_and_parse_trial(get_trial_from_registry()))
+
+        # ProgramData
+        candidates.append(_validate_and_parse_trial(get_trial_from_programdata()))
+
+        valid_candidates = [c for c in candidates if c]
+
+        if valid_candidates:
+            earliest = min(valid_candidates, key=lambda c: c['date_obj'])
+            first_run_date = earliest['first_run_date']
+            signature = earliest['signature']
+        else:
+            first_run_date = datetime.now().strftime("%Y-%m-%d")
+            signature = hashlib.sha256(f"{first_run_date}{APP_SECRET_KEY}".encode()).hexdigest()
+
+        _persist_trial_everywhere(first_run_date, signature)
+        app.logger.info("Trial initialized/synchronized across stores (no forward reset).")
+    except Exception as e:
+        app.logger.error(f"Error during trial initialization/sync: {e}")
 
 def word_wrap_text(text, max_width, initial_indent="", subsequent_indent=""):
     lines = []
@@ -1107,43 +1203,45 @@ def check_trial_status():
         except:
             app.logger.warning("Invalid license file")
     
-    # Trial check - try multiple storage locations
-    trial_data = None
-    
-    # Try file first
-    if os.path.exists(TRIAL_INFO_FILE):
-        try:
-            with open(TRIAL_INFO_FILE) as f:
-                trial_data = json.load(f)
-        except:
-            pass
-    
-    # If file failed, try registry
-    if not trial_data:
-        trial_data = get_trial_from_registry()
-    
-    # If no trial data found anywhere
-    if not trial_data:
-        return {"licensed": False, "active": False, "expired": True}
-    
+    # Trial check - aggregate across all storage locations and pick the earliest valid
     try:
-        # Verify signature
-        data = f"{trial_data['first_run_date']}{APP_SECRET_KEY}".encode()
-        if hashlib.sha256(data).hexdigest() != trial_data['signature']:
+        candidates = []
+        # File
+        try:
+            if os.path.exists(TRIAL_INFO_FILE):
+                with open(TRIAL_INFO_FILE) as f:
+                    candidates.append(_validate_and_parse_trial(json.load(f)))
+        except Exception:
+            candidates.append(None)
+
+        # Registry
+        candidates.append(_validate_and_parse_trial(get_trial_from_registry()))
+
+        # ProgramData
+        candidates.append(_validate_and_parse_trial(get_trial_from_programdata()))
+
+        valid_candidates = [c for c in candidates if c]
+        if not valid_candidates:
             return {"licensed": False, "active": False, "expired": True}
-        
-        # Check dates
-        first_run = datetime.strptime(trial_data['first_run_date'], "%Y-%m-%d")
+
+        earliest = min(valid_candidates, key=lambda c: c['date_obj'])
+        first_run = earliest['date_obj']
+        first_run_date = earliest['first_run_date']
+        signature = earliest['signature']
+
+        # Sync back everywhere (will never move date forward)
+        _persist_trial_everywhere(first_run_date, signature)
+
         days_elapsed = (datetime.now() - first_run).days
         days_left = 30 - days_elapsed
-        
+
         return {
             "licensed": False,
             "active": days_left > 0,
             "days_left": max(0, days_left),
             "expired": days_left <= 0
         }
-    except:
+    except Exception:
         return {"licensed": False, "active": False, "expired": True}
 
 # Add API endpoint
