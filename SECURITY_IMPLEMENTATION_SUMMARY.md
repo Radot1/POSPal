@@ -5,7 +5,7 @@
 ### **A. Enhanced Secret Key**
 - **Changed from:** `APP_SECRET_KEY = 762378`
 - **Changed to:** `APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A`
-- **Files updated:** `app.py`, `generate_license.py`
+- **Files updated:** `app.py`
 - **Benefit:** Much harder to guess, still memorable for you
 
 ### **B. Multiple Trial Storage Locations**
@@ -18,20 +18,13 @@
 ### **C. Enhanced Hardware Fingerprinting**
 - **Old method:** MAC address only
 - **New method:** MAC + CPU + Disk Serial + Windows ID
-- **Files updated:** `app.py`, `generate_license.py`
+- **Files updated:** `app.py`
 - **New function:** `get_enhanced_hardware_id()`
 - **Benefit:** Much harder to spoof hardware ID
 
 ---
 
 ## **🔧 HOW TO USE THE NEW SYSTEM**
-
-### **For License Generation:**
-1. Run `python generate_license.py`
-2. Enter customer name
-3. Press Enter for current machine (auto-generates enhanced hardware ID)
-4. Or enter a specific hardware ID from customer
-5. License file will be created as `license.key`
 
 ### **For Trial Management:**
 - Trial data is now stored in both file and registry
@@ -47,15 +40,9 @@
 
 ## **🧪 TESTING**
 
-Run the test script to verify everything works:
-```bash
-python test_security_updates.py
-```
-
-This will show:
-- Enhanced hardware ID generation
-- License generation with new secret key
-- Trial signature generation
+Manual tests:
+- Verify enhanced hardware ID generation via `/api/hardware_id`.
+- Verify trial signature and expiration flow via `/api/trial_status`.
 
 ---
 

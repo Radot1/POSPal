@@ -9,10 +9,14 @@ IMPORTANT: PLEASE READ THIS AGREEMENT CAREFULLY BEFORE INSTALLING OR USING THE S
 - "Licensor": Robert Zoumboulis-Airey.
 - "Licensee" or "you": The person or legal entity installing or using the Software.
 - "Software": POSPal, including any updates, documentation, and materials provided by Licensor.
-- "Distributor": An authorized third party permitted by Licensor to sell licenses for the Software.
+- "Distributor": An authorized reseller permitted by Licensor to sell licenses for the Software. Distributors are not licensors and have no authority to modify this EULA or grant rights beyond this EULA.
 
 2. License Grant
 Subject to your compliance with this EULA and payment of applicable fees (after the trial), Licensor grants you a limited, non-exclusive, non-transferable, non-sublicensable license to install and use the Software on a single machine associated with the hardware identifier used to generate your license.key.
+
+2.1 Distributors and EULA Acceptance
+- Licenses are granted by Licensor only. Distributors act solely as resellers and cannot alter license terms.
+- Your purchase via any Distributor is conditioned on your acceptance of this EULA.
 
 3. Trial Period
 You may use the Software for a 30-day trial period with full or limited functionality. After the trial expires, continued use requires a valid license.key purchased from an authorized Distributor. The Software may limit or disable features after the trial ends.
@@ -24,10 +28,10 @@ You shall not, and shall not permit others to: (a) copy, distribute, sell, resel
 The Software is licensed, not sold. Licensor and its licensors retain all right, title, and interest in and to the Software, including all intellectual property rights. No rights are granted by implication or otherwise except as expressly set forth in this EULA.
 
 6. Activation, Licensing, and Updates
-Licenses are fulfilled by authorized Distributors and are hardware-locked using the machine’s hardware identifier. Updates, if provided, are deemed part of the Software and subject to this EULA. Licensor may revoke or invalidate a license obtained through fraud or breach.
+Licenses may be sold by authorized Distributors but are granted by Licensor and are hardware-locked using the machine’s hardware identifier. Updates, if provided, are deemed part of the Software and subject to this EULA. Licensor may revoke or invalidate a license obtained through fraud or breach.
 
 7. Support
-Basic usage information may be provided. Installation and setup may be offered by Distributors. Licensor does not guarantee any particular response or resolution time.
+First-line installation and onboarding support may be provided by Distributors. Licensor may provide general usage information on a reasonable-efforts basis but does not guarantee any particular response or resolution time.
 
 8. Data and Privacy
 The Software primarily runs locally. You are responsible for compliance with applicable data and privacy laws relating to your data. Licensor does not warrant against data loss.
@@ -46,9 +50,5 @@ This EULA is governed by the laws of Greece, without regard to conflict of law r
 
 13. General
 This EULA constitutes the entire agreement between the parties regarding the Software and supersedes all prior or contemporaneous understandings. If any provision is held unenforceable, it will be enforced to the maximum extent permissible and the remaining provisions will remain in full force and effect. You may not assign this EULA without Licensor’s prior written consent; any attempted assignment in violation of the foregoing is void.
-
-Contact:
-Robert Zoumboulis-Airey  
-Email: support@pospal.gr (for general inquiries)
 
 NOTE: This EULA is provided for convenience and does not constitute legal advice. Consult a qualified attorney for legal guidance specific to your circumstances.

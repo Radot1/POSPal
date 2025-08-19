@@ -11,7 +11,7 @@
 ### **Trial Implementation:**
 - **Duration:** 30 days from first run
 - **Storage:** `data/trial.json` with signature protection
-- **Protection:** SHA256 hash of `{first_run_date}{APP_SECRET_KEY}`
+- **Protection:** SHA256 hash with secret key (local-only)
 
 ### **Trial Restrictions:**
 ✅ **PRINTING DISABLED** - Main revenue blocker
@@ -42,7 +42,7 @@
 ### **License Implementation:**
 - **File:** `license.key` in application directory
 - **Format:** JSON with customer, hardware_id, signature
-- **Protection:** SHA256 hash of `{hardware_id}{APP_SECRET_KEY}`
+- **Protection:** SHA256 hash with secret key (local-only)
 
 ### **Hardware ID Generation:**
 ```python
@@ -70,10 +70,8 @@ hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}'
 - No online verification of license usage
 - No concurrent usage detection
 
-❌ **CRITICAL:** Secret key exposure
-- `APP_SECRET_KEY = 762378` is hardcoded
-- Visible in source code
-- Can be used to generate fake licenses
+❌ **CRITICAL:** Secret key exposure risk
+- Any shared-secret in public code can be abused if discovered
 
 ❌ **CRITICAL:** No revocation mechanism
 - Licenses cannot be remotely disabled
@@ -174,7 +172,7 @@ hw_id = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}'
 ## **6. IMMEDIATE ACTIONS NEEDED**
 
 ### **Critical (Implement Now):**
-1. **Change APP_SECRET_KEY** - Use random 64-bit value
+1. **Protect secret keys** - avoid exposing shared-secret in public code
 2. **Add online verification** - Check license status on startup
 3. **Implement trial protection** - Store trial data in multiple locations
 4. **Add license expiration** - Set time limits on licenses

@@ -2,7 +2,6 @@
 
 Effective Date: 2025-08-19
 Owner: Robert Zoumboulis-Airey (Greece)
-Contact: support@pospal.gr
 
 This document explains what POSPal does with data. POSPal is a local-first application that runs on your own Windows machine. It does not send your business data to any external server by default.
 
@@ -41,4 +40,4 @@ POSPal keeps files on your machine (typically in the `data/` folder next to the 
 ## Changes to this notice
 - This notice may be updated. Check the file packaged with your version or the project repository for updates.
 
-If you have any questions, contact: support@pospal.gr
+If you have any questions, contact your distributor.

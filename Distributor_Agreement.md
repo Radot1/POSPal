@@ -2,7 +2,6 @@
 
 Version: 0.1 (Draft for review)
 Owner: Robert Zoumboulis-Airey (Greece)
-Contact: support@pospal.gr
 
 This non-binding draft outlines key terms for a distributor relationship for POSPal. It is not legal advice; consult a qualified attorney to finalize.
 
@@ -14,10 +13,10 @@ This non-binding draft outlines key terms for a distributor relationship for POS
 - Owner appoints Distributor as a non-exclusive distributor of POSPal within: [Territory].
 - No sublicensing without prior written approval.
 
-## 3. Products and Licensing
+## 3. Products and Licensing (Reseller Model)
 - "Products": POSPal software licenses, delivered as license files (`license.key`) tied to customer hardware IDs.
-- Distributor may market and sell licenses to end customers within the Territory.
-- End users must accept Owner’s EULA.
+- Distributor may market and sell licenses to end customers within the Territory as a reseller; Distributor is not a licensor.
+- End users must accept Owner’s EULA; Distributor has no authority to modify the EULA or grant additional rights/warranties.
 
 ## 4. Ordering and Fulfillment
 - Distributor submits customer hardware IDs to Owner for license issuance (or uses an Owner-provided portal/tool if available).
@@ -30,7 +29,7 @@ This non-binding draft outlines key terms for a distributor relationship for POS
 - Currency: EUR, unless agreed otherwise.
 
 ## 6. Support and Responsibilities
-- Distributor provides first-line onboarding and installation support to customers.
+- Distributor provides first-line onboarding and installation support to customers and does not make commitments beyond Owner’s published features/EULA.
 - Owner provides product updates and second-line guidance on a reasonable-efforts basis.
 - Distributor ensures accurate customer information and complies with applicable laws.
 
@@ -49,6 +48,7 @@ This non-binding draft outlines key terms for a distributor relationship for POS
 ## 10. Warranties and Liability
 - SOFTWARE PROVIDED “AS IS”. OWNER DISCLAIMS ALL WARRANTIES TO THE MAXIMUM EXTENT PERMITTED BY LAW.
 - Liability cap: Total amounts paid by Distributor to Owner in the 12 months preceding the claim.
+ - Distributor will indemnify Owner for liabilities arising from Distributor’s unauthorized promises or deviations from Owner’s EULA/terms.
 
 ## 11. Term and Termination
 - Term: [e.g., 12 months], auto-renewing unless either party gives [30] days’ notice.
