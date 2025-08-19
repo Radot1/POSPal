@@ -9,7 +9,6 @@ A lightweight, web-based Point of Sale (POS) system designed for small restauran
 <br><br>
 <img src="https://img.shields.io/badge/version-1.0.5-blue" alt="Version">
 <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform">
-<img src="https://img.shields.io/badge/license-MIT-green" alt="License">
 </p>
 
 ✨ Features
@@ -44,7 +43,7 @@ Printer: 80mm thermal receipt printer (ESC/POS compatible)
 Browser: A modern web browser (like Chrome, Firefox, or Safari) on a device on the same local network (e.g., a tablet, laptop, or phone).
 
 🚀 Installation & Usage
-Download: Go to the Releases page and download the latest POSPal_vX.X.X.zip file.
+Download: Go to the Releases page and download the latest POSPal release.
 
 Unzip: Unzip the downloaded file to a permanent folder on your computer (e.g., C:\POSPal).
 
@@ -91,4 +90,4 @@ Go to the "Details" tab.
 Find POSPal.exe in the list, select it, and click "End task".
 
 📄 License
-This project is licensed under the MIT License - see the LICENSE.md file for details.
+This software is proprietary and licensed, not sold. Use is governed by the End User License Agreement (EULA). See EULA.md.

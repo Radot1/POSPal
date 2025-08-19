@@ -137,18 +137,24 @@ mkdir "%RELEASE_DIR%\data"
 rem Copy the executable from the temporary dist folder to the final release folder
 copy "dist\POSPal.exe" "%RELEASE_DIR%\"
 
-rem Copy essential config and data files from the parent (root) directory
-if exist "..\config.json" (
-    copy "..\config.json" "%RELEASE_DIR%\"
+rem Ensure data directory exists in release
+if not exist "%RELEASE_DIR%\data" mkdir "%RELEASE_DIR%\data"
+
+rem Move/copy config.json into data folder
+if exist "..\data\config.json" (
+    copy "..\data\config.json" "%RELEASE_DIR%\data\"
+) else if exist "..\config.json" (
+    echo [MIGRATE] Found legacy config.json in root. Moving into data folder.
+    copy "..\config.json" "%RELEASE_DIR%\data\config.json"
 ) else (
     echo [SETUP] No config.json found. Creating default config.
     (
         echo {
-        echo     "printer_name": "POSPalPDFTest",
+        echo     "printer_name": "Microsoft Print to PDF",
         echo     "port": 5000,
         echo     "management_password": "9999"
         echo }
-    ) > "%RELEASE_DIR%\config.json"
+    ) > "%RELEASE_DIR%\data\config.json"
 )
 
 rem Copy existing data files if they exist

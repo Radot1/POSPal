@@ -854,30 +854,35 @@ async function sendOrder() {
     const isDesktopUI = document.body.classList.contains('desktop-ui');
     let tableNumberForOrder = selectedTableNumber;
 
-    if (isDesktopUI) {
-        // Desktop UI doesn't have a table input, so we might need a default or prompt
-        if (!tableNumberForOrder) {
-            tableNumberForOrder = prompt("Please enter a Table Number for this order:", "1");
-            if (!tableNumberForOrder) {
-                 showToast('Table number is required to send the order.', 'warning');
-                 return;
-            }
-            selectedTableNumber = tableNumberForOrder; // Save for potential future use
-            localStorage.setItem(SELECTED_TABLE_KEY, selectedTableNumber);
+    // Require a table number on all UIs; no browser prompts
+    if (!tableNumberForOrder || tableNumberForOrder.trim() === "") {
+        showToast('Please select a table.', 'warning');
+        if (elements.headerTableContainer) {
+            elements.headerTableContainer.classList.add('ring-2', 'ring-red-500');
+            setTimeout(() => {
+                elements.headerTableContainer.classList.remove('ring-2', 'ring-red-500');
+            }, 2000);
         }
-    } else {
-         if (!tableNumberForOrder || tableNumberForOrder.trim() === "") {
-            showToast('Please select a table.', 'warning');
-            if (elements.headerTableContainer) {
-                elements.headerTableContainer.classList.add('ring-2', 'ring-red-500');
-                setTimeout(() => {
-                    elements.headerTableContainer.classList.remove('ring-2', 'ring-red-500');
-                }, 2000);
-            }
-            return;
-        }
+        return;
     }
 
+
+    // Preflight: block if printer not ready (no override)
+    try {
+        const sel = document.getElementById('printerSelect');
+        const name = sel && sel.value ? encodeURIComponent(sel.value) : '';
+        const statusResp = await fetch(`/api/printer/status?name=${name}`);
+        const info = await statusResp.json();
+        const code = typeof info.status_code === 'number' ? info.status_code : null;
+        const isPdf = (sel && sel.value || '').toLowerCase().includes('pdf');
+        if (isPdf || code === null || code !== 0) {
+            showToast('Printer not ready. Open Settings to fix and retry.', 'error', 7000);
+            return;
+        }
+    } catch (e) {
+        showToast('Unable to verify printer status. Please check printer and retry.', 'error', 7000);
+        return;
+    }
 
     elements.sendOrderBtn.disabled = true;
     elements.sendOrderBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Sending...';
@@ -1034,6 +1039,37 @@ function confirmNumpadInput() {
         }
     }
     hideNumpad();
+}
+
+function toggleDesktopNumpad() {
+    if (!document.body.classList.contains('desktop-ui')) return;
+    const full = document.getElementById('desktopNumpad');
+    const mini = document.getElementById('desktopNumpadMini');
+    if (!full || !mini) return;
+    const isFullVisible = !full.classList.contains('hidden');
+    if (isFullVisible) {
+        full.classList.add('hidden');
+        mini.classList.remove('hidden');
+    } else {
+        mini.classList.add('hidden');
+        full.classList.remove('hidden');
+    }
+}
+
+function toggleDesktopNotes() {
+    if (!document.body.classList.contains('desktop-ui')) return;
+    const el = document.getElementById('desktopNotesCard');
+    if (!el) return;
+    el.classList.toggle('hidden');
+}
+
+function expandDesktopNumpad() {
+    if (!document.body.classList.contains('desktop-ui')) return;
+    const full = document.getElementById('desktopNumpad');
+    const mini = document.getElementById('desktopNumpadMini');
+    if (!full || !mini) return;
+    mini.classList.add('hidden');
+    full.classList.remove('hidden');
 }
 
 async function handleTableNumberChange(event) {
@@ -1551,7 +1587,7 @@ function switchManagementTab(tabName, clickedButton) {
         }
     }
 
-    const views = ['analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement'];
+    const views = ['analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement', 'hardwarePrintingManagement'];
     views.forEach(id => {
         const view = document.getElementById(id);
         if (view) view.style.display = 'none';
@@ -1569,6 +1605,8 @@ function switchManagementTab(tabName, clickedButton) {
         loadTodaysOrdersForReprint();
     } else if (tabName === 'license') {
         loadHardwareId();
+    } else if (tabName === 'hardwarePrinting') {
+        initializeHardwarePrintingUI();
     }
 }
 
@@ -1592,6 +1630,173 @@ function loadManagementData() {
     renderExistingItemsInModal();
     renderExistingCategoriesInModal();
 }
+
+async function initializeHardwarePrintingUI() {
+    try {
+        // Load settings
+        const settingsResp = await fetch('/api/settings/printing');
+        const settings = await settingsResp.json();
+        const cutToggle = document.getElementById('cutAfterPrintToggle');
+        if (cutToggle) cutToggle.checked = !!settings.cut_after_print;
+        await refreshPrinters();
+    } catch (e) {
+        console.error('Failed to initialize Hardware & Printing UI:', e);
+    }
+}
+
+async function refreshPrinters() {
+    try {
+        const resp = await fetch('/api/printers');
+        const data = await resp.json();
+        const sel = document.getElementById('printerSelect');
+        if (!sel) return;
+        sel.innerHTML = '';
+        (data.printers || []).forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            if (name === data.selected) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        updatePrinterStatusDot();
+    } catch (e) {
+        console.error('Failed to load printers:', e);
+    }
+}
+
+async function updatePrinterStatusDot() {
+    try {
+        const sel = document.getElementById('printerSelect');
+        const dot = document.getElementById('printerStatusDot');
+        if (!sel || !dot) return;
+        const name = encodeURIComponent(sel.value || '');
+        const resp = await fetch(`/api/printer/status?name=${name}`);
+        const info = await resp.json();
+        let statusText = 'Unknown';
+        let color = '#6b7280';
+        if (info && typeof info.status_code === 'number') {
+            const code = info.status_code;
+            // Map 0 to Unknown (gray) instead of Ready; Ready will be set only after a successful print
+            if (code !== 0) { statusText = 'Attention'; color = '#f59e0b'; }
+            else { statusText = 'Unknown'; color = '#6b7280'; }
+        } else if (info && info.error) {
+            statusText = 'Offline'; color = '#ef4444';
+        }
+        dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:${color}"></span><span>${statusText}</span></span>`;
+    } catch (e) {
+        console.error('Failed to update printer status:', e);
+    }
+}
+
+async function saveSelectedPrinter() {
+    try {
+        const sel = document.getElementById('printerSelect');
+        if (!sel) return;
+        const resp = await fetch('/api/printer/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ printer_name: sel.value })
+        });
+        const res = await resp.json();
+        if (res.success) {
+            showToast('Default printer saved.', 'success');
+            updatePrinterStatusDot();
+        } else {
+            showToast(res.message || 'Failed to save printer.', 'error');
+        }
+    } catch (e) {
+        showToast('Error saving printer.', 'error');
+    }
+}
+
+async function testPrint() {
+    const btn = event && event.target && event.target.closest('button');
+    const resultEl = document.getElementById('lastTestPrintResult');
+    try {
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Testing...'; }
+        const resp = await fetch('/api/printer/test', { method: 'POST' });
+        const res = await resp.json();
+        if (res.success) {
+            if (resultEl) { resultEl.textContent = `Last test: Success (Printed) ${new Date().toLocaleTimeString()}`; resultEl.className = 'text-xs text-green-600'; }
+            const dot = document.getElementById('printerStatusDot');
+            if (dot) dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style=\"width:10px;height:10px;border-radius:9999px;background:#16a34a\"></span><span>Ready</span></span>`;
+        } else {
+            if (resultEl) { resultEl.textContent = `Last test: Failed (${new Date().toLocaleTimeString()})`; resultEl.className = 'text-xs text-red-600'; }
+            showToast(res.message || 'Test print failed.', 'error');
+        }
+    } catch (e) {
+        if (resultEl) { resultEl.textContent = `Last test: Error (${new Date().toLocaleTimeString()})`; resultEl.className = 'text-xs text-red-600'; }
+        showToast('Error performing test print.', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Test Print'; }
+    }
+}
+
+async function openPdfFolder() {
+    try {
+        const resp = await fetch('/api/open_pdf_folder', { method: 'POST' });
+        const res = await resp.json();
+        if (!res.success) {
+            showToast(res.message || 'Could not open PDF folder.', 'error');
+        }
+    } catch (e) {
+        showToast('Error opening PDF folder.', 'error');
+    }
+}
+
+async function changeManagementPassword() {
+    try {
+        const currentEl = document.getElementById('currentPasswordInput');
+        const newEl = document.getElementById('newPasswordInput');
+        const confirmEl = document.getElementById('confirmPasswordInput');
+        const current = currentEl ? currentEl.value : '';
+        const next = newEl ? newEl.value : '';
+        const confirm = confirmEl ? confirmEl.value : '';
+        if (next !== confirm) {
+            showToast('New and confirm do not match.', 'warning');
+            return;
+        }
+        const resp = await fetch('/api/settings/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: current, new_password: next })
+        });
+        const res = await resp.json();
+        if (res.success) {
+            showToast('Password updated.', 'success');
+            if (currentEl) currentEl.value = '';
+            if (newEl) newEl.value = '';
+            if (confirmEl) confirmEl.value = '';
+        } else {
+            showToast(res.message || 'Failed to update password.', 'error');
+        }
+    } catch (e) {
+        showToast('Error updating password.', 'error');
+    }
+}
+
+// Persist settings when toggles change
+document.addEventListener('change', async (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement)) return;
+    const id = target.id;
+    if (id === 'cutAfterPrintToggle') {
+        try {
+            const payload = {};
+            payload.cut_after_print = target.checked;
+            const resp = await fetch('/api/settings/printing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const res = await resp.json();
+            if (!res.success) showToast(res.message || 'Failed to save setting.', 'error');
+        } catch (err) {
+            showToast('Error saving setting.', 'error');
+        }
+    } else if (id === 'printerSelect') {
+        updatePrinterStatusDot();
+    }
+});
 
 function renderExistingItemsInModal() {
     if (!elements.existingItemsListModal) return;

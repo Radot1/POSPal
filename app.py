@@ -39,7 +39,8 @@ APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A  # Use a strong secret key
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
 ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock file for order counter
-CONFIG_FILE = os.path.join(BASE_DIR, 'config.json')
+CONFIG_FILE_OLD = os.path.join(BASE_DIR, 'config.json')
+CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
 
 # --- NEW: Centralized State Management Files ---
 CURRENT_ORDER_FILE = os.path.join(DATA_DIR, 'current_order.json')
@@ -68,6 +69,10 @@ PartialCut = GS + b'V\x01' # Or m=66 for some printers
 
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
+
+"""
+PDF fallback has been removed. Printing must succeed to submit an order.
+"""
 
 # --- NEW: Centralized State Management Functions ---
 def load_centralized_state():
@@ -213,10 +218,23 @@ def load_config():
     os.makedirs(DATA_DIR, exist_ok=True)
     
     defaults = {
-        "printer_name": "80mm Series Printer",
+        "printer_name": "Microsoft Print to PDF",
         "port": 5000,
-        "management_password": "9999" # Default password
+        "management_password": "9999", # Default password
+        "cut_after_print": True
     }
+    # Migrate legacy config.json (root) to data/config.json if needed
+    try:
+        if not os.path.exists(CONFIG_FILE) and os.path.exists(CONFIG_FILE_OLD):
+            try:
+                os.replace(CONFIG_FILE_OLD, CONFIG_FILE)
+            except Exception:
+                # Fallback to copy if replace fails (e.g., cross-device)
+                with open(CONFIG_FILE_OLD, 'r') as _src, open(CONFIG_FILE, 'w') as _dst:
+                    _dst.write(_src.read())
+    except Exception as e:
+        app.logger.warning(f"Config migration warning: {e}")
+
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
@@ -229,6 +247,7 @@ def load_config():
 config = load_config()
 PRINTER_NAME = config["printer_name"]
 MANAGEMENT_PASSWORD = str(config["management_password"]) # Ensure password is a string
+CUT_AFTER_PRINT = bool(config.get("cut_after_print", True))
 
 # Disable debug mode
 app.config['DEBUG'] = False
@@ -248,6 +267,32 @@ def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
     if isinstance(s, bytes):
         return s
     return s.encode(encoding, errors='replace') # 'replace' will put a ? for unmappable chars
+    
+def save_config(updated_values: dict):
+    """Merge-update CONFIG_FILE atomically and refresh globals."""
+    global config, PRINTER_NAME, MANAGEMENT_PASSWORD, CUT_AFTER_PRINT
+    try:
+        existing = {}
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                try:
+                    existing = json.load(f) or {}
+                except json.JSONDecodeError:
+                    existing = {}
+        merged = {**load_config(), **existing, **updated_values}
+        tmp = CONFIG_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(merged, f, indent=4)
+        os.replace(tmp, CONFIG_FILE)
+        # refresh globals
+        config = merged
+        PRINTER_NAME = config.get("printer_name", PRINTER_NAME)
+        MANAGEMENT_PASSWORD = str(config.get("management_password", MANAGEMENT_PASSWORD))
+        CUT_AFTER_PRINT = bool(config.get("cut_after_print", CUT_AFTER_PRINT))
+        return True
+    except Exception as e:
+        app.logger.error(f"Failed to save config: {e}")
+        return False
     
 def store_trial_in_registry(first_run_date, signature):
     """Store trial data in Windows Registry"""
@@ -448,6 +493,105 @@ def login():
         return jsonify({"success": False, "message": "Invalid password."}), 401
 
 
+@app.route('/api/printers', methods=['GET'])
+def get_printers():
+    return jsonify({"printers": list_installed_printers(), "selected": PRINTER_NAME})
+
+
+@app.route('/api/printer/status', methods=['GET'])
+def printer_status():
+    name = request.args.get('name', PRINTER_NAME)
+    try:
+        h = win32print.OpenPrinter(name)
+        try:
+            info = win32print.GetPrinter(h, 2)
+        finally:
+            win32print.ClosePrinter(h)
+        status_code = info.get('Status', 0)
+        return jsonify({"name": name, "status_code": status_code})
+    except Exception as e:
+        return jsonify({"name": name, "error": str(e)}), 200
+
+
+@app.route('/api/printer/select', methods=['POST'])
+def select_printer():
+    data = request.get_json() or {}
+    name = data.get('printer_name')
+    if not name:
+        return jsonify({"success": False, "message": "printer_name is required"}), 400
+    if save_config({"printer_name": name}):
+        return jsonify({"success": True, "printer_name": PRINTER_NAME})
+    return jsonify({"success": False, "message": "Failed to save."}), 500
+
+
+@app.route('/api/printer/test', methods=['POST'])
+def test_print():
+    try:
+        # Provide clearer error messages for common failures
+        trial = check_trial_status()
+        if not trial.get('active', False):
+            return jsonify({
+                "success": False,
+                "message": "Trial expired or inactive. Printing disabled."
+            }), 200
+
+        test_order = {
+            'number': 'TEST',
+            'tableNumber': 'N/A',
+            'items': [
+                {"name": "POSPal Test", "quantity": 1, "itemPriceWithModifiers": 0.00}
+            ],
+            'universalComment': ''
+        }
+        # Reset fallback flag and attempt
+        global last_print_used_fallback
+        last_print_used_fallback = False
+        ok = print_kitchen_ticket(test_order, copy_info="Test Print")
+        if ok:
+            return jsonify({"success": True})
+        # If failed and looks like a PDF-type printer, clarify unsupported
+        name_lower = str(PRINTER_NAME).lower()
+        if 'pdf' in name_lower:
+            return jsonify({"success": False, "message": "Selected printer is a PDF device and is not supported for ticket printing."}), 200
+        return jsonify({"success": False, "message": "Test print failed. See server log for details."}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 200
+
+
+@app.route('/api/settings/printing', methods=['GET', 'POST'])
+def printing_settings():
+    if request.method == 'GET':
+        return jsonify({
+            "printer_name": PRINTER_NAME,
+            "cut_after_print": CUT_AFTER_PRINT
+        })
+    data = request.get_json() or {}
+    values = {}
+    for key in ["printer_name", "cut_after_print"]:
+        if key in data:
+            values[key] = data[key]
+    if not values:
+        return jsonify({"success": False, "message": "No settings provided."}), 400
+    if save_config(values):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "message": "Failed to save settings."}), 500
+
+
+@app.route('/api/settings/password', methods=['POST'])
+def change_password():
+    data = request.get_json() or {}
+    current_pw = str(data.get('current_password', ''))
+    new_pw = str(data.get('new_password', ''))
+    if current_pw != MANAGEMENT_PASSWORD:
+        return jsonify({"success": False, "message": "Current password is incorrect."}), 200
+    if new_pw is None or new_pw == "":
+        return jsonify({"success": False, "message": "New password cannot be empty."}), 200
+    if save_config({"management_password": new_pw}):
+        return jsonify({"success": True, "message": "Password updated."})
+    return jsonify({"success": False, "message": "Failed to update password."}), 500
+
+
+## PDF folder opening removed with PDF fallback deprecation
 # --- NEW ENDPOINT to get app version ---
 @app.route('/api/version')
 def get_version():
@@ -540,6 +684,8 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
     all printer resources are properly closed in all scenarios.
     """
     # 1. Pre-flight checks (no resources opened yet)
+    global last_print_used_fallback
+    last_print_used_fallback = False
     trial_status = check_trial_status()
     if not trial_status.get("active", False):
         app.logger.warning("Printing blocked - trial expired")
@@ -547,6 +693,11 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
     if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
         app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print order #{order_data.get('number', 'N/A')}.")
+        return False
+
+    # PDF printers are not supported for ticket printing anymore
+    if 'pdf' in str(PRINTER_NAME).lower():
+        app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for ticket printing.")
         return False
 
     # 2. Build the ticket content (can fail without opening resources)
@@ -665,7 +816,8 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
         ticket_content += SelectFontA + AlignLeft
         ticket_content += to_bytes("\n\n\n\n") 
-        ticket_content += FullCut
+        if CUT_AFTER_PRINT:
+            ticket_content += FullCut
 
     except Exception as e_build:
         app.logger.error(f"Error building ticket content for order #{order_data.get('number', 'N/A')}: {str(e_build)}")
@@ -700,6 +852,12 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         if active_problems:
             problems_string = ", ".join(active_problems)
             app.logger.error(f"Printer '{PRINTER_NAME}' reported problem(s): {problems_string}. Order will not be printed.")
+            # Attempt PDF fallback if enabled
+            if PDF_FALLBACK_ENABLED:
+                if generate_pdf_ticket(order_data, copy_info, original_timestamp_str):
+                    app.logger.info("PDF fallback used due to printer status problems.")
+                    last_print_used_fallback = True
+                    return True
             return False # Finally will close the handle
 
         app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with print.")
@@ -719,6 +877,12 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
     except (win32print.error, Exception) as e:
         order_id_str = f"order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}"
         app.logger.error(f"A printing error occurred for {order_id_str} with printer '{PRINTER_NAME}'. Error: {str(e)}")
+        # Attempt PDF fallback if enabled
+        if PDF_FALLBACK_ENABLED:
+            if generate_pdf_ticket(order_data, copy_info, original_timestamp_str):
+                app.logger.info("PDF fallback used due to printing exception.")
+                last_print_used_fallback = True
+                return True
         return False
         
     finally:
@@ -804,6 +968,22 @@ def record_order_in_csv(order_data, print_status_message):
         return False
 
 
+## PDF ticket generation removed
+
+
+def list_installed_printers():
+    try:
+        flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+        printers = win32print.EnumPrinters(flags)
+        names = []
+        for p in printers:
+            name = p[2] if len(p) > 2 else None
+            if name:
+                names.append(name)
+        return names
+    except Exception as e:
+        app.logger.error(f"Failed to enumerate printers: {e}")
+        return []
 @app.route('/api/orders', methods=['POST'])
 def handle_order():
     # Check trial status
