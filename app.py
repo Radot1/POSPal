@@ -14,6 +14,7 @@ import hashlib
 import logging
 import sys  # Added for auto-update functionality
 from collections import Counter, defaultdict # Added for analytics
+import atexit
 
 
 app = Flask(__name__)
@@ -51,6 +52,82 @@ ORDER_LINE_COUNTER_FILE = os.path.join(DATA_DIR, 'order_line_counter.json')
 UNIVERSAL_COMMENT_FILE = os.path.join(DATA_DIR, 'universal_comment.json')
 SELECTED_TABLE_FILE = os.path.join(DATA_DIR, 'selected_table.json')
 DEVICE_SESSIONS_FILE = os.path.join(DATA_DIR, 'device_sessions.json')
+
+# --- Single-instance guard (Windows mutex with lock-file fallback) ---
+SINGLE_INSTANCE_MUTEX_NAME = r"Global\\POSPalServerSingleton"
+APP_INSTANCE_LOCK_FILE = os.path.join(DATA_DIR, 'app_instance.lock')
+_instance_mutex_handle = None
+_lock_file_fd = None
+
+def acquire_single_instance_lock():
+    """Ensure only one backend instance runs on this machine.
+
+    Strategy:
+    - First try a Windows named mutex (works best on Windows; requires pywin32).
+    - If that fails, fall back to a simple lock file created with O_EXCL.
+    """
+    global _instance_mutex_handle, _lock_file_fd
+
+    # Try Windows named mutex first
+    try:
+        import win32event  # type: ignore
+        import win32api    # type: ignore
+        import winerror    # type: ignore
+
+        _instance_mutex_handle = win32event.CreateMutex(None, False, SINGLE_INSTANCE_MUTEX_NAME)
+        last_error = win32api.GetLastError()
+        if last_error == winerror.ERROR_ALREADY_EXISTS:
+            logging.error("Another POSPal instance is already running (mutex). Exiting.")
+            return False
+        logging.info("Acquired single-instance mutex: %s", SINGLE_INSTANCE_MUTEX_NAME)
+        return True
+    except Exception as e:
+        logging.warning("Mutex guard unavailable (%s). Falling back to lock file.", str(e))
+
+    # Fallback: lock file
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        _lock_file_fd = os.open(APP_INSTANCE_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        os.write(_lock_file_fd, str(os.getpid()).encode())
+        logging.info("Acquired single-instance lock file: %s", APP_INSTANCE_LOCK_FILE)
+        return True
+    except FileExistsError:
+        logging.error("Another POSPal instance is already running (lock file). Exiting.")
+        return False
+    except Exception as e:
+        logging.error("Failed to acquire single-instance lock: %s", str(e))
+        return False
+
+def release_single_instance_lock():
+    """Release resources for the single-instance guard."""
+    global _instance_mutex_handle, _lock_file_fd
+    try:
+        if _instance_mutex_handle is not None:
+            try:
+                import win32api  # type: ignore
+                win32api.CloseHandle(_instance_mutex_handle)
+            except Exception:
+                pass
+            _instance_mutex_handle = None
+    except Exception:
+        pass
+
+    try:
+        if _lock_file_fd is not None:
+            try:
+                os.close(_lock_file_fd)
+            except Exception:
+                pass
+            _lock_file_fd = None
+        if os.path.exists(APP_INSTANCE_LOCK_FILE):
+            try:
+                os.remove(APP_INSTANCE_LOCK_FILE)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+atexit.register(release_single_instance_lock)
 
 # --- ESC/POS Commands ---
 ESC = b'\x1B'
@@ -120,12 +197,44 @@ def load_centralized_state():
         except FileNotFoundError:
             state['selected_table'] = ""
     
-    # Load device sessions
+    # Load device sessions (tolerate legacy formats and migrate)
     if os.path.exists(DEVICE_SESSIONS_FILE):
         try:
             with open(DEVICE_SESSIONS_FILE, 'r', encoding='utf-8') as f:
-                state['device_sessions'] = json.load(f)
+                raw_sessions = json.load(f)
+
+            migrated = {}
+            if isinstance(raw_sessions, dict):
+                # Legacy shape: {"sessions": [...]} or correct dict mapping
+                if 'sessions' in raw_sessions and isinstance(raw_sessions['sessions'], list):
+                    for entry in raw_sessions['sessions']:
+                        if isinstance(entry, dict):
+                            device_id = entry.get('device_id') or entry.get('id') or entry.get('device')
+                            if device_id:
+                                migrated[device_id] = {k: v for k, v in entry.items() if k not in ('device_id','id','device')}
+                    # Persist migrated structure
+                    if save_centralized_state('device_sessions', migrated):
+                        state['device_sessions'] = migrated
+                    else:
+                        state['device_sessions'] = migrated
+                else:
+                    state['device_sessions'] = raw_sessions
+            elif isinstance(raw_sessions, list):
+                for entry in raw_sessions:
+                    if isinstance(entry, dict):
+                        device_id = entry.get('device_id') or entry.get('id') or entry.get('device')
+                        if device_id:
+                            migrated[device_id] = {k: v for k, v in entry.items() if k not in ('device_id','id','device')}
+                if save_centralized_state('device_sessions', migrated):
+                    state['device_sessions'] = migrated
+                else:
+                    state['device_sessions'] = migrated
+            else:
+                state['device_sessions'] = {}
         except (json.JSONDecodeError, FileNotFoundError):
+            state['device_sessions'] = {}
+        except Exception as e:
+            app.logger.warning(f"Device sessions file in unexpected format: {e}")
             state['device_sessions'] = {}
     
     return state
@@ -2013,6 +2122,10 @@ if getattr(sys, 'frozen', False):
     threading.Timer(5, check_for_updates).start()
 
 if __name__ == '__main__':
+    # Ensure single instance
+    if not acquire_single_instance_lock():
+        sys.exit(1)
+
     initialize_trial()
     # Verify we can write to DATA_DIR
     try:
