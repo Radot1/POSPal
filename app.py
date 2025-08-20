@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.6"  # Update this with each release
+CURRENT_VERSION = "1.0.7"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -15,6 +15,8 @@ import logging
 import sys  # Added for auto-update functionality
 from collections import Counter, defaultdict # Added for analytics
 import atexit
+import socket
+import subprocess
 
 
 app = Flask(__name__)
@@ -679,6 +681,111 @@ def serve_pospal_core():
 @app.route('/test_centralized.html')
 def serve_test_centralized():
     return send_from_directory('.', 'test_centralized.html')
+
+# --- Health check & network info ---
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"})
+
+
+def _get_best_lan_ip() -> str:
+    """Attempt to determine the primary LAN IPv4 address without extra deps."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            # Doesn't need to be reachable; no packets are sent
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
+    except Exception:
+        try:
+            # Fallback to gethostbyname
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return '127.0.0.1'
+
+
+def _get_all_ipv4_addresses(best_ip: str) -> list:
+    results = set()
+    if best_ip:
+        results.add(best_ip)
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, family=socket.AF_INET)
+        for info in infos:
+            ip = info[4][0]
+            if ip:
+                results.add(ip)
+    except Exception:
+        pass
+    # Include localhost for completeness
+    results.add('127.0.0.1')
+    return sorted(results)
+
+
+@app.route('/api/network_info')
+def network_info():
+    try:
+        port = int(config.get('port', 5000))
+        lan_ip = _get_best_lan_ip()
+        ips = _get_all_ipv4_addresses(lan_ip)
+        return jsonify({
+            "port": port,
+            "lan_ip": lan_ip,
+            "ips": ips
+        })
+    except Exception as e:
+        app.logger.error(f"Error building network info: {str(e)}")
+        return jsonify({
+            "port": int(config.get('port', 5000)),
+            "lan_ip": '127.0.0.1',
+            "ips": ['127.0.0.1']
+        }), 200
+
+
+@app.route('/api/windows_firewall/open_port', methods=['POST'])
+def open_windows_firewall_port():
+    """Attempt to open the configured port in Windows Defender Firewall.
+
+    Security:
+    - Only accepts requests from localhost.
+    - Only allows adding an allow rule for the app's configured TCP port.
+    """
+    try:
+        # Allow only local machine to trigger this
+        client_ip = get_remote_address()
+        if client_ip not in ('127.0.0.1', '::1'):
+            return jsonify({"success": False, "message": "Forbidden"}), 403
+
+        if os.name != 'nt':
+            return jsonify({"success": False, "message": "Windows-only operation"}), 400
+
+        body = request.get_json(silent=True) or {}
+        port = int(body.get('port', config.get('port', 5000)))
+        rule_name = f"POSPal {port}"
+
+        cmd = [
+            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+            f'name={rule_name}', 'dir=in', 'action=allow', 'protocol=TCP', f'localport={port}'
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Failed to start command: {str(e)}"}), 200
+
+        stdout = (result.stdout or '').strip()
+        stderr = (result.stderr or '').strip()
+        if result.returncode == 0:
+            return jsonify({"success": True, "message": stdout or "Firewall rule added."})
+
+        # Common failure: requires elevation
+        msg = stderr or stdout or "Command failed. Administrator privileges may be required."
+        if 'requires elevation' in msg.lower() or 'access is denied' in msg.lower():
+            return jsonify({
+                "success": False,
+                "message": "Access denied. Please run POSPal as Administrator or copy and run the command in an elevated prompt.",
+                "details": msg
+            })
+        return jsonify({"success": False, "message": msg})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 200
 
 # --- NEW ENDPOINT for Login ---
 @app.route('/api/login', methods=['POST'])
