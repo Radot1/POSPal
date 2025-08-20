@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>POSPal Desktop Demo</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+	<style>
+		body { font-family: 'Inter', sans-serif; }
+		.btn-primary { background-color: #111827; color: white; }
+		.btn-primary:hover { background-color: #1f2937; }
+		.btn-secondary { background-color: #e5e7eb; color: #1f2937; border: 1px solid #d1d5db; }
+		.order-item.selected-for-numpad { background-color: #eff6ff !important; border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+	</style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+	<div class="bg-yellow-400 text-yellow-900 text-center text-sm font-semibold p-2 sticky top-0 z-50">
+		DEMO MODE: Saving and printing are disabled. Data is stored locally.
+	</div>
+
+	<div class="desktop-ui flex h-[calc(100vh-40px)]">
+		<!-- Left: Order -->
+		<div class="w-1/3 max-w-md flex flex-col p-3 gap-2 bg-gray-50 border-r border-gray-300 h-full overflow-hidden">
+			<div class="bg-gray-900 text-white p-3 rounded-lg">
+				<div class="flex justify-between items-center">
+					<h1 class="text-xl font-bold tracking-wider">POS<span class="text-green-400">Pal</span></h1>
+					<div class="mt-1 flex items-center space-x-2 bg-gray-700 px-3 py-1 rounded-md">
+						<label for="header-table-input" class="cursor-pointer"><i class="fas fa-chair text-white"></i></label>
+						<input type="text" id="header-table-input" class="bg-transparent text-white font-semibold w-24 focus:outline-none placeholder-gray-400" placeholder="Table #">
+					</div>
+				</div>
+			</div>
+			<div class="flex-1 bg-white p-3 rounded-lg shadow-md flex flex-col min-h-0">
+				<div class="flex items-center justify-between mb-2 flex-shrink-0">
+					<h2 class="text-xl font-bold">Order #<span id="order-number-desktop">1</span></h2>
+				</div>
+				<div id="order-items-container" class="flex-1 overflow-y-auto -mr-2 pr-2 space-y-1 min-h-0">
+					<p id="empty-order-message" class="text-gray-500 text-center py-8 italic">Your order is empty.</p>
+				</div>
+				<div id="order-total" class="text-2xl font-bold text-right mt-4 pt-4 border-top border-gray-200 flex-shrink-0">Total: €0.00</div>
+			</div>
+			<div class="flex gap-3">
+				<button onclick="newOrder()" class="w-full py-3 text-lg font-semibold rounded-lg btn-secondary transition">New Order</button>
+				<button id="sendOrderBtn" onclick="sendOrder()" class="w-full py-3 text-lg font-semibold rounded-lg btn-primary transition">Send Order</button>
+			</div>
+		</div>
+
+		<!-- Right: Menu -->
+		<div class="w-2/3 flex-1 flex flex-col p-4 h-full overflow-hidden">
+			<div id="category-section" class="mb-4 pb-4 border-b border-gray-300 flex-shrink-0">
+				<div id="categories" class="flex flex-wrap gap-2"></div>
+			</div>
+			<div id="products" class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3 overflow-y-auto flex-1 content-start"></div>
+		</div>
+	</div>
+
+	<!-- Toast -->
+	<div id="toast" class="fixed top-5 right-5 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[2000] hidden opacity-0 transition-opacity duration-300">
+		<span id="toast-message">Toast message here</span>
+	</div>
+
+	<script>
+		const DEMO_MODE = true;
+		const LOCAL_STORAGE_PREFIX = 'pospalDemoSteakhouseDesktop';
+		const MOCK_MENU_DATA = {
+			"Steaks": [
+				{"id": 1, "name": "Ribeye Steak (300g)", "price": 28.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Peppercorn Sauce", "priceChange": 2.00}, {"name": "Mushroom Sauce", "priceChange": 2.00}]},
+				{"id": 2, "name": "Filet Mignon (250g)", "price": 34.00, "hasGeneralOptions": true, "generalOptions": [{"name": "Red Wine Jus", "priceChange": 2.50}]},
+				{"id": 3, "name": "T-Bone Steak (500g)", "price": 45.00, "hasGeneralOptions": false, "generalOptions": []},
+				{"id": 4, "name": "Sirloin Steak (280g)", "price": 25.00, "hasGeneralOptions": false, "generalOptions": []}
+			],
+			"Burgers": [
+				{"id": 10, "name": "Classic Cheeseburger", "price": 14.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Extra Bacon", "priceChange": 2.00}, {"name": "Double Patty", "priceChange": 4.00}]},
+				{"id": 11, "name": "Spicy Chicken Burger", "price": 13.00, "hasGeneralOptions": false, "generalOptions": []},
+				{"id": 12, "name": "Veggie Burger", "price": 12.50, "hasGeneralOptions": true, "generalOptions": [{"name": "Vegan Cheese", "priceChange": 1.50}]}
+			],
+			"Sides": [
+				{"id": 20, "name": "French Fries", "price": 4.00, "hasGeneralOptions": false, "generalOptions": []},
+				{"id": 21, "name": "Onion Rings", "price": 5.50, "hasGeneralOptions": false, "generalOptions": []},
+				{"id": 22, "name": "Side Salad", "price": 6.00, "hasGeneralOptions": false, "generalOptions": []}
+			],
+			"Drinks": [
+				{"id": 30, "name": "Coca-Cola", "price": 3.00, "hasGeneralOptions": false, "generalOptions": []},
+				{"id": 31, "name": "Craft Beer", "price": 6.50, "hasGeneralOptions": false, "generalOptions": []},
+				{"id": 32, "name": "House Red Wine", "price": 7.00, "hasGeneralOptions": false, "generalOptions": []}
+			]
+		};
+
+		let menu = {};
+		let selectedCategory = null;
+		let currentOrder = JSON.parse(localStorage.getItem(LOCAL_STORAGE_PREFIX + 'CurrentOrder')) || [];
+		let orderNumber = parseInt(localStorage.getItem(LOCAL_STORAGE_PREFIX + 'OrderNumber')) || 1;
+
+		const els = {};
+		function $(id){ return document.getElementById(id); }
+
+		document.addEventListener('DOMContentLoaded', () => {
+			cacheEls();
+			init();
+			renderCategories();
+			updateOrderDisplay();
+		});
+
+		function cacheEls(){
+			els.categories = $('categories');
+			els.products = $('products');
+			els.orderItems = $('order-items-container');
+			els.emptyOrderMsg = $('empty-order-message');
+			els.orderTotal = $('order-total');
+			els.orderNumber = $('order-number-desktop');
+		}
+
+		function init(){
+			menu = JSON.parse(localStorage.getItem(LOCAL_STORAGE_PREFIX + 'Menu')) || JSON.parse(JSON.stringify(MOCK_MENU_DATA));
+			selectedCategory = Object.keys(menu)[0] || null;
+			els.orderNumber.textContent = orderNumber;
+		}
+
+		function renderCategories(){
+			els.categories.innerHTML = '';
+			Object.keys(menu).forEach(cat => {
+				const btn = document.createElement('button');
+				btn.className = `px-3 py-1.5 rounded border ${cat===selectedCategory? 'bg-gray-900 text-white border-gray-900':'bg-white text-gray-800 border-gray-300'}`;
+				btn.textContent = cat;
+				btn.onclick = () => { selectedCategory = cat; renderProducts(); };
+				els.categories.appendChild(btn);
+			});
+			renderProducts();
+		}
+
+		function renderProducts(){
+			els.products.innerHTML = '';
+			(menu[selectedCategory]||[]).forEach(item => {
+				const card = document.createElement('div');
+				card.className = 'bg-white rounded-lg shadow border p-3 cursor-pointer hover:shadow-md';
+				card.onclick = () => addToOrder(item);
+				card.innerHTML = `
+					<h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
+					<p class="text-lg font-bold text-black">€${item.price.toFixed(2)}</p>
+				`;
+				els.products.appendChild(card);
+			});
+		}
+
+		function addToOrder(item){
+			const orderItem = { ...item, quantity: 1, orderId: `${item.id}-${Date.now()}` };
+			currentOrder.push(orderItem);
+			updateOrderDisplay();
+		}
+
+		function updateOrderDisplay(){
+			els.orderItems.innerHTML = '';
+			let total = 0;
+			if(currentOrder.length === 0){
+				els.emptyOrderMsg.style.display = 'block';
+			} else {
+				els.emptyOrderMsg.style.display = 'none';
+				currentOrder.forEach(item => {
+					total += (item.price||0) * item.quantity;
+					const row = document.createElement('div');
+					row.className = 'order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm';
+					row.innerHTML = `
+						<div class="flex-grow pr-2">
+							<span class="font-medium text-gray-800">${item.name}</span>
+						</div>
+						<div class="flex items-center gap-2">
+							<button class="px-2" onclick="changeQty('${item.orderId}', -1)">-</button>
+							<span class="w-6 text-center">${item.quantity}</span>
+							<button class="px-2" onclick="changeQty('${item.orderId}', 1)">+</button>
+							<span class="font-semibold">€${((item.price||0)*item.quantity).toFixed(2)}</span>
+							<button class="text-red-600" onclick="removeItem('${item.orderId}')"><i class="fas fa-trash"></i></button>
+						</div>`;
+					els.orderItems.appendChild(row);
+				});
+			}
+			document.getElementById('order-total').textContent = `Total: €${total.toFixed(2)}`;
+			localStorage.setItem(LOCAL_STORAGE_PREFIX + 'CurrentOrder', JSON.stringify(currentOrder));
+		}
+
+		function changeQty(orderId, delta){
+			const item = currentOrder.find(i => i.orderId === orderId);
+			if(!item) return;
+			item.quantity += delta;
+			if(item.quantity <= 0){ removeItem(orderId); } else { updateOrderDisplay(); }
+		}
+
+		function removeItem(orderId){
+			currentOrder = currentOrder.filter(i => i.orderId !== orderId);
+			updateOrderDisplay();
+		}
+
+		function newOrder(){
+			if(currentOrder.length && !confirm('Clear current order?')) return;
+			currentOrder = [];
+			updateOrderDisplay();
+			showToast('Order cleared.');
+		}
+
+		function sendOrder(){
+			if(!currentOrder.length){ showToast('Order is empty!', 'warning'); return; }
+			document.getElementById('sendOrderBtn').disabled = true;
+			document.getElementById('sendOrderBtn').innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Sending...';
+			setTimeout(() => {
+				showToast(`Order #${orderNumber} Sent! (Demo Mode)`, 'success');
+				orderNumber++;
+				localStorage.setItem(LOCAL_STORAGE_PREFIX + 'OrderNumber', orderNumber.toString());
+				newOrder();
+				document.getElementById('sendOrderBtn').disabled = false;
+				document.getElementById('sendOrderBtn').textContent = 'Send Order';
+				$('order-number-desktop').textContent = orderNumber;
+			}, 800);
+		}
+
+		let toastTimeout;
+		function showToast(message, type='info', duration=2000){
+			const toast = $('toast');
+			const msg = $('toast-message');
+			clearTimeout(toastTimeout);
+			msg.textContent = message;
+			toast.classList.remove('hidden');
+			toast.style.opacity = 0;
+			setTimeout(()=> toast.style.opacity = 1, 10);
+			toast.style.backgroundColor = (type==='success') ? '#16a34a' : (type==='warning' ? '#f59e0b' : '#1f2937');
+			toastTimeout = setTimeout(()=>{ toast.style.opacity = 0; setTimeout(()=> toast.classList.add('hidden'), 300); }, duration);
+		}
+	</script>
+</body>
+</html>
+
+

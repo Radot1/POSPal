@@ -330,7 +330,11 @@
                 <p id="info-text">Click any station on the map to learn more about the journey.</p>
             </div>
             <div class="mt-3 sm:mt-4 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-x-4 cta-container">
-                <a id="cta-step2" href="#distributors" class="cta-button cta-primary w-full sm:w-auto">
+                <a id="cta-demo" href="POSPal_Demo_Index.html" class="cta-button cta-primary w-full sm:w-auto">
+                    <i class="fas fa-play mr-2"></i>
+                    <span>Interactive Demo</span>
+                </a>
+                <a id="cta-step2" href="#distributors" class="cta-button cta-secondary w-full sm:w-auto">
                     <i class="fas fa-shopping-cart mr-2"></i>
                     <span>Buy License</span>
                 </a>
@@ -416,7 +420,7 @@
         </div>
     </section>
     
-    <footer class="bg-gray-900 text-gray-400 py-12"><div class="container mx-auto px-6"><div class="grid md:grid-cols-4 gap-8"><div><h4 class="text-white text-lg font-bold mb-4">POSPal</h4><p class="text-sm text-gray-300">Affordable POS solutions for small businesses</p><div class="mt-3"><a href="https://www.instagram.com/pospalsoftware/" target="_blank" class="text-gray-300 hover:text-white"><i class="fab fa-instagram mr-2"></i>@pospalsoftware</a></div></div><div><h4 class="text-white text-lg font-bold mb-4">Licensing</h4><ul class="space-y-2 text-sm text-gray-300"><li><a href="#distributors" class="hover:text-white"><i class="fas fa-store mr-2"></i>Find a Distributor</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Resources</h4><ul class="space-y-2 text-sm"><li class="text-gray-300"><a href="#" class="hover:text-white">Documentation</a></li><li class="text-gray-300"><a href="POSPal_Demo.html" target="_blank" class="hover:text-white">Interactive Demo</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Installation Guide</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Legal</h4><ul class="space-y-2 text-sm"><li class="text-gray-300"><a href="EULA.md" target="_blank" class="hover:text-white">End User License Agreement (EULA)</a></li><li class="text-gray-300"><a href="PRIVACY.md" target="_blank" class="hover:text-white">Privacy Policy</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Terms of Service</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Refund Policy</a></li></ul></div></div><div class="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-300"><p>&copy; 2025 Robert Zoumboulis-Airey. All rights reserved.</p></div></div></footer>
+    <footer class="bg-gray-900 text-gray-400 py-12"><div class="container mx-auto px-6"><div class="grid md:grid-cols-4 gap-8"><div><h4 class="text-white text-lg font-bold mb-4">POSPal</h4><p class="text-sm text-gray-300">Affordable POS solutions for small businesses</p><div class="mt-3"><a href="https://www.instagram.com/pospalsoftware/" target="_blank" class="text-gray-300 hover:text-white"><i class="fab fa-instagram mr-2"></i>@pospalsoftware</a></div></div><div><h4 class="text-white text-lg font-bold mb-4">Licensing</h4><ul class="space-y-2 text-sm text-gray-300"><li><a href="#distributors" class="hover:text-white"><i class="fas fa-store mr-2"></i>Find a Distributor</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Resources</h4><ul class="space-y-2 text-sm"><li class="text-gray-300"><a href="#" class="hover:text-white">Documentation</a></li><li class="text-gray-300"><a href="POSPal_Demo_Index.html" target="_blank" class="hover:text-white">Interactive Demo</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Installation Guide</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Legal</h4><ul class="space-y-2 text-sm"><li class="text-gray-300"><a href="EULA.md" target="_blank" class="hover:text-white">End User License Agreement (EULA)</a></li><li class="text-gray-300"><a href="PRIVACY.md" target="_blank" class="hover:text-white">Privacy Policy</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Terms of Service</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Refund Policy</a></li></ul></div></div><div class="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-300"><p>&copy; 2025 Robert Zoumboulis-Airey. All rights reserved.</p></div></div></footer>
 
     <script>
         // --- Mobile Menu Script ---
@@ -447,6 +451,7 @@
             const headlineDesktop = document.getElementById('hero-headline-desktop');
             const ctaStep1 = document.getElementById('cta-step1');
             const ctaStep2 = document.getElementById('cta-step2');
+            const ctaDemo = document.getElementById('cta-demo');
 
             let tourTimeout;
             let isAutoPlaying = true;
@@ -457,7 +462,7 @@
                 station1: { 
                     headline: "Explore Every Feature, Instantly.",
                     text: "See POSPal in action with our interactive demo. No signup required.",
-                    ctaId: 'cta-step1',
+                    ctaId: 'cta-demo',
                     desktopPos: { x: 100, y: 200 },
                     mobilePos: { x: 200, y: 50 }
                 },
@@ -525,6 +530,7 @@
                 });
                 ctaStep1.classList.remove('cta-highlight');
                 ctaStep2.classList.remove('cta-highlight');
+                ctaDemo.classList.remove('cta-highlight');
                 if (data.ctaId) {
                     document.getElementById(data.ctaId).classList.add('cta-highlight');
                 }
