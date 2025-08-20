@@ -206,12 +206,6 @@
                 <h1 class="text-xl font-bold text-brand-blue font-lora">POSPal</h1>
             </a>
             <div class="flex items-center space-x-4">
-                <a href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="cta-button cta-secondary text-sm py-2 px-4">
-                    <i class="fas fa-download mr-2"></i>Download
-                </a>
-                <a href="#distributors" class="cta-button cta-primary text-sm py-2 px-4">
-                    <i class="fas fa-shopping-cart mr-2"></i>Buy License
-                </a>
                 <button id="mobile-menu-button" class="md:hidden text-brand-blue hover:text-brand-green focus:outline-none">
                     <i class="fas fa-bars text-2xl"></i>
                 </button>
@@ -245,7 +239,8 @@
         <!-- Top Section: Headline -->
         <div class="text-center row-start-1">
             <h2 id="hero-headline" class="text-2xl sm:text-3xl font-bold text-brand-dark leading-tight font-lora">
-                Your Risk-Free Path to a Better Business
+                <span id="hero-headline-mobile" class="md:hidden">Better Business, Risk‑Free</span>
+                <span id="hero-headline-desktop" class="hidden md:inline">Your Risk-Free Path to a Better Business</span>
             </h2>
         </div>
 
@@ -448,6 +443,8 @@
             const infoPanel = document.getElementById('info-panel');
             const infoText = document.getElementById('info-text');
             const mainHeadline = document.getElementById('hero-headline');
+            const headlineMobile = document.getElementById('hero-headline-mobile');
+            const headlineDesktop = document.getElementById('hero-headline-desktop');
             const ctaStep1 = document.getElementById('cta-step1');
             const ctaStep2 = document.getElementById('cta-step2');
 
@@ -509,7 +506,8 @@
                 mainHeadline.style.opacity = 0;
                 infoPanel.classList.remove('visible');
                 setTimeout(() => {
-                    mainHeadline.textContent = data.headline;
+                    headlineMobile.textContent = data.headline;
+                    headlineDesktop.textContent = data.headline;
                     infoText.textContent = data.text;
                     mainHeadline.style.opacity = 1;
                     infoPanel.classList.add('visible');
