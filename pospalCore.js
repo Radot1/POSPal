@@ -188,6 +188,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.hardwareIdDisplay = document.getElementById('hardware-id-display');
         elements.copyHwidBtn = document.getElementById('copy-hwid-btn');
         elements.footerTrialStatus = document.getElementById('footer-trial-status');
+        // Language selector
+        const languageSelect = document.getElementById('languageSelect');
+        if (languageSelect) {
+            try {
+                const res = await fetch('/api/settings/general');
+                if (res.ok) {
+                    const data = await res.json();
+                    const lang = (data && (data.language === 'el' || data.language === 'en')) ? data.language : 'en';
+                    languageSelect.value = lang;
+                }
+            } catch {}
+            languageSelect.addEventListener('change', async (e) => {
+                const val = e.target.value;
+                await setLanguage(val);
+            });
+        }
         
         // Add event listener for login form after re-caching
         if (elements.loginForm) {
@@ -1495,13 +1511,13 @@ async function handleLogin(event) {
             closeLoginModal();
             openManagementModal();
         } else {
-            elements.loginError.textContent = result.message || 'Login failed. Please try again.';
+            elements.loginError.textContent = result.message || t('ui.login.loginFailed','Login failed. Please try again.');
             elements.loginError.classList.remove('hidden');
             elements.passwordInput.select();
         }
     } catch (error) {
         console.error('Login error:', error);
-        elements.loginError.textContent = 'A network error occurred. Please try again.';
+        elements.loginError.textContent = t('ui.login.networkError','A network error occurred. Please try again.');
         elements.loginError.classList.remove('hidden');
     } finally {
         elements.loginSubmitBtn.disabled = false;
@@ -1837,8 +1853,8 @@ function renderExistingItemsInModal() {
                     <div class="ml-2">${itemDetails}</div>
                 </div>
                 <div class="space-x-1 flex-shrink-0">
-                    <button onclick="openItemFormModal(${item.id})" class="px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80">Edit</button>
-                    <button onclick="deleteItem(${item.id})" class="px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80">Delete</button>
+                    <button onclick=\"openItemFormModal(${item.id})\" class=\"px-2 py-1 text-xs btn-warning text-white rounded hover:opacity-80\" data-i18n=\"ui.items.edit\">Edit</button>
+                    <button onclick=\"deleteItem(${item.id})\" class=\"px-2 py-1 text-xs btn-danger text-white rounded hover:opacity-80\" data-i18n=\"ui.items.delete\">Delete</button>
                 </div>`;
 
             elements.existingItemsListModal.appendChild(div);
@@ -1987,11 +2003,11 @@ function resetItemForm() {
 function openItemFormModal(itemIdToEdit = null) {
     resetItemForm();
     if (itemIdToEdit !== null) {
-        elements.itemFormModalTitle.textContent = 'Edit Item';
+        elements.itemFormModalTitle.textContent = t('ui.items.editItem', 'Edit Item');
         populateItemFormForEdit(itemIdToEdit);
     } else {
-        elements.itemFormModalTitle.textContent = 'Add New Item';
-        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 Save New Item';
+        elements.itemFormModalTitle.textContent = t('ui.items.editItem', 'Add New Item');
+        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 ' + t('ui.items.saveNewItem', 'Save New Item');
     }
     // Handle different UI variants
     const isDesktopUI = document.body.classList.contains('desktop-ui');
@@ -2118,7 +2134,7 @@ async function saveItem() {
 }
 
 async function deleteItem(itemIdToDelete) {
-    if (!confirm('Are you sure you want to delete this item? This cannot be undone.')) return;
+    if (!confirm(t('ui.items.confirmDeleteItem', 'Are you sure you want to delete this item? This cannot be undone.'))) return;
 
     let itemFoundAndDeletedLocally = false;
     Object.keys(menu).forEach(cat => {
@@ -2130,7 +2146,7 @@ async function deleteItem(itemIdToDelete) {
     });
 
     if (!itemFoundAndDeletedLocally) {
-        showToast('Item not found for deletion.', 'warning');
+        showToast(t('ui.items.itemNotFoundDeletion', 'Item not found for deletion.'), 'warning');
         return;
     }
 
@@ -2194,16 +2210,16 @@ async function saveCategory() {
 
 async function deleteCategory(categoryNameToDelete) {
     if (menu[categoryNameToDelete] && menu[categoryNameToDelete].length > 0) {
-        if (!confirm(`Category "${categoryNameToDelete}" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.`)) return;
+        if (!confirm(t('ui.items.confirmDeleteCategoryWithItems', `Category "${categoryNameToDelete}" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.`).replace('{name}', categoryNameToDelete))) return;
     } else {
-        if (!confirm(`Are you sure you want to delete category "${categoryNameToDelete}"? This cannot be undone.`)) return;
+        if (!confirm(t('ui.items.confirmDeleteCategory', `Are you sure you want to delete category "${categoryNameToDelete}"? This cannot be undone.`).replace('{name}', categoryNameToDelete))) return;
     }
     const backupMenu = JSON.parse(JSON.stringify(menu));
     delete menu[categoryNameToDelete];
 
     const success = await saveMenuToServer();
     if (success) {
-        showToast(`Category "${categoryNameToDelete}" deleted successfully.`, 'success');
+        showToast(t('ui.items.deleteCategorySuccess', `Category "${categoryNameToDelete}" deleted successfully.`).replace('{name}', categoryNameToDelete), 'success');
         if (selectedCategory === categoryNameToDelete) {
             selectedCategory = Object.keys(menu)[0] || null;
         }
@@ -2211,7 +2227,7 @@ async function deleteCategory(categoryNameToDelete) {
         loadManagementData();
     } else {
         menu = backupMenu;
-        showToast(`Failed to delete category "${categoryNameToDelete}" on server. Reverting.`, 'error');
+        showToast(t('ui.items.deleteCategoryFailed', `Failed to delete category "${categoryNameToDelete}" on server. Reverting.`).replace('{name}', categoryNameToDelete), 'error');
         await loadMenu();
         loadManagementData();
     }
@@ -2332,7 +2348,7 @@ function showToast(message, type = 'info', duration = 3000) {
 
 async function loadTodaysOrdersForReprint() {
     if (!elements.todaysOrdersList) return;
-    elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">Loading today\'s orders...</p>';
+    elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">' + t('ui.orderHistory.loadingToday','Loading today\'s orders...') + '</p>';
     try {
         const response = await fetch('/api/todays_orders_for_reprint');
         if (!response.ok) {
@@ -2345,8 +2361,8 @@ async function loadTodaysOrdersForReprint() {
         renderTodaysOrdersList(orders);
     } catch (error) {
         console.error("Error loading today's orders for reprint:", error);
-        elements.todaysOrdersList.innerHTML = `<p class="text-xs text-red-500 italic">Error loading orders: ${error.message}. Try refreshing.</p>`;
-        showToast(`Error loading orders: ${error.message}`, 'error');
+        elements.todaysOrdersList.innerHTML = `<p class="text-xs text-red-500 italic">${t('ui.orderHistory.errorLoading','Error loading orders:')} ${error.message}. ${t('ui.orderHistory.tryRefreshing','Try refreshing.')}</p>`;
+        showToast(`${t('ui.orderHistory.errorLoading','Error loading orders:')} ${error.message}`, 'error');
     }
 }
 
@@ -2379,12 +2395,12 @@ function renderTodaysOrdersList(orders) {
         div.className = "p-2.5 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
         div.innerHTML = `
             <div>
-                <span class="font-semibold text-gray-800">Order #${order.order_number}</span>
+                <span class="font-semibold text-gray-800">${t('ui.orderHistory.orderNumber','Order #')}${order.order_number}</span>
                 <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
-                <span class="text-xs text-gray-500 ml-2">Time: ${formattedTimestamp}</span>
+                <span class="text-xs text-gray-500 ml-2">${t('ui.orderHistory.time','Time:')} ${formattedTimestamp}</span>
             </div>
-            <button onclick="reprintOrder('${order.order_number}')" class="px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition">
-                <i class="fas fa-print mr-1"></i> Reprint
+            <button onclick=\"reprintOrder('${order.order_number}')\" class=\"px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition\">
+                <i class=\"fas fa-print mr-1\"></i> ${t('ui.orderHistory.reprint','Reprint')}
             </button>
         `;
         elements.todaysOrdersList.appendChild(div);
@@ -2394,14 +2410,14 @@ function renderTodaysOrdersList(orders) {
 
 async function reprintOrder(orderNumToReprint) {
     if (!orderNumToReprint) {
-        showToast('Invalid order number for reprint.', 'error');
+        showToast(t('ui.orderHistory.invalidOrderForReprint','Invalid order number for reprint.'), 'error');
         return;
     }
 
     const reprintButton = event.target.closest('button');
     if (reprintButton) {
         reprintButton.disabled = true;
-        reprintButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Reprinting...';
+        reprintButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> ' + t('ui.orderHistory.reprinting','Reprinting...');
     }
 
     try {
@@ -2418,23 +2434,23 @@ async function reprintOrder(orderNumToReprint) {
 
         if (response.ok) {
             if (result.status === "success") {
-                showToast(result.message || `Order #${orderNumToReprint} REPRINTED successfully!`, 'success');
+                showToast(result.message || `${t('ui.orderHistory.orderNumber','Order #')}${orderNumToReprint} ${t('ui.orderHistory.reprintedSuccess','REPRINTED successfully!')}`, 'success');
             } else if (result.status === "warning_reprint_copy2_failed") {
-                showToast(result.message || `Order #${orderNumToReprint}: Kitchen REPRINTED. Copy 2 FAILED.`, 'warning', 7000);
+                showToast(result.message || `${t('ui.orderHistory.orderNumber','Order #')}${orderNumToReprint}${t('ui.orderHistory.kitchenReprintedCopy2Failed',': Kitchen REPRINTED. Copy 2 FAILED.')}`, 'warning', 7000);
             } else {
-                showToast(result.message || `Failed to reprint Order #${orderNumToReprint}.`, 'error', 7000);
+                showToast(result.message || `${t('ui.orderHistory.failedReprint','Failed to reprint')} ${t('ui.orderHistory.orderNumber','Order #')}${orderNumToReprint}.`, 'error', 7000);
             }
         } else {
-            showToast(result.message || `Server error during reprint of Order #${orderNumToReprint}: ${response.status}.`, 'error', 7000);
+            showToast(result.message || `${t('ui.orderHistory.serverErrorDuringReprint','Server error during reprint of')} ${t('ui.orderHistory.orderNumber','Order #')}${orderNumToReprint}: ${response.status}.`, 'error', 7000);
         }
 
     } catch (error) {
         console.error(`Error reprinting order ${orderNumToReprint}:`, error);
-        showToast(`Network error or invalid response while reprinting Order #${orderNumToReprint}.`, 'error', 7000);
+        showToast(`${t('ui.orderHistory.networkErrorDuringReprint','Network error or invalid response while reprinting')} ${t('ui.orderHistory.orderNumber','Order #')}${orderNumToReprint}.`, 'error', 7000);
     } finally {
         if (reprintButton) {
             reprintButton.disabled = false;
-            reprintButton.innerHTML = '<i class="fas fa-print mr-1"></i> Reprint';
+            reprintButton.innerHTML = '<i class="fas fa-print mr-1"></i> ' + t('ui.orderHistory.reprint','Reprint');
         }
     }
 }
@@ -2458,7 +2474,7 @@ async function openDaySummaryModal() {
         elements.daySummaryModal.classList.remove('hidden');
         elements.daySummaryModal.classList.add('flex');
     }
-    elements.daySummaryContent.innerHTML = '<p class="text-center italic">Loading summary...</p>';
+    elements.daySummaryContent.innerHTML = '<p class="text-center italic">' + t('ui.daySummary.loading', 'Loading summary...') + '</p>';
 
     try {
         const response = await fetch('/api/daily_summary');
@@ -2497,19 +2513,19 @@ function renderDaySummary(summary) {
     elements.daySummaryContent.innerHTML = `
         <div class="space-y-3 text-base">
             <div class="flex justify-between items-center py-2 border-b">
-                <span class="font-medium text-gray-600">Total Orders:</span>
+                <span class="font-medium text-gray-600">${t('ui.daySummary.totalOrders','Total Orders:')}</span>
                 <span class="font-semibold text-gray-800">${summary.total_orders}</span>
             </div>
             <div class="flex justify-between items-center py-2 border-b">
-                <span class="font-medium text-gray-600">Total Cash Payments:</span>
+                <span class="font-medium text-gray-600">${t('ui.daySummary.totalCash','Total Cash Payments:')}</span>
                 <span class="font-semibold text-green-600">€${summary.cash_total.toFixed(2)}</span>
             </div>
             <div class="flex justify-between items-center py-2 border-b">
-                <span class="font-medium text-gray-600">Total Card Payments:</span>
+                <span class="font-medium text-gray-600">${t('ui.daySummary.totalCard','Total Card Payments:')}</span>
                 <span class="font-semibold text-blue-600">€${summary.card_total.toFixed(2)}</span>
             </div>
             <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black">
-                <span class="text-lg font-bold text-gray-900">Grand Total:</span>
+                <span class="text-lg font-bold text-gray-900">${t('ui.daySummary.grandTotal','Grand Total:')}</span>
                 <span class="font-semibold text-gray-900">€${summary.grand_total.toFixed(2)}</span>
             </div>
         </div>
@@ -2902,14 +2918,14 @@ async function checkAndDisplayTrialStatus() {
         const footerStatusDisplay = elements.footerTrialStatus;
 
         if (status.licensed) {
-            const licensedHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>Fully Licensed`;
+            const licensedHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>${t('ui.footer.fullyLicensed','Fully Licensed')}`;
             if (statusDisplay) statusDisplay.innerHTML = licensedHTML;
             if (footerStatusDisplay) {
                 footerStatusDisplay.innerHTML = licensedHTML;
                 footerStatusDisplay.className = 'font-medium text-green-600';
             }
         } else if (status.expired) {
-            const expiredHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Trial Expired`;
+            const expiredHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>${t('ui.footer.trialExpired','Trial Expired')}`;
             if (statusDisplay) statusDisplay.innerHTML = expiredHTML;
             if (footerStatusDisplay) {
                 footerStatusDisplay.innerHTML = expiredHTML;
@@ -2917,8 +2933,11 @@ async function checkAndDisplayTrialStatus() {
             }
         } else if (status.active) {
             const days = status.days_left;
-            const dayText = days === 1 ? 'day' : 'days';
-            const trialHTML = `<i class="fas fa-info-circle text-yellow-500 mr-2"></i>Trial Version: ${days} ${dayText} remaining`;
+            const dayText = days === 1 ? t('ui.footer.day','day') : t('ui.footer.days','days');
+            const trialText = t('ui.footer.trialVersion','Trial Version: {days} {dayText} remaining')
+                .replace('{days}', days)
+                .replace('{dayText}', dayText);
+            const trialHTML = `<i class="fas fa-info-circle text-yellow-500 mr-2"></i>${trialText}`;
             if (statusDisplay) statusDisplay.innerHTML = trialHTML;
             if (footerStatusDisplay) {
                 footerStatusDisplay.innerHTML = trialHTML;
@@ -2928,9 +2947,9 @@ async function checkAndDisplayTrialStatus() {
 
     } catch (error) {
         console.error("Error checking trial status:", error);
-        if (elements.licenseStatusDisplay) elements.licenseStatusDisplay.textContent = "Could not load status.";
+        if (elements.licenseStatusDisplay) elements.licenseStatusDisplay.textContent = t('ui.footer.statusUnknown','Status Unknown');
         if (elements.footerTrialStatus) {
-            elements.footerTrialStatus.textContent = "Status Unknown";
+            elements.footerTrialStatus.textContent = t('ui.footer.statusUnknown','Status Unknown');
             elements.footerTrialStatus.className = 'font-medium text-gray-500';
         }
     }

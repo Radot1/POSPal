@@ -166,7 +166,7 @@
                         <label for="header-table-input" class="cursor-pointer">
                             <i class="fas fa-chair text-white"></i>
                         </label>
-                        <input type="text" id="header-table-input" class="bg-transparent text-white font-semibold w-24 focus:outline-none placeholder-gray-400" placeholder="Table #">
+                        <input type="text" id="header-table-input" class="bg-transparent text-white font-semibold w-24 focus:outline-none placeholder-gray-400" data-i18n-attr='{"placeholder":"ui.table.placeholder"}' placeholder="Table #">
                     </div>
                 </div>
             </div>
@@ -174,15 +174,15 @@
         
         <div class="flex-1 bg-white p-3 rounded-lg shadow-md flex flex-col min-h-0">
             <div class="flex items-center justify-between mb-2 flex-shrink-0">
-                <h2 class="text-xl font-bold">Order #<span id="order-number-desktop">1</span></h2>
+                <h2 class="text-xl font-bold"><span data-i18n="ui.order.headerNumber">Order #</span><span id="order-number-desktop">1</span></h2>
                 <div class="flex items-center gap-2">
                     <button onclick="toggleDesktopNumpad()" class="px-2 py-1 text-xs btn-secondary rounded">Numpad</button>
                 </div>
             </div>
             <div id="order-items-container" class="flex-1 overflow-y-auto -mr-2 pr-2 space-y-1 min-h-0">
-                <p id="empty-order-message" class="text-gray-500 text-center py-8 italic">Your order is empty.</p>
+                <p id="empty-order-message" class="text-gray-500 text-center py-8 italic" data-i18n="ui.order.empty">Your order is empty.</p>
             </div>
-            <div id="order-total" class="text-2xl font-bold text-right mt-4 pt-4 border-t border-gray-200 flex-shrink-0">Total: €0.00</div>
+            <div id="order-total" class="text-2xl font-bold text-right mt-4 pt-4 border-t border-gray-200 flex-shrink-0"><span data-i18n="ui.order.total">Total:</span> €0.00</div>
         </div>
         
         <div id="desktopNumpadMini" class="bg-white p-2 rounded-lg shadow-md">
@@ -218,20 +218,20 @@
         </div>
         
         <div id="desktopNotesCard" class="bg-white p-3 rounded-lg shadow-md">
-            <label for="universalOrderCommentInput_desktop" class="block mb-1 text-sm font-medium text-gray-700">Order Notes:</label>
-            <textarea id="universalOrderCommentInput_desktop" rows="2" class="w-full p-2 border border-gray-300 rounded-md text-sm" placeholder="Add notes for the entire order..."></textarea>
+            <label for="universalOrderCommentInput_desktop" class="block mb-1 text-sm font-medium text-gray-700" data-i18n="ui.order.notesLabel">Order Notes:</label>
+            <textarea id="universalOrderCommentInput_desktop" rows="2" class="w-full p-2 border border-gray-300 rounded-md text-sm" data-i18n-attr='{"placeholder":"ui.order.notesPlaceholder"}' placeholder="Add notes for the entire order..."></textarea>
             <textarea id="universalOrderCommentInput" rows="3" class="hidden"></textarea>
             <div class="mt-2 flex items-center">
                 <label for="paidByCardCheckbox" class="flex items-center space-x-2 cursor-pointer">
                     <input type="checkbox" id="paidByCardCheckbox" class="h-5 w-5 text-black border-gray-300 rounded focus:ring-black accent-black">
-                    <span class="text-sm font-medium text-gray-700">Pay by Card</span>
+                    <span class="text-sm font-medium text-gray-700" data-i18n="ui.order.payByCard">Pay by Card</span>
                 </label>
             </div>
         </div>
 
         <div class="flex gap-3">
-            <button onclick="newOrder()" class="w-full py-3 text-lg font-semibold rounded-lg btn-secondary transition-transform active:scale-95">New Order</button>
-            <button id="sendOrderBtn" onclick="sendOrder()" class="w-full py-3 text-lg font-semibold rounded-lg btn-primary transition-transform active:scale-95">Send Order</button>
+            <button onclick="newOrder()" class="w-full py-3 text-lg font-semibold rounded-lg btn-secondary transition-transform active:scale-95" data-i18n="ui.order.newOrder">New Order</button>
+            <button id="sendOrderBtn" onclick="sendOrder()" class="w-full py-3 text-lg font-semibold rounded-lg btn-primary transition-transform active:scale-95" data-i18n="ui.order.sendOrder">Send Order</button>
         </div>
     </div>
 
@@ -265,17 +265,17 @@
     <!-- Login Modal -->
     <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm text-gray-800">
-            <h3 class="text-xl font-semibold mb-4 text-center">Management Access</h3>
+            <h3 class="text-xl font-semibold mb-4 text-center" data-i18n="ui.login.title">Management Access</h3>
             <form id="loginForm">
                 <div class="space-y-4">
                     <div>
-                        <label for="passwordInput" class="block text-sm font-medium text-gray-700">Password</label>
-                        <input type="password" id="passwordInput" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required>
+                        <label for="passwordInput" class="block text-sm font-medium text-gray-700" data-i18n="ui.login.password">Password</label>
+                        <input type="password" id="passwordInput" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" data-i18n-attr='{"placeholder":"ui.login.enterPassword"}' placeholder="Password" required>
                     </div>
                     <p id="loginError" class="text-sm text-red-600 text-center hidden"></p>
                     <div class="flex gap-2 pt-2">
-                        <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="closeLoginModal()">Cancel</button>
-                        <button type="submit" id="loginSubmitBtn" class="w-full py-2 px-4 btn-primary">Login</button>
+                        <button type="button" class="w-full py-2 px-4 btn-secondary" onclick="closeLoginModal()" data-i18n="ui.login.cancel">Cancel</button>
+                        <button type="submit" id="loginSubmitBtn" class="w-full py-2 px-4 btn-primary" data-i18n="ui.login.login">Login</button>
                     </div>
                 </div>
             </form>
@@ -299,75 +299,75 @@
     <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] hidden flex flex-col justify-end sm:justify-center sm:items-center">
         <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-6xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
-                <h2 class="text-xl font-semibold">Management</h2>
+                <h2 class="text-xl font-semibold" data-i18n="ui.management.title">Management</h2>
                 <button onclick="closeManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
             </div>
             <div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
                 <div class="flex flex-wrap gap-1 rounded-md bg-gray-100 p-1">
-                    <button onclick="switchManagementTab('analytics', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Analytics</button>
-                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Items</button>
-                    <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Categories</button>
-                    <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
-                    <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100">Day Summary</button>
+                    <button onclick="switchManagementTab('analytics', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200" data-i18n="ui.management.tabs.analytics">Analytics</button>
+                    <button onclick="switchManagementTab('items', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200" data-i18n="ui.management.tabs.items">Items</button>
+                    <button onclick="switchManagementTab('categories', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200" data-i18n="ui.management.tabs.categories">Categories</button>
+                    <button onclick="switchManagementTab('orderHistory', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200" data-i18n="ui.management.tabs.orders">Order History</button>
+                    <button onclick="openDaySummaryModal()" class="flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200 bg-blue-100" data-i18n="ui.management.tabs.daySummary">Day Summary</button>
                 </div>
             </div>
             <div class="flex-grow overflow-y-auto p-4 management-content">
                 <div id="analyticsManagement" class="hidden">
                     <div class="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
-                        <h3 class="text-xl font-semibold text-gray-800">Performance Overview</h3>
+                        <h3 class="text-xl font-semibold text-gray-800" data-i18n="ui.analytics.performanceOverview">Performance Overview</h3>
                         <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-lg flex-wrap">
-                            <button onclick="loadAnalyticsData('today', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">Today</button>
-                            <button onclick="loadAnalyticsData('week', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">This Week</button>
-                            <button onclick="loadAnalyticsData('month', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">This Month</button>
-                            <button onclick="toggleCustomDateRangeUI(this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors">Custom</button>
+                            <button onclick="loadAnalyticsData('today', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors" data-i18n="ui.analytics.today">Today</button>
+                            <button onclick="loadAnalyticsData('week', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors" data-i18n="ui.analytics.thisWeek">This Week</button>
+                            <button onclick="loadAnalyticsData('month', this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors" data-i18n="ui.analytics.thisMonth">This Month</button>
+                            <button onclick="toggleCustomDateRangeUI(this)" class="date-range-btn flex-grow text-sm px-3 py-1.5 rounded-md transition-colors" data-i18n="ui.analytics.custom">Custom</button>
                         </div>
                     </div>
                     <div id="custom-date-range-picker" class="hidden my-4 p-4 bg-gray-100 rounded-lg border border-gray-200">
                         <div class="flex flex-col sm:flex-row items-center gap-4">
                             <div>
-                                <label for="startDate" class="block text-sm font-medium text-gray-700">Start Date</label>
+                                <label for="startDate" class="block text-sm font-medium text-gray-700" data-i18n="ui.dates.startDate">Start Date</label>
                                 <input type="date" id="startDate" name="startDate" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
                             </div>
                             <div>
-                                <label for="endDate" class="block text-sm font-medium text-gray-700">End Date</label>
+                                <label for="endDate" class="block text-sm font-medium text-gray-700" data-i18n="ui.dates.endDate">End Date</label>
                                 <input type="date" id="endDate" name="endDate" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm sm:text-sm">
                             </div>
                             <div class="self-end pt-1 sm:pt-0">
-                                <button onclick="fetchCustomDateRangeAnalytics()" class="w-full sm:w-auto py-2 px-4 btn-primary rounded-md">Go</button>
+                                <button onclick="fetchCustomDateRangeAnalytics()" class="w-full sm:w-auto py-2 px-4 btn-primary rounded-md" data-i18n="ui.analytics.go">Go</button>
                             </div>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Total Orders</h4><p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p></div>
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Items per Order</h4><p id="kpi-items-per-order" class="text-3xl font-bold text-gray-900 mt-1">-</p></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.grossRevenue">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.totalOrders">Total Orders</h4><p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.avgOrderValue">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.itemsPerOrder">Items per Order</h4><p id="kpi-items-per-order" class="text-3xl font-bold text-gray-900 mt-1">-</p></div>
                     </div>
                     <div class="space-y-4">
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-3">Sales by Hour</h4><div class="overflow-x-auto" style="overflow-y:hidden; padding-bottom:0.5rem"><div id="analytics-chart-container" class="flex items-end space-x-4" style="height:14rem"><p style="font-size:12px; color:#6b7280; font-style:italic; width:100%; text-align:center">Loading chart data...</p></div></div></div>
+                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-3" data-i18n="ui.analytics.salesByHour">Sales by Hour</h4><div class="overflow-x-auto" style="overflow-y:hidden; padding-bottom:0.5rem"><div id="analytics-chart-container" class="flex items-end space-x-4" style="height:14rem"><p style="font-size:12px; color:#6b7280; font-style:italic; width:100%; text-align:center" data-i18n="ui.analytics.loadingChartData">Loading chart data...</p></div></div></div>
 
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4><div id="kpi-sales-by-category" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
-                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Top Items (by Revenue)</h4><div id="kpi-top-revenue-items" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.salesByCategory">Sales by Category</h4><div id="kpi-sales-by-category" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.loadingData">Loading data...</p></div></div>
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.topItemsRevenue">Top Items (by Revenue)</h4><div id="kpi-top-revenue-items" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.loadingData">Loading data...</p></div></div>
                         </div>
 
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Best Selling Items (by Qty)</h4><div id="kpi-best-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
-                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2">Underperforming Items (by Qty)</h4><div id="kpi-worst-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic">Loading data...</p></div></div>
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.bestSellersQty">Best Selling Items (by Qty)</h4><div id="kpi-best-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.loadingData">Loading data...</p></div></div>
+                            <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.worstSellersQty">Underperforming Items (by Qty)</h4><div id="kpi-worst-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.loadingData">Loading data...</p></div></div>
                         </div>
 
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Top Add‑ons / Options</h4><div id="kpi-top-addons" class="space-y-2"><p style="font-size:12px; color:#6b7280; font-style:italic">No add‑on data.</p></div></div>
+                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.topAddons">Top Add‑ons / Options</h4><div id="kpi-top-addons" class="space-y-2"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.noAddonData">No add‑on data.</p></div></div>
                     </div>
                 </div>
                 <div id="itemsManagement" class="hidden">
-                    <div class="flex justify-end mb-4"><button onclick="openItemFormModal()" class="btn-success py-2 px-4 rounded-md flex items-center"><i class="fas fa-plus mr-2"></i>Add New Item</button></div>
-                    <h4 class="text-md font-medium text-gray-800 mb-2">Existing Items</h4>
-                    <div id="existingItemsListModal" class="space-y-3 pr-2 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic">No items found.</p></div>
+                    <div class="flex justify-end mb-4"><button onclick="openItemFormModal()" class="btn-success py-2 px-4 rounded-md flex items-center"><i class="fas fa-plus mr-2"></i><span data-i18n="ui.items.addNewItem">Add New Item</span></button></div>
+                    <h4 class="text-md font-medium text-gray-800 mb-2" data-i18n="ui.items.existingItems">Existing Items</h4>
+                    <div id="existingItemsListModal" class="space-y-3 pr-2 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic" data-i18n="ui.items.noItemsFound">No items found.</p></div>
                 </div>
                 <div id="categoriesManagement" class="hidden">
                     <form id="categoryManagementForm" class="space-y-4 management-form">
-                        <div><label for="categoryName" class="block text-sm font-medium text-gray-700">Category Name</label><input type="text" id="categoryName" name="categoryName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
-                        <button type="button" onclick="saveCategory()" class="w-full py-2 px-4 btn-success">📁 Save Category</button>
+                        <div><label for="categoryName" class="block text-sm font-medium text-gray-700" data-i18n="ui.category.nameLabel">Category Name</label><input type="text" id="categoryName" name="categoryName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
+                        <button type="button" onclick="saveCategory()" class="w-full py-2 px-4 btn-success">📁 <span data-i18n="ui.category.save">Save Category</span></button>
                     </form>
                     <div class="mt-6">
                         <h4 class="text-md font-medium text-gray-800 mb-2">Existing Categories</h4>
@@ -375,27 +375,27 @@
                     </div>
                 </div>
                 <div id="orderHistoryManagement" class="hidden">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Today's Orders</h3>
-                    <button onclick="loadTodaysOrdersForReprint()" class="mb-4 px-4 py-2 btn-secondary text-sm"><i class="fas fa-sync-alt mr-1"></i> Refresh List</button>
-                    <div id="todaysOrdersList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic">Loading today's orders...</p></div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3" data-i18n="ui.orderHistory.titleToday">Today's Orders</h3>
+                    <button onclick="loadTodaysOrdersForReprint" class="mb-4 px-4 py-2 btn-secondary text-sm"><i class="fas fa-sync-alt mr-1"></i> <span data-i18n="ui.orderHistory.refreshList">Refresh List</span></button>
+                    <div id="todaysOrdersList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic" data-i18n="ui.orderHistory.loadingToday">Loading today's orders...</p></div>
                 </div>
                 <div id="licenseManagement" class="hidden">
-                    <h3 class="text-xl font-semibold text-gray-800 mb-2">License Information</h3>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-2" data-i18n="ui.license.infoTitle">License Information</h3>
                     <div class="bg-gray-100 p-4 rounded-lg space-y-4">
-                        <div><h4 class="text-lg font-medium text-gray-700">Current Status</h4><p id="license-status-display" class="text-base font-semibold text-gray-900 mt-1">Loading...</p></div>
-                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700">Your Hardware ID</h4><p class="text-sm text-gray-600 mt-1">To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.</p><div class="mt-2 bg-white p-3 rounded-md flex items-center justify-between border border-gray-300"><code id="hardware-id-display" class="text-sm font-mono text-gray-800">Loading...</code><button id="copy-hwid-btn" class="copy-btn" onclick="copyHardwareId()"><i class="far fa-copy mr-1"></i> Copy</button></div></div>
-                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700">How to Activate</h4><ol class="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-2"><li>Copy your unique Hardware ID from above.</li><li>Contact an authorized distributor (see the website's 'Buy License' section) and provide your Hardware ID.</li><li>You will receive a `license.key` file back.</li><li>Place the `license.key` file in the same folder as the `POSPal.exe` application.</li><li>Restart the POSPal application to activate the full version.</li></ol></div>
+                        <div><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.currentStatus">Current Status</h4><p id="license-status-display" class="text-base font-semibold text-gray-900 mt-1">Loading...</p></div>
+                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.yourHardwareId">Your Hardware ID</h4><p class="text-sm text-gray-600 mt-1" data-i18n="ui.license.hwidHelp">To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.</p><div class="mt-2 bg-white p-3 rounded-md flex items-center justify-between border border-gray-300"><code id="hardware-id-display" class="text-sm font-mono text-gray-800">Loading...</code><button id="copy-hwid-btn" class="copy-btn" onclick="copyHardwareId()"><i class="far fa-copy mr-1"></i> <span data-i18n="ui.license.copy">Copy</span></button></div></div>
+                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.howToActivate">How to Activate</h4><ol class="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-2"><li data-i18n="ui.license.steps.s1">Copy your unique Hardware ID from above.</li><li data-i18n="ui.license.steps.s2">Contact an authorized distributor (see the website's 'Buy License' section) and provide your Hardware ID.</li><li data-i18n="ui.license.steps.s3">You will receive a `license.key` file back.</li><li data-i18n="ui.license.steps.s4">Place the `license.key` file in the same folder as the `POSPal.exe` application.</li><li data-i18n="ui.license.steps.s5">Restart the POSPal application to activate the full version.</li></ol></div>
                         <div class="pt-2 flex gap-2 flex-wrap">
-                            <button type="button" class="btn-primary px-4 py-2 rounded" onclick="window.open('index.html#distributors','_blank')"><i class="fas fa-shopping-cart mr-2"></i>Buy License</button>
-                            <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="window.open('https://github.com/Radot1/POSPal/blob/main/EULA.md','_blank')"><i class="fas fa-file-contract mr-2"></i>View EULA</button>
+                            <button type="button" class="btn-primary px-4 py-2 rounded" onclick="window.open('index.html#distributors','_blank')"><i class="fas fa-shopping-cart mr-2"></i><span data-i18n="ui.license.buyLicense">Buy License</span></button>
+                            <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="window.open('https://github.com/Radot1/POSPal/blob/main/EULA.md','_blank')"><i class="fas fa-file-contract mr-2"></i><span data-i18n="ui.license.viewEula">View EULA</span></button>
                         </div>
                         <div class="border-t border-gray-300 pt-4">
-                            <h4 class="text-lg font-medium text-gray-700">About POSPal</h4>
+                            <h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.about">About POSPal</h4>
                             <p class="text-sm text-gray-600 mt-2">© 2025 Robert Zoumboulis-Airey. All rights reserved.</p>
                             <p class="text-sm text-gray-600 mt-1">
-                                <a href="https://github.com/Radot1/POSPal/blob/main/EULA.md" target="_blank" class="text-blue-600 hover:underline">EULA</a>
-                                · <a href="https://github.com/Radot1/POSPal/blob/main/PRIVACY.md" target="_blank" class="text-blue-600 hover:underline">Privacy Policy</a>
-                                · <a href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="text-blue-600 hover:underline">Releases</a>
+                                <a href="https://github.com/Radot1/POSPal/blob/main/EULA.md" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.viewEula">EULA</a>
+                                · <a href="https://github.com/Radot1/POSPal/blob/main/PRIVACY.md" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.privacyPolicy">Privacy Policy</a>
+                                · <a href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.releases">Releases</a>
                             </p>
                         </div>
                     </div>
@@ -404,39 +404,47 @@
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">Hardware &amp; Printing</h3>
                     <div class="space-y-4">
                         <div class="bg-white p-3 rounded border">
-                            <h4 class="font-medium text-gray-700 mb-2">Printer</h4>
+                            <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.printing.printer">Printer</h4>
                             <div class="flex items-center gap-2 flex-wrap">
                                 <select id="printerSelect" class="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm"></select>
-                                <button class="btn-secondary px-3 py-2 rounded" onclick="refreshPrinters()">Refresh</button>
-                                <button class="btn-primary px-3 py-2 rounded" onclick="saveSelectedPrinter()">Save as Default</button>
+                                <button class="btn-secondary px-3 py-2 rounded" onclick="refreshPrinters()" data-i18n="ui.printing.refresh">Refresh</button>
+                                <button class="btn-primary px-3 py-2 rounded" onclick="saveSelectedPrinter()" data-i18n="ui.printing.saveDefault">Save as Default</button>
                                 <span id="printerStatusDot" class="inline-flex items-center text-xs ml-2"></span>
                             </div>
                             <div class="mt-2 flex items-center gap-2">
-                                <button class="btn-secondary px-3 py-2 rounded" onclick="testPrint()">Test Print</button>
+                                <button class="btn-secondary px-3 py-2 rounded" onclick="testPrint()" data-i18n="ui.printing.testPrint">Test Print</button>
                                 <span id="lastTestPrintResult" class="text-xs text-gray-600"></span>
                             </div>
                         </div>
                         <div class="bg-white p-3 rounded border">
-                            <h4 class="font-medium text-gray-700 mb-2">Settings</h4>
+                            <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.printing.settingsTitle">Settings</h4>
+                            <div class="flex items-center gap-3 flex-wrap mb-2">
+                                <label for="languageSelect" class="text-sm text-gray-700" data-i18n="ui.management.general.language">Language</label>
+                                <select id="languageSelect" class="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
+                                    <option value="en" data-i18n="ui.management.general.lang_en">English</option>
+                                    <option value="el" data-i18n="ui.management.general.lang_el">Greek</option>
+                                </select>
+                            </div>
+                            <div class="my-3 border-t border-gray-200"></div>
                             <div class="flex items-center gap-4 flex-wrap">
-                                <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" id="cutAfterPrintToggle" class="h-4 w-4"> Cut after print</label>
+                                <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" id="cutAfterPrintToggle" class="h-4 w-4"> <span data-i18n="ui.printing.cutAfterPrint">Cut after print</span></label>
                             </div>
                         </div>
                         <div class="bg-white p-3 rounded border">
-                            <h4 class="font-medium text-gray-700 mb-2">Change Password</h4>
+                            <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.password.changePassword">Change Password</h4>
                             <div class="grid gap-2 md:grid-cols-3">
-                                <input id="currentPasswordInput" type="password" placeholder="Current" class="px-3 py-2 border border-gray-300 rounded-md text-sm">
-                                <input id="newPasswordInput" type="password" placeholder="New" class="px-3 py-2 border border-gray-300 rounded-md text-sm">
-                                <input id="confirmPasswordInput" type="password" placeholder="Confirm" class="px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                <input id="currentPasswordInput" type="password" class="px-3 py-2 border border-gray-300 rounded-md text-sm" data-i18n-attr='{"placeholder":"ui.password.current"}' placeholder="Current">
+                                <input id="newPasswordInput" type="password" class="px-3 py-2 border border-gray-300 rounded-md text-sm" data-i18n-attr='{"placeholder":"ui.password.new"}' placeholder="New">
+                                <input id="confirmPasswordInput" type="password" class="px-3 py-2 border border-gray-300 rounded-md text-sm" data-i18n-attr='{"placeholder":"ui.password.confirm"}' placeholder="Confirm">
                             </div>
-                            <button class="btn-primary mt-2 px-4 py-2 rounded" onclick="changeManagementPassword()">Save Password</button>
+                            <button class="btn-primary mt-2 px-4 py-2 rounded" onclick="changeManagementPassword()" data-i18n="ui.password.savePassword">Save Password</button>
                         </div>
                     </div>
                 </div>
             </div>
             <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg">
-                <div class="flex items-center gap-4 flex-wrap"><span>POSPal Version: <span id="appVersion" class="font-medium text-gray-600">1.0.0</span></span><span id="footer-trial-status" class="font-medium"></span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">License Info</button><button onclick="switchManagementTab('hardwarePrinting', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">Settings</button></div>
-                <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold"><i class="fas fa-power-off mr-1.5"></i><span>Shutdown</span></button>
+                <div class="flex items-center gap-4 flex-wrap"><span data-i18n="ui.footer.version">POSPal Version:</span> <span id="appVersion" class="font-medium text-gray-600">1.0.0</span><span id="footer-trial-status" class="font-medium"></span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.licenseInfo">License Info</button><button onclick="switchManagementTab('hardwarePrinting', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.settings">Settings</button></div>
+                <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold"><i class="fas fa-power-off mr-1.5"></i><span data-i18n="ui.footer.shutdown">Shutdown</span></button>
             </div>
         </div>
     </div>
@@ -477,11 +485,12 @@
     <!-- Day Summary Modal -->
     <div id="daySummaryModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col text-gray-800">
-            <div class="p-4 border-b border-gray-300 flex justify-between items-center"><h2 class="text-xl font-semibold">Day Summary</h2><button onclick="closeDaySummaryModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button></div>
-            <div id="daySummaryContent" class="p-6 space-y-4"><p class="text-center italic">Loading summary...</p></div>
+            <div class="p-4 border-b border-gray-300 flex justify-between items-center"><h2 class="text-xl font-semibold" data-i18n="ui.daySummary.title">Day Summary</h2><button onclick="closeDaySummaryModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button></div>
+            <div id="daySummaryContent" class="p-6 space-y-4"><p class="text-center italic" data-i18n="ui.daySummary.loading">Loading summary...</p></div>
         </div>
     </div>
 
+    <script src="i18n.js"></script>
     <script src="pospalCore.js"></script>
 </body>
 </html>

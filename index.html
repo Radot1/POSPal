@@ -19,6 +19,11 @@
             --medium-gray: #4a5568; /* Darkened for better contrast */
             --hero-bg: #f0f4f8;
         }
+        html, body {
+            min-height: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
         body {
             font-family: 'Poppins', sans-serif;
             scroll-behavior: smooth;
@@ -87,7 +92,8 @@
         .hero-map-bg {
             background-color: var(--hero-bg);
             position: relative;
-            overflow: hidden;
+            overflow-x: clip;
+            overflow-y: visible;
         }
         .map-line {
             fill: none;

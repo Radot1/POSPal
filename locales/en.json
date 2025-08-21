@@ -1,0 +1,183 @@
+{
+  "ui": {
+    "order": {
+      "headerNumber": "Order #",
+      "yourOrder": "Your Order",
+      "empty": "Your order is empty.",
+      "notesLabel": "Order Notes:",
+      "notesPlaceholder": "Any special requests for the whole order?",
+      "total": "Total:",
+      "payByCard": "Pay by Card",
+      "newOrder": "New Order",
+      "sendOrder": "Send Order"
+    },
+    "login": {
+      "title": "Management Access",
+      "password": "Password",
+      "cancel": "Cancel",
+      "login": "Login",
+      "loginFailed": "Login failed. Please try again.",
+      "networkError": "A network error occurred. Please try again.",
+      "enterPassword": "Password"
+    },
+    "table": {
+      "placeholder": "Table #"
+    },
+    "management": {
+      "title": "Management",
+      "tabs": {
+        "analytics": "Analytics",
+        "items": "Items",
+        "categories": "Categories",
+        "orders": "Order History",
+        "daySummary": "Day Summary",
+        "hardwarePrinting": "Hardware & Printing",
+        "license": "License Info",
+        "settings": "Settings"
+      },
+      "general": {
+        "section": "General Settings",
+        "language": "Language",
+        "lang_en": "English",
+        "lang_el": "Greek"
+      },
+      "optionModal": {
+        "title": "Select Option",
+        "subtitle": "Please choose an option for the selected item:",
+        "confirm": "Confirm",
+        "cancel": "Cancel"
+      }
+    },
+    "items": {
+      "addNewItem": "Add New Item",
+      "existingItems": "Existing Items",
+      "noItemsFound": "No items found.",
+      "edit": "Edit",
+      "delete": "Delete",
+      "editItem": "Edit Item",
+      "saveNewItem": "Save New Item",
+      "confirmDeleteItem": "Are you sure you want to delete this item? This cannot be undone.",
+      "itemNotFoundDeletion": "Item not found for deletion.",
+      "confirmDeleteCategoryWithItems": "Category \"{name}\" contains items. Are you sure you want to delete the category AND ALL ITS ITEMS? This cannot be undone.",
+      "confirmDeleteCategory": "Are you sure you want to delete category \"{name}\"? This cannot be undone.",
+      "deleteCategorySuccess": "Category \"{name}\" deleted successfully.",
+      "deleteCategoryFailed": "Failed to delete category \"{name}\" on server. Reverting."
+    },
+    "orderHistory": {
+      "titleToday": "Today's Orders",
+      "refreshList": "Refresh List",
+      "loadingToday": "Loading today's orders...",
+      "reprint": "Reprint",
+      "time": "Time:",
+      "orderNumber": "Order #",
+      "errorLoading": "Error loading orders:",
+      "tryRefreshing": "Try refreshing.",
+      "invalidOrderForReprint": "Invalid order number for reprint.",
+      "reprinting": "Reprinting...",
+      "reprintedSuccess": "REPRINTED successfully!",
+      "kitchenReprintedCopy2Failed": ": Kitchen REPRINTED. Copy 2 FAILED.",
+      "failedReprint": "Failed to reprint",
+      "serverErrorDuringReprint": "Server error during reprint of",
+      "networkErrorDuringReprint": "Network error or invalid response while reprinting"
+    },
+    "daySummary": {
+      "title": "Day Summary",
+      "loading": "Loading summary...",
+      "totalOrders": "Total Orders:",
+      "totalCash": "Total Cash Payments:",
+      "totalCard": "Total Card Payments:",
+      "grandTotal": "Grand Total:",
+      "paymentMethods": "Payment Methods"
+    },
+    "license": {
+      "infoTitle": "License Information",
+      "currentStatus": "Current Status",
+      "yourHardwareId": "Your Hardware ID",
+      "hwidHelp": "To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.",
+      "howToActivate": "How to Activate",
+      "steps": {
+        "s1": "Copy your unique Hardware ID from above.",
+        "s2": "Contact an authorized distributor (see the website's 'Buy License' section) and provide your Hardware ID.",
+        "s3": "You will receive a `license.key` file back.",
+        "s4": "Place the `license.key` file in the same folder as the `POSPal.exe` application.",
+        "s5": "Restart the POSPal application to activate the full version."
+      },
+      "copy": "Copy",
+      "buyLicense": "Buy License",
+      "viewEula": "View EULA",
+      "about": "About POSPal",
+      "privacyPolicy": "Privacy Policy",
+      "releases": "Releases"
+    },
+    "printing": {
+      "printer": "Printer",
+      "refresh": "Refresh",
+      "saveDefault": "Save as Default",
+      "testPrint": "Test Print",
+      "settingsTitle": "Settings",
+      "cutAfterPrint": "Cut after print"
+    },
+    "analytics": {
+      "performanceOverview": "Performance Overview",
+      "today": "Today",
+      "thisWeek": "This Week",
+      "thisMonth": "This Month",
+      "custom": "Custom",
+      "go": "Go",
+      "kpi": {
+        "grossRevenue": "Gross Revenue",
+        "totalOrders": "Total Orders",
+        "avgOrderValue": "Avg. Order Value",
+        "itemsPerOrder": "Items per Order"
+      },
+      "salesByHour": "Sales by Hour",
+      "salesByCategory": "Sales by Category",
+      "topItemsRevenue": "Top Items (by Revenue)",
+      "bestSellersQty": "Best Selling Items (by Qty)",
+      "worstSellersQty": "Underperforming Items (by Qty)",
+      "topAddons": "Top Add‑ons / Options",
+      "loadingChartData": "Loading chart data...",
+      "loadingData": "Loading data...",
+      "noAddonData": "No add‑on data."
+    },
+    "footer": {
+      "version": "POSPal Version:",
+      "shutdown": "Shutdown",
+      "licenseInfo": "License Info",
+      "settings": "Settings",
+      "fullyLicensed": "Fully Licensed",
+      "trialVersion": "Trial Version: {days} {dayText} remaining",
+      "trialExpired": "Trial Expired",
+      "statusUnknown": "Status Unknown",
+      "day": "day",
+      "days": "days"
+    },
+    "password": {
+      "changePassword": "Change Password",
+      "current": "Current",
+      "new": "New",
+      "confirm": "Confirm",
+      "savePassword": "Save Password"
+    },
+    "dates": {
+      "startDate": "Start Date",
+      "endDate": "End Date"
+    },
+    "category": {
+      "nameLabel": "Category Name",
+      "save": "Save Category"
+    },
+    "options": {
+      "generalLabel": "General Item Options:",
+      "noGeneral": "No general options added",
+      "optionName": "Option Name",
+      "priceChange": "Price Change (€)",
+      "addOption": "Add Option"
+    },
+    "common": {
+      "loading": "Loading..."
+    }
+  }
+}
+
+

@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.7"  # Update this with each release
+CURRENT_VERSION = "1.0.8"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -14,12 +14,27 @@ import hashlib
 import logging
 import sys  # Added for auto-update functionality
 from collections import Counter, defaultdict # Added for analytics
+from queue import Queue, Empty
 import atexit
 import socket
 import subprocess
 
 
 app = Flask(__name__)
+# --- Lightweight in-process pub-sub for server-sent events (SSE) ---
+_sse_subscribers: list[Queue] = []
+
+def _sse_broadcast(event_name: str, payload: dict):
+    try:
+        data = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        data = '{}'
+    for q in list(_sse_subscribers):
+        try:
+            q.put((event_name, data))
+        except Exception:
+            pass
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
@@ -335,7 +350,9 @@ def load_config():
         "printer_name": "Microsoft Print to PDF",
         "port": 5000,
         "management_password": "9999", # Default password
-        "cut_after_print": True
+        "cut_after_print": True,
+        # UI language for in-app interface (receipts remain English-only)
+        "language": "en"
     }
     # Migrate legacy config.json (root) to data/config.json if needed
     try:
@@ -678,6 +695,47 @@ def serve_pospal_desktop():
 def serve_pospal_core():
     return send_from_directory('.', 'pospalCore.js')
 
+# Serve i18n helper and locales
+@app.route('/i18n.js')
+def serve_i18n_js():
+    return send_from_directory('.', 'i18n.js')
+
+@app.route('/locales/<path:filename>')
+def serve_locales(filename):
+    return send_from_directory('locales', filename)
+
+@app.route('/api/events')
+def sse_stream():
+    def gen():
+        q: Queue = Queue(maxsize=10)
+        _sse_subscribers.append(q)
+        try:
+            # Send initial state
+            init = json.dumps({"language": str(config.get('language', 'en'))})
+            yield f"event: settings\n"
+            yield f"data: {init}\n\n"
+            while True:
+                try:
+                    event_name, data = q.get(timeout=30)
+                    yield f"event: {event_name}\n"
+                    yield f"data: {data}\n\n"
+                except Empty:
+                    # keep-alive
+                    yield ": keep-alive\n\n"
+        finally:
+            try:
+                _sse_subscribers.remove(q)
+            except ValueError:
+                pass
+    from flask import Response
+    headers = {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    }
+    return Response(gen(), headers=headers)
+
 @app.route('/test_centralized.html')
 def serve_test_centralized():
     return send_from_directory('.', 'test_centralized.html')
@@ -885,6 +943,34 @@ def printing_settings():
     if not values:
         return jsonify({"success": False, "message": "No settings provided."}), 400
     if save_config(values):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "message": "Failed to save settings."}), 500
+
+
+# --- General (non-printing) settings: UI language, etc. ---
+@app.route('/api/settings/general', methods=['GET', 'POST'])
+def general_settings():
+    if request.method == 'GET':
+        # Only expose non-sensitive general settings
+        return jsonify({
+            "language": str(config.get('language', 'en'))
+        })
+    # POST
+    data = request.get_json(silent=True) or {}
+    payload = {}
+    if 'language' in data:
+        lang = str(data.get('language', 'en')).lower()
+        if lang not in ('en', 'el'):
+            return jsonify({"success": False, "message": "Unsupported language."}), 400
+        payload['language'] = lang
+    if not payload:
+        return jsonify({"success": False, "message": "No valid settings provided."}), 400
+    if save_config(payload):
+        # Broadcast to all connected clients that settings changed
+        try:
+            _sse_broadcast('settings', {"language": str(config.get('language', 'en'))})
+        except Exception:
+            pass
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Failed to save settings."}), 500
 
