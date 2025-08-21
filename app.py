@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.5"  # Update this with each release
+CURRENT_VERSION = "1.1.0"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -2286,14 +2286,21 @@ echo Updating POSPal... Please wait.
 
 set "NEW_EXE=%LOCALAPPDATA%\POSPal\updates\{expected_asset_name}"
 set "RUNTIME=%LOCALAPPDATA%\POSPal\runtime"
+
 if not exist "%RUNTIME%" mkdir "%RUNTIME%" >nul 2>&1
+
+if not exist "%NEW_EXE%" exit /b 1
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Try {{ Unblock-File -LiteralPath '%NEW_EXE%' }} Catch {{}}" >nul 2>&1
 
-timeout /t 3 /nobreak > nul
-taskkill /f /im "{expected_asset_name}" > nul 2>&1
-move /y "%NEW_EXE%" "%RUNTIME%\{expected_asset_name}"
+taskkill /f /im "{expected_asset_name}" >nul 2>&1
+timeout /t 2 /nobreak >nul
+
+move /y "%NEW_EXE%" "%RUNTIME%\{expected_asset_name}" >nul 2>&1
+if %errorlevel% neq 0 exit /b 1
+
 start "" "%RUNTIME%\{expected_asset_name}"
+
 (goto) 2>nul & del "%~f0" & exit
 """)
 
