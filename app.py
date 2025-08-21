@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.0.9"  # Update this with each release
+CURRENT_VERSION = "1.0.5"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -2263,32 +2263,37 @@ def check_for_updates():
             new_exe_response = requests.get(download_url, timeout=300)
             new_exe_response.raise_for_status()  # Raise an exception for 4xx/5xx responses
 
-            # Save the new executable to a temporary file.
-            new_exe_path = os.path.join(BASE_DIR, "POSPal_new.exe")
+            # HARDENED: save to updates dir, compute hash, write robust update.bat
+            updates_dir = os.path.join(os.environ.get('LOCALAPPDATA', BASE_DIR), 'POSPal', 'updates')
+            try:
+                os.makedirs(updates_dir, exist_ok=True)
+            except Exception:
+                updates_dir = BASE_DIR
+                app.logger.warning(f"Falling back to BASE_DIR for updates. Using: {updates_dir}")
+
+            new_exe_path = os.path.join(updates_dir, os.path.basename(sys.executable))
             with open(new_exe_path, "wb") as f:
                 f.write(new_exe_response.content)
-            app.logger.info(f"New executable saved to {new_exe_path}")
+            sha256_hex = hashlib.sha256(new_exe_response.content).hexdigest()
+            app.logger.info(f"New executable saved to {new_exe_path} (SHA256={sha256_hex})")
 
-            # Create a batch script to perform the update.
             update_script_path = os.path.join(BASE_DIR, "update.bat")
             with open(update_script_path, "w") as bat:
-                bat.write(f"""@echo off
+                bat.write(fr"""@echo off
+setlocal
+cd /d "%~dp0"
 echo Updating POSPal... Please wait.
 
-:: Give the main application a moment to close
+set "NEW_EXE=%LOCALAPPDATA%\POSPal\updates\{expected_asset_name}"
+set "RUNTIME=%LOCALAPPDATA%\POSPal\runtime"
+if not exist "%RUNTIME%" mkdir "%RUNTIME%" >nul 2>&1
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Try {{ Unblock-File -LiteralPath '%NEW_EXE%' }} Catch {{}}" >nul 2>&1
+
 timeout /t 3 /nobreak > nul
-
-:: Forcefully terminate the old process if it's still running
 taskkill /f /im "{expected_asset_name}" > nul 2>&1
-
-:: Replace the old executable with the new one
-move /y "{new_exe_path}" "{expected_asset_name}"
-
-:: Relaunch the new version
-echo Relaunching POSPal...
-start "" "{expected_asset_name}"
-
-:: Self-delete the batch file and exit
+move /y "%NEW_EXE%" "%RUNTIME%\{expected_asset_name}"
+start "" "%RUNTIME%\{expected_asset_name}"
 (goto) 2>nul & del "%~f0" & exit
 """)
 
