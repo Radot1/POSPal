@@ -4,11 +4,11 @@ REM Build script for POSPal
 REM Description: This script creates a new 'build_output' directory and performs
 REM              the entire build process within it, keeping the root
 REM              directory clean.
-REM Version: 1.1.0 (Containerized Build Process)
+REM Version: 1.1.1 (Containerized Build Process)
 REM ============================================================================
 setlocal
 
-set VERSION=1.1.0
+set VERSION=1.1.1
 set BUILD_DIR=build_output
 set RELEASE_DIR=POSPal_v%VERSION%
 

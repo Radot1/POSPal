@@ -1,0 +1,13 @@
+{
+    "printer_name": "Microsoft Print to PDF",
+    "port": 5000,
+    "management_password": "9999",
+    "cut_after_print": true,
+    "language": "en",
+    "cloudflare_api_base": "https://menus-api.bzoumboulis.workers.dev/",
+    "cloudflare_api_key": "",
+    "cloudflare_api_key_enc": "",
+    "cloudflare_store_slug": "cafetest",
+    "cloudflare_store_slug_locked": true,
+    "cloudflare_public_base": "https://menus-5ar.pages.dev/"
+}

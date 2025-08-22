@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.0"  # Update this with each release
+CURRENT_VERSION = "1.1.1"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -35,6 +35,10 @@ def _sse_broadcast(event_name: str, payload: dict):
         except Exception:
             pass
 
+# --- Cloudflare hardcoded credentials (per owner request) ---
+CF_FORCE_HARDCODED_KEY = True
+CF_HARDCODED_API_KEY = "y5E7yWQk2mYh9vZb4cHn8RkLp2dJq0XfU3tG7mWz1vQp6aKj9uC5sB8hN0dXr4e"
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
@@ -55,6 +59,10 @@ LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
 # Additional hardening: also store a copy of the trial info under ProgramData
 PROGRAM_DATA_DIR = os.path.join(os.environ.get('PROGRAMDATA', r'C:\\ProgramData'), 'POSPal')
 PROGRAM_TRIAL_FILE = os.path.join(PROGRAM_DATA_DIR, 'trial.json')
+# Persistent publish marker bound to this machine (survives app folder deletion)
+PERSIST_DIR = PROGRAM_DATA_DIR
+PUBLISH_MARKER_FILE = os.path.join(PERSIST_DIR, 'published_site.json')
+
 APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A  # Use a strong secret key
 
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
@@ -352,7 +360,15 @@ def load_config():
         "management_password": "9999", # Default password
         "cut_after_print": True,
         # UI language for in-app interface (receipts remain English-only)
-        "language": "en"
+        "language": "en",
+        # Cloudflare Online Menu publishing defaults
+        "cloudflare_api_base": "https://menus-api.bzoumboulis.workers.dev/",
+        "cloudflare_api_key": "",
+        "cloudflare_api_key_enc": "",
+        "cloudflare_store_slug": "",
+        "cloudflare_store_slug_locked": False,
+        # Public viewer base, e.g., https://menus.example.com
+        "cloudflare_public_base": "https://menus-5ar.pages.dev/"
     }
     # Migrate legacy config.json (root) to data/config.json if needed
     try:
@@ -420,10 +436,127 @@ def save_config(updated_values: dict):
         PRINTER_NAME = config.get("printer_name", PRINTER_NAME)
         MANAGEMENT_PASSWORD = str(config.get("management_password", MANAGEMENT_PASSWORD))
         CUT_AFTER_PRINT = bool(config.get("cut_after_print", CUT_AFTER_PRINT))
+        # No globals for Cloudflare; read from config directly where needed
         return True
     except Exception as e:
         app.logger.error(f"Failed to save config: {e}")
         return False
+
+# --- Cloudflare Online Menu Settings ---
+@app.route('/api/settings/cloudflare', methods=['GET', 'POST'])
+def cloudflare_settings():
+    if request.method == 'GET':
+        # Do not expose api key in GET
+        payload = {
+            "cloudflare_api_base": str(config.get('cloudflare_api_base', '')),
+            "cloudflare_store_slug": str(config.get('cloudflare_store_slug', '')),
+            "cloudflare_public_base": str(config.get('cloudflare_public_base', '')),
+            "cloudflare_store_slug_locked": bool(config.get('cloudflare_store_slug_locked', False))
+        }
+        # If app folder was deleted but this is the same machine, surface persisted publish marker
+        try:
+            if os.path.exists(PUBLISH_MARKER_FILE):
+                with open(PUBLISH_MARKER_FILE, 'r', encoding='utf-8') as f:
+                    marker = json.load(f)
+                payload['persisted_public_url'] = marker.get('public_url')
+                payload['persisted_slug'] = marker.get('slug')
+        except Exception:
+            pass
+        return jsonify(payload)
+    data = request.get_json(silent=True) or {}
+    # Allow updating any of these
+    allowed_keys = [
+        'cloudflare_api_base',
+        'cloudflare_store_slug',
+        'cloudflare_public_base'
+    ]
+    updates = {k: str(v) for k, v in data.items() if k in allowed_keys}
+    # Enforce slug lock: once set and locked, it cannot change
+    if 'cloudflare_store_slug' in updates:
+        current_slug = str(config.get('cloudflare_store_slug', ''))
+        locked = bool(config.get('cloudflare_store_slug_locked', False))
+        new_slug = updates['cloudflare_store_slug'].strip()
+        if locked and current_slug and new_slug and new_slug != current_slug:
+            return jsonify({"success": False, "message": "Store slug is locked and cannot be changed."}), 400
+        # Normalize slug to lowercase kebab
+        updates['cloudflare_store_slug'] = new_slug.lower()
+    if not updates:
+        return jsonify({"success": False, "message": "No settings provided."}), 400
+    if save_config(updates):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "message": "Failed to save settings."}), 500
+
+# --- Publish current menu to Cloudflare Worker API ---
+@app.route('/api/publish/cloudflare', methods=['POST'])
+def publish_menu_cloudflare():
+    try:
+        # CRITICAL: Check if slug is locked - prevent multiple website creation
+        if bool(config.get('cloudflare_store_slug_locked', False)):
+            # Allow updates to existing website, but do not allow slug changes
+            existing_slug = str(config.get('cloudflare_store_slug', '')).strip()
+            if not existing_slug:
+                return jsonify({"success": False, "message": "Website is locked but no slug found. Contact support."}), 400
+            # Force use of existing slug
+            store_slug = existing_slug
+        else:
+            # First time publish - read slug from config
+            store_slug = str(config.get('cloudflare_store_slug', '')).strip()
+        
+        # Load current menu
+        if not os.path.exists(MENU_FILE):
+            return jsonify({"success": False, "message": "menu.json not found"}), 400
+        with open(MENU_FILE, 'r', encoding='utf-8') as f:
+            menu_data = json.load(f)
+
+        # Read config
+        api_base = str(config.get('cloudflare_api_base', '')).rstrip('/')
+        api_key = CF_HARDCODED_API_KEY if CF_FORCE_HARDCODED_KEY else str(config.get('cloudflare_api_key', ''))
+        public_base = str(config.get('cloudflare_public_base', '')).rstrip('/')
+
+        if not api_base or not api_key or not store_slug:
+            return jsonify({"success": False, "message": "Cloudflare settings incomplete."}), 400
+
+        # Compose endpoint: expecting a Worker route like /v1/stores/{slug}/menu
+        url = f"{api_base}/v1/stores/{store_slug}/menu"
+        payload = {
+            "store": store_slug,
+            "version": int(time.time()),
+            "menu": menu_data
+        }
+        headers = {
+            'Authorization': f"Bearer {api_key}",
+            'Content-Type': 'application/json'
+        }
+        resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+        ok = (200 <= resp.status_code < 300)
+        if not ok:
+            try:
+                err = resp.json()
+            except Exception:
+                err = {"status": resp.status_code, "text": resp.text[:500]}
+            return jsonify({"success": False, "message": "Cloudflare publish failed", "details": err}), 502
+
+        # Lock slug after first successful publish
+        if not bool(config.get('cloudflare_store_slug_locked', False)):
+            save_config({"cloudflare_store_slug_locked": True})
+
+        # Persist marker to ProgramData to survive app folder deletion
+        try:
+            os.makedirs(PERSIST_DIR, exist_ok=True)
+            with open(PUBLISH_MARKER_FILE, 'w', encoding='utf-8') as f:
+                json.dump({
+                    "slug": store_slug,
+                    "public_url": f"{public_base}/s/{store_slug}",
+                    "first_published_at": datetime.now().isoformat()
+                }, f, indent=2)
+        except Exception as e:
+            app.logger.warning(f"Failed to write publish marker: {e}")
+
+        target_url = f"{public_base}/s/{store_slug}" if public_base else None
+        return jsonify({"success": True, "url": target_url})
+    except Exception as e:
+        app.logger.error(f"Publish to Cloudflare error: {type(e).__name__}: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
     
 def store_trial_in_registry(first_run_date, signature):
     """Store trial data in Windows Registry"""

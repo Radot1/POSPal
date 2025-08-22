@@ -1603,7 +1603,7 @@ function switchManagementTab(tabName, clickedButton) {
         }
     }
 
-    const views = ['analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement', 'hardwarePrintingManagement'];
+    const views = ['analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement', 'hardwarePrintingManagement', 'onlineMenuManagement'];
     views.forEach(id => {
         const view = document.getElementById(id);
         if (view) view.style.display = 'none';
@@ -1623,6 +1623,233 @@ function switchManagementTab(tabName, clickedButton) {
         loadHardwareId();
     } else if (tabName === 'hardwarePrinting') {
         initializeHardwarePrintingUI();
+    } else if (tabName === 'onlineMenu') {
+        initializeCloudflareUI();
+    }
+}
+
+async function initializeCloudflareUI() {
+    try {
+        const resp = await fetch('/api/settings/cloudflare');
+        const cfg = await resp.json();
+        const slugEl = document.getElementById('cfStoreSlug');
+        const urlEl = document.getElementById('cfMenuUrl');
+        const publishBtn = document.querySelector('button[onclick="publishOnlineMenu()"]');
+        const msgEl = document.getElementById('cfSettingsMsg');
+        
+        // CRITICAL: If machine has persisted slug, immediately lock everything
+        const isLocked = cfg.cloudflare_store_slug_locked || cfg.persisted_slug;
+        const effectiveSlug = cfg.cloudflare_store_slug || cfg.persisted_slug || '';
+        
+        if (slugEl) slugEl.value = effectiveSlug;
+        
+        // Show URL if available
+        const persistedUrl = cfg.persisted_public_url || '';
+        const computedUrl = (cfg.cloudflare_public_base && effectiveSlug)
+          ? `${cfg.cloudflare_public_base.replace(/\/$/,'')}/s/${effectiveSlug}`
+          : '';
+        const urlToShow = persistedUrl || computedUrl;
+        if (urlToShow) {
+            if (urlEl) urlEl.value = urlToShow;
+            renderCloudflareQr(urlToShow);
+        }
+        
+        // SECURITY: Lock UI if website exists on this machine
+        if (isLocked) {
+            if (slugEl) {
+                slugEl.disabled = true;
+                slugEl.style.backgroundColor = '#f3f4f6';
+                slugEl.style.cursor = 'not-allowed';
+            }
+            if (msgEl) {
+                msgEl.textContent = 'Website is published and locked to this machine. You can update menu content only.';
+                msgEl.className = 'text-xs text-green-600 mt-1 font-medium';
+            }
+            if (publishBtn) {
+                publishBtn.innerHTML = '<i class="fas fa-sync mr-2"></i>Update Menu';
+                publishBtn.title = 'Update existing menu content';
+            }
+            
+            // If config slug is missing but persisted exists, restore it
+            if (!cfg.cloudflare_store_slug && cfg.persisted_slug) {
+                console.log('Restoring missing slug from persistence:', cfg.persisted_slug);
+                await fetch('/api/settings/cloudflare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        cloudflare_store_slug: cfg.persisted_slug,
+                        cloudflare_store_slug_locked: true 
+                    })
+                });
+            }
+        } else {
+            if (msgEl) {
+                msgEl.textContent = 'Enter a unique store name (e.g., cafe-olive). This will become part of your permanent URL.';
+                msgEl.className = 'text-xs text-gray-600 mt-1';
+            }
+            if (publishBtn) {
+                publishBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu';
+                publishBtn.title = 'Publish menu online';
+            }
+        }
+    } catch (e) {
+        console.error('Failed to init Cloudflare UI:', e);
+        const msg = document.getElementById('cfSettingsMsg');
+        if (msg) msg.textContent = 'Could not load Cloudflare settings.';
+    }
+}
+
+// Auto-publish helper: only publish if website is already locked (published)
+async function maybeAutoPublishMenu() {
+    console.log('maybeAutoPublishMenu() called');
+    try {
+        const resp = await fetch('/api/settings/cloudflare');
+        const cfg = await resp.json();
+        console.log('Cloudflare config:', cfg);
+        console.log('Slug locked:', cfg.cloudflare_store_slug_locked);
+        console.log('Store slug:', cfg.cloudflare_store_slug);
+        
+        const isLocked = cfg.cloudflare_store_slug_locked || cfg.persisted_slug;
+        const effectiveSlug = cfg.cloudflare_store_slug || cfg.persisted_slug;
+        
+        if (isLocked && effectiveSlug) {
+            console.log('Conditions met, auto-publishing...');
+            // Website exists, auto-update it
+            const publishResp = await fetch('/api/publish/cloudflare', { method: 'POST' });
+            console.log('Publish response status:', publishResp.status);
+            const publishResult = await publishResp.json();
+            console.log('Publish result:', publishResult);
+            console.log('Menu auto-published to website');
+        } else {
+            console.log('Auto-publish skipped: website not locked or no slug');
+            console.log('Locked:', isLocked, 'Slug:', effectiveSlug);
+        }
+    } catch (e) {
+        console.warn('Auto-publish failed:', e);
+    }
+}
+
+function getCloudflareUrlFromInputs() {
+    const publicBase = (document.getElementById('cfPublicBase')||{}).value || '';
+    const slug = (document.getElementById('cfStoreSlug')||{}).value || '';
+    if (!publicBase || !slug) return '';
+    const base = publicBase.replace(/\/$/, '');
+    return `${base}/s/${slug}`;
+}
+
+function renderCloudflareQr(url) {
+    const container = document.getElementById('cfQrContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    try {
+        if (typeof QRCode === 'function') {
+            // 144px square QR
+            new QRCode(container, { text: url, width: 144, height: 144, correctLevel: (window.QRCode && window.QRCode.CorrectLevel && window.QRCode.CorrectLevel.M) || 1 });
+        } else {
+            container.textContent = 'QR library not loaded';
+        }
+    } catch (e) {
+        container.textContent = 'QR generation failed';
+    }
+}
+
+async function saveCloudflareSettings() {
+    const apiBase = (document.getElementById('cfApiBase')||{}).value || '';
+    const apiKey = (document.getElementById('cfApiKey')||{}).value || '';
+    const storeSlug = (document.getElementById('cfStoreSlug')||{}).value || '';
+    const publicBase = (document.getElementById('cfPublicBase')||{}).value || '';
+    const msg = document.getElementById('cfSettingsMsg');
+    try {
+        const resp = await fetch('/api/settings/cloudflare', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cloudflare_api_base: apiBase,
+                cloudflare_api_key: apiKey,
+                cloudflare_store_slug: storeSlug,
+                cloudflare_public_base: publicBase
+            })
+        });
+        const res = await resp.json();
+        if (res && res.success) {
+            if (msg) { msg.textContent = 'Settings saved.'; }
+            const url = getCloudflareUrlFromInputs();
+            if (url) {
+                const urlEl = document.getElementById('cfMenuUrl');
+                if (urlEl) urlEl.value = url;
+                renderCloudflareQr(url);
+            }
+            showToast('Cloudflare settings saved.', 'success');
+        } else {
+            const err = (res && res.message) || 'Failed to save settings';
+            if (msg) { msg.textContent = err; }
+            showToast(err, 'error');
+        }
+    } catch (e) {
+        if (msg) { msg.textContent = 'Network error saving settings.'; }
+        showToast('Network error saving settings.', 'error');
+    }
+}
+
+async function publishOnlineMenu() {
+    const btn = event && event.target && event.target.closest('button');
+    const msg = document.getElementById('cfPublishMsg');
+    try {
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Publishing...'; }
+        if (msg) msg.textContent = '';
+        // 1) Save slug to server (normalized server-side)
+        const slugEl = document.getElementById('cfStoreSlug');
+        const slugRaw = slugEl ? (slugEl.value || '') : '';
+        const slug = (slugRaw || '').trim();
+        if (!slug) {
+            if (msg) msg.textContent = 'Please enter a store slug (e.g., cafetest).';
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu'; }
+            return;
+        }
+        const saveResp = await fetch('/api/settings/cloudflare', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cloudflare_store_slug: slug })
+        });
+        const saveRes = await saveResp.json().catch(()=>({}));
+        if (!saveResp.ok || !saveRes.success) {
+            const err = (saveRes && saveRes.message) || `Failed to save slug (HTTP ${saveResp.status})`;
+            if (msg) msg.textContent = err;
+            showToast(err, 'error');
+            return;
+        }
+        // 2) Publish
+        const resp = await fetch('/api/publish/cloudflare', { method: 'POST' });
+        const res = await resp.json();
+        if (res && res.success) {
+            const urlEl = document.getElementById('cfMenuUrl');
+            let url = res.url || '';
+            if (urlEl) urlEl.value = url || '';
+            if (url) renderCloudflareQr(url);
+            showToast('Menu published online.', 'success');
+            if (msg) msg.textContent = 'Published successfully.';
+        } else {
+            const err = (res && (res.message || (res.details && (res.details.message || res.details.text)))) || 'Publish failed';
+            showToast(err, 'error');
+            if (msg) msg.textContent = err;
+        }
+    } catch (e) {
+        showToast('Network error during publish.', 'error');
+        if (msg) msg.textContent = 'Network error during publish.';
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu'; }
+    }
+}
+
+async function copyCloudflareUrl() {
+    try {
+        const urlEl = document.getElementById('cfMenuUrl');
+        const val = urlEl ? (urlEl.value || '') : '';
+        if (!val) { showToast('No URL to copy.', 'warning'); return; }
+        await navigator.clipboard.writeText(val);
+        showToast('URL copied to clipboard.', 'success');
+    } catch (e) {
+        showToast('Could not copy URL.', 'error');
     }
 }
 
@@ -1900,6 +2127,7 @@ async function moveItemPosition(itemIdToMove, direction) {
     const success = await saveMenuToServer();
     if (success) {
         showToast('Item order updated.', 'success');
+        await maybeAutoPublishMenu();
         await loadMenu();
         loadManagementData();
     } else {
@@ -1969,6 +2197,7 @@ async function moveCategoryPosition(categoryNameToMove, direction) {
     const success = await saveMenuToServer();
     if (success) {
         showToast('Category order updated.', 'success');
+        await maybeAutoPublishMenu();
         await loadMenu();
         loadManagementData();
     } else {
@@ -2063,7 +2292,15 @@ function populateItemFormForEdit(itemIdToEdit) {
 }
 
 async function saveItem() {
-    if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect) return;
+    console.log('saveItem() called');
+    if (!elements.itemNameInput || !elements.itemPriceInput || !elements.itemCategorySelect) {
+        console.log('Missing form elements:', {
+            nameInput: !!elements.itemNameInput,
+            priceInput: !!elements.itemPriceInput, 
+            categorySelect: !!elements.itemCategorySelect
+        });
+        return;
+    }
 
     const itemName = elements.itemNameInput.value.trim();
     const itemPrice = parseFloat(elements.itemPriceInput.value);
@@ -2121,9 +2358,19 @@ async function saveItem() {
         menu[itemCategory].push(itemData);
     }
 
+    console.log('About to call saveMenuToServer()');
     const success = await saveMenuToServer();
+    console.log('saveMenuToServer() returned:', success);
     if (success) {
+        console.log('Save successful, showing toast and auto-publishing');
         showToast(editingItem ? 'Item updated successfully!' : 'Item saved successfully!', 'success');
+        console.log('About to call maybeAutoPublishMenu()');
+        try {
+            await maybeAutoPublishMenu();
+            console.log('maybeAutoPublishMenu() completed');
+        } catch (e) {
+            console.error('Error in maybeAutoPublishMenu():', e);
+        }
         closeItemFormModal();
         await loadMenu();
         loadManagementData();
@@ -2153,6 +2400,7 @@ async function deleteItem(itemIdToDelete) {
     const success = await saveMenuToServer();
     if (success) {
         showToast('Item deleted successfully.', 'success');
+        await maybeAutoPublishMenu();
         await loadMenu();
         loadManagementData();
     } else {
@@ -2198,6 +2446,7 @@ async function saveCategory() {
 
         menu = newMenu;
         showToast(`Category "${categoryName}" added successfully.`, 'success');
+        await maybeAutoPublishMenu();
         elements.categoryNameInput.value = '';
         await loadMenu();
         loadManagementData();
@@ -2220,6 +2469,7 @@ async function deleteCategory(categoryNameToDelete) {
     const success = await saveMenuToServer();
     if (success) {
         showToast(t('ui.items.deleteCategorySuccess', `Category "${categoryNameToDelete}" deleted successfully.`).replace('{name}', categoryNameToDelete), 'success');
+        await maybeAutoPublishMenu();
         if (selectedCategory === categoryNameToDelete) {
             selectedCategory = Object.keys(menu)[0] || null;
         }
@@ -2994,5 +3244,32 @@ function copyHardwareId() {
         }
     } else {
         showToast('Hardware ID not available to copy.', 'warning');
+    }
+}
+
+// --- Auto-publish helper ---
+let _autoPublishBusy = false;
+async function maybeAutoPublishMenu() {
+    try {
+        if (_autoPublishBusy) return;
+        const cfgResp = await fetch('/api/settings/cloudflare');
+        if (!cfgResp.ok) return;
+        const cfg = await cfgResp.json();
+        const hasCfg = (cfg.cloudflare_api_base && cfg.cloudflare_store_slug);
+        if (!hasCfg) return;
+        _autoPublishBusy = true;
+        const resp = await fetch('/api/publish/cloudflare', { method: 'POST' });
+        const res = await resp.json().catch(() => ({}));
+        if (res && res.success) {
+            const url = res.url || getCloudflareUrlFromInputs();
+            const urlEl = document.getElementById('cfMenuUrl');
+            if (urlEl) urlEl.value = url || '';
+            if (url) renderCloudflareQr(url);
+            showToast('Online menu updated.', 'success');
+        }
+    } catch (_) {
+        // Silent failure
+    } finally {
+        _autoPublishBusy = false;
     }
 }
