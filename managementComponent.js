@@ -218,6 +218,32 @@ export function getManagementComponentHTML() {
                                 </button>
                             </div>
                         </div>
+                        <div class="bg-white p-4 rounded-lg border">
+                            <h4 class="font-semibold text-gray-700 mb-3">Hardware &amp; Printing</h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <h5 class="font-medium text-gray-700 mb-2">Printer</h5>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <select id="printerSelect" class="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm"></select>
+                                        <button class="btn-secondary px-3 py-2 rounded" onclick="refreshPrinters()">Refresh</button>
+                                        <button class="btn-primary px-3 py-2 rounded" onclick="saveSelectedPrinter()">Save as Default</button>
+                                        <span id="printerStatusDot" class="inline-flex items-center text-xs ml-2"></span>
+                                    </div>
+                                    <div class="mt-2 flex items-center gap-2">
+                                        <button class="btn-secondary px-3 py-2 rounded" onclick="testPrint()">Test Print</button>
+                                        <span id="lastTestPrintResult" class="text-xs text-gray-600"></span>
+                                    </div>
+                                </div>
+                                <div class="my-2 border-t border-gray-200"></div>
+                                <div class="flex items-center gap-4 flex-wrap">
+                                    <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" id="cutAfterPrintToggle" class="h-4 w-4"> <span>Cut after print</span></label>
+                                    <label class="inline-flex items-center gap-2 text-sm">
+                                        <span>Copies per order</span>
+                                        <input type="number" id="copiesPerOrderInput" min="1" max="10" step="1" class="px-2 py-1 border border-gray-300 rounded w-20" />
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

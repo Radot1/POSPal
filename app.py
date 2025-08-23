@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.1"  # Update this with each release
+CURRENT_VERSION = "1.1.2"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -18,6 +18,7 @@ from queue import Queue, Empty
 import atexit
 import socket
 import subprocess
+import webbrowser
 
 
 app = Flask(__name__)
@@ -159,7 +160,7 @@ ESC = b'\x1B'
 GS = b'\x1D'
 InitializePrinter = ESC + b'@'
 BoldOn = ESC + b'E\x01'
-BoldOff = b'E\x00'
+BoldOff = ESC + b'E\x00'
 DoubleHeightWidth = GS + b'!\x11'  # Double Height and Double Width
 DoubleHeight = GS + b'!\x01'       # Double Height only
 DoubleWidth = GS + b'!\x10'        # Double Width only
@@ -171,6 +172,11 @@ SelectFontA = ESC + b'M\x00' # Standard Font A
 SelectFontB = ESC + b'M\x01' # Smaller Font B (often used for details)
 FullCut = GS + b'V\x00'
 PartialCut = GS + b'V\x01' # Or m=66 for some printers
+
+# Disable legacy PDF fallback (not supported). Define flags and stub to avoid lints.
+PDF_FALLBACK_ENABLED = False
+def generate_pdf_ticket(order_data, copy_info, original_timestamp_str=None):
+    return False
 
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -359,6 +365,7 @@ def load_config():
         "port": 5000,
         "management_password": "9999", # Default password
         "cut_after_print": True,
+        "copies_per_order": 2,
         # UI language for in-app interface (receipts remain English-only)
         "language": "en",
         # Cloudflare Online Menu publishing defaults
@@ -395,6 +402,7 @@ config = load_config()
 PRINTER_NAME = config["printer_name"]
 MANAGEMENT_PASSWORD = str(config["management_password"]) # Ensure password is a string
 CUT_AFTER_PRINT = bool(config.get("cut_after_print", True))
+COPIES_PER_ORDER = int(config.get("copies_per_order", 2))
 
 # Disable debug mode
 app.config['DEBUG'] = False
@@ -417,7 +425,7 @@ def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
     
 def save_config(updated_values: dict):
     """Merge-update CONFIG_FILE atomically and refresh globals."""
-    global config, PRINTER_NAME, MANAGEMENT_PASSWORD, CUT_AFTER_PRINT
+    global config, PRINTER_NAME, MANAGEMENT_PASSWORD, CUT_AFTER_PRINT, COPIES_PER_ORDER
     try:
         existing = {}
         if os.path.exists(CONFIG_FILE):
@@ -436,6 +444,10 @@ def save_config(updated_values: dict):
         PRINTER_NAME = config.get("printer_name", PRINTER_NAME)
         MANAGEMENT_PASSWORD = str(config.get("management_password", MANAGEMENT_PASSWORD))
         CUT_AFTER_PRINT = bool(config.get("cut_after_print", CUT_AFTER_PRINT))
+        try:
+            COPIES_PER_ORDER = int(config.get("copies_per_order", COPIES_PER_ORDER))
+        except Exception:
+            COPIES_PER_ORDER = 2
         # No globals for Cloudflare; read from config directly where needed
         return True
     except Exception as e:
@@ -1049,7 +1061,7 @@ def test_print():
         # Reset fallback flag and attempt
         global last_print_used_fallback
         last_print_used_fallback = False
-        ok = print_kitchen_ticket(test_order, copy_info="Test Print")
+        ok = print_kitchen_ticket(test_order, copy_info="")
         if ok:
             return jsonify({"success": True})
         # If failed and looks like a PDF-type printer, clarify unsupported
@@ -1066,11 +1078,12 @@ def printing_settings():
     if request.method == 'GET':
         return jsonify({
             "printer_name": PRINTER_NAME,
-            "cut_after_print": CUT_AFTER_PRINT
+            "cut_after_print": CUT_AFTER_PRINT,
+            "copies_per_order": COPIES_PER_ORDER
         })
     data = request.get_json() or {}
     values = {}
-    for key in ["printer_name", "cut_after_print"]:
+    for key in ["printer_name", "cut_after_print", "copies_per_order"]:
         if key in data:
             values[key] = data[key]
     if not values:
@@ -1326,6 +1339,15 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         total_string = f"TOTAL: EUR {grand_total:.2f}"
         ticket_content += to_bytes(total_string + "\n")
         ticket_content += BoldOff + AlignLeft
+        # Payment method directly under total
+        try:
+            payment_method = str(order_data.get('paymentMethod', 'Cash')).strip().capitalize() or 'Cash'
+        except Exception:
+            payment_method = 'Cash'
+        # Emphasize payment method only (no label): double width and bold
+        ticket_content += SelectFontA + DoubleWidth
+        ticket_content += BoldOn + to_bytes(payment_method.upper()) + BoldOff + to_bytes("\n")
+        ticket_content += NormalText
         
         ticket_content += SelectFontA + NormalText
         ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n") 
@@ -1548,42 +1570,42 @@ def handle_order():
     }
 
     print_status_summary = "Not Printed"
-    printed_copy1 = False
-    printed_copy2 = False
+    printed_all = True
+    printed_any = False
+    copies_to_print = max(1, int(config.get('copies_per_order', COPIES_PER_ORDER)))
 
-    app.logger.info(f"Attempting to print Copy 1 for order #{authoritative_order_number}")
-    try:
-        printed_copy1 = print_kitchen_ticket(order_data_internal, copy_info="Kitchen")
-    except Exception as e_print1:
-        app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (Copy 1): {str(e_print1)}")
-        printed_copy1 = False
+    for i in range(1, copies_to_print + 1):
+        if i > 1:
+            time.sleep(0.5)
+        app.logger.info(f"Attempting to print copy {i} for order #{authoritative_order_number}")
+        try:
+            ok = print_kitchen_ticket(order_data_internal, copy_info="")
+            if not ok:
+                time.sleep(1.0)
+                app.logger.warning(f"Retrying print for copy {i} (order #{authoritative_order_number})")
+                ok = print_kitchen_ticket(order_data_internal, copy_info="")
+        except Exception as e_print:
+            app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (copy {i}): {str(e_print)}")
+            ok = False
+        printed_any = printed_any or ok
+        if not ok and i == 1:
+            app.logger.warning(f"Order #{authoritative_order_number} - FIRST COPY FAILED to print. Order will NOT be saved or further processed.")
+            return jsonify({
+                "status": "error_print_failed_copy1",
+                "order_number": authoritative_order_number,
+                "printed": "Copy 1 Failed",
+                "logged": False,
+                "message": f"Order #{authoritative_order_number} - FIRST COPY FAILED. Order NOT saved. Check printer!"
+            }), 200
+        if not ok:
+            printed_all = False
 
-    if not printed_copy1:
-        app.logger.warning(f"Order #{authoritative_order_number} - COPY 1 FAILED to print. Order will NOT be saved or further processed.")
-        return jsonify({
-            "status": "error_print_failed_copy1",
-            "order_number": authoritative_order_number,
-            "printed": "Copy 1 Failed",
-            "logged": False,
-            "message": f"Order #{authoritative_order_number} - COPY 1 (Kitchen) FAILED TO PRINT. Order NOT saved. Check printer!"
-        }), 200
-
-    app.logger.info(f"Order #{authoritative_order_number} - Copy 1 printed successfully.")
-
-    app.logger.info(f"Attempting to print Copy 2 for order #{authoritative_order_number}")
-    time.sleep(0.5)
-    try:
-        printed_copy2 = print_kitchen_ticket(order_data_internal, copy_info="Copy 2")
-    except Exception as e_print2:
-        app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (Copy 2): {str(e_print2)}")
-        printed_copy2 = False
-
-    if printed_copy1 and printed_copy2:
+    if printed_any and printed_all:
         print_status_summary = "All Copies Printed"
-        app.logger.info(f"Order #{authoritative_order_number} - Both copies printed successfully.")
-    elif printed_copy1 and not printed_copy2:
-        print_status_summary = "Copy 1 Printed, Copy 2 Failed"
-        app.logger.warning(f"Order #{authoritative_order_number} - Copy 1 was PRINTED, but Copy 2 FAILED to print.")
+        app.logger.info(f"Order #{authoritative_order_number} - All copies printed successfully ({copies_to_print}).")
+    elif printed_any and not printed_all:
+        print_status_summary = "Some Copies Printed, Some Failed"
+        app.logger.warning(f"Order #{authoritative_order_number} - Some copies printed, some failed (requested {copies_to_print}).")
     
     csv_log_succeeded = False
     try:
@@ -1605,12 +1627,12 @@ def handle_order():
     final_status_code = "error_unknown"
     message = "An unexpected issue occurred."
 
-    if printed_copy1 and printed_copy2 and csv_log_succeeded:
-        message = f"Order #{authoritative_order_number} processed: 2 copies printed, and logged successfully!"
+    if printed_any and printed_all and csv_log_succeeded:
+        message = f"Order #{authoritative_order_number} processed: all copies printed ({copies_to_print}), and logged successfully!"
         final_status_code = "success"
-    elif printed_copy1 and not printed_copy2 and csv_log_succeeded:
-        message = f"Order #{authoritative_order_number} processed: Copy 1 PRINTED & LOGGED. Copy 2 FAILED to print. Please check printer for Copy 2."
-        final_status_code = "warning_print_copy2_failed" 
+    elif printed_any and not printed_all and csv_log_succeeded:
+        message = f"Order #{authoritative_order_number} processed: Some copies PRINTED & LOGGED. Some FAILED. Please check printer."
+        final_status_code = "warning_print_partial_failed" 
 
     app.logger.info(f"Order #{authoritative_order_number} processing complete. Final Status: {final_status_code}, Printed: {print_status_summary}, Logged: {csv_log_succeeded}")
     return jsonify({
@@ -1818,7 +1840,7 @@ def reprint_order_endpoint():
         app.logger.info(f"Attempting to reprint order #{order_number_to_reprint} (Original Timestamp: {original_timestamp})")
 
         reprint_copy1_success = print_kitchen_ticket(reprint_order_data, 
-                                                     copy_info="Reprint - Kitchen", 
+                                                     copy_info="", 
                                                      original_timestamp_str=original_timestamp)
         
         if not reprint_copy1_success:
@@ -1832,7 +1854,7 @@ def reprint_order_endpoint():
         
         time.sleep(0.5) 
         reprint_copy2_success = print_kitchen_ticket(reprint_order_data, 
-                                                     copy_info="Reprint - Copy 2", 
+                                                     copy_info="", 
                                                      original_timestamp_str=original_timestamp)
 
         if not reprint_copy2_success:
@@ -1903,6 +1925,106 @@ def get_daily_summary():
     except Exception as e:
         app.logger.error(f"Error generating daily summary: {str(e)}")
         return jsonify({"status": "error", "message": f"Could not generate daily summary: {str(e)}"}), 500
+
+
+# --- Orders by date and order details (for order history UI) ---
+@app.route('/api/orders_by_date', methods=['GET'])
+def api_orders_by_date():
+    try:
+        date_str = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
+        time_range = (request.args.get('range') or 'all').lower()
+        start_hhmm = request.args.get('start')  # HH:MM
+        end_hhmm = request.args.get('end')      # HH:MM
+
+        filename = os.path.join(DATA_DIR, f"orders_{date_str}.csv")
+        if not os.path.exists(filename):
+            return jsonify([])
+
+        def _within_range(ts_str: str) -> bool:
+            try:
+                ts = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return True
+
+            if time_range == 'this_hour':
+                now = datetime.now()
+                return ts.date() == now.date() and ts.hour == now.hour
+            elif time_range == 'last2h':
+                now = datetime.now()
+                return now - timedelta(hours=2) <= ts <= now
+            elif start_hhmm and end_hhmm:
+                try:
+                    start_dt = datetime.strptime(f"{date_str} {start_hhmm}:00", '%Y-%m-%d %H:%M:%S')
+                    end_dt = datetime.strptime(f"{date_str} {end_hhmm}:00", '%Y-%m-%d %H:%M:%S')
+                    return start_dt <= ts <= end_dt
+                except Exception:
+                    return True
+            return True
+
+        orders_list = []
+        with open(filename, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                ts = row.get('timestamp') or ''
+                if not _within_range(ts):
+                    continue
+                orders_list.append({
+                    'order_number': row.get('order_number'),
+                    'table_number': row.get('table_number'),
+                    'timestamp': ts,
+                    'payment_method': row.get('payment_method', 'Cash'),
+                    'order_total': row.get('order_total', ''),
+                    'printed_status': row.get('printed_status', '')
+                })
+
+        try:
+            orders_list.sort(key=lambda r: r.get('timestamp') or '', reverse=True)
+        except Exception:
+            pass
+        return jsonify(orders_list)
+    except Exception as e:
+        app.logger.error(f"Error in /api/orders_by_date: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/order_details', methods=['GET'])
+def api_order_details():
+    try:
+        date_str = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
+        order_number = request.args.get('order_number')
+        if not order_number:
+            return jsonify({"status": "error", "message": "order_number is required"}), 400
+
+        filename = os.path.join(DATA_DIR, f"orders_{date_str}.csv")
+        if not os.path.exists(filename):
+            return jsonify({"status": "error", "message": "No orders file found for date."}), 404
+
+        with open(filename, 'r', newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get('order_number') == str(order_number):
+                    items_json_str = row.get('items_json', '[]')
+                    try:
+                        items_list = json.loads(items_json_str)
+                        if not isinstance(items_list, list):
+                            items_list = []
+                    except Exception:
+                        items_list = []
+                    return jsonify({
+                        'order_number': row.get('order_number'),
+                        'table_number': row.get('table_number'),
+                        'timestamp': row.get('timestamp'),
+                        'items': items_list,
+                        'universal_comment': row.get('universal_comment', ''),
+                        'order_total': row.get('order_total', ''),
+                        'payment_method': row.get('payment_method', 'Cash'),
+                        'printed_status': row.get('printed_status', '')
+                    })
+        return jsonify({"status": "error", "message": "Order not found for date."}), 404
+    except Exception as e:
+        app.logger.error(f"Error in /api/order_details: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 # --- ANALYTICS ENDPOINT (CORRECTED & ENHANCED) ---
@@ -2417,10 +2539,14 @@ setlocal
 cd /d "%~dp0"
 echo Updating POSPal... Please wait.
 
-set "NEW_EXE=%LOCALAPPDATA%\POSPal\updates\{expected_asset_name}"
-set "RUNTIME=%LOCALAPPDATA%\POSPal\runtime"
+set "TEMP_DIR=%TEMP%"
+if not defined TEMP_DIR set "TEMP_DIR=%TMP%"
+if not defined TEMP_DIR set "TEMP_DIR=%~dp0"
 
-if not exist "%RUNTIME%" mkdir "%RUNTIME%" >nul 2>&1
+set "NEW_EXE={new_exe_path}"
+set "TARGET_EXE=%TEMP_DIR%\{expected_asset_name}"
+
+if not exist "%TEMP_DIR%" mkdir "%TEMP_DIR%" >nul 2>&1
 
 if not exist "%NEW_EXE%" exit /b 1
 
@@ -2429,10 +2555,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "Try {{ Unblock-File -Lit
 taskkill /f /im "{expected_asset_name}" >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-move /y "%NEW_EXE%" "%RUNTIME%\{expected_asset_name}" >nul 2>&1
+copy /y "%NEW_EXE%" "%TARGET_EXE%" >nul 2>&1
 if %errorlevel% neq 0 exit /b 1
 
-start "" "%RUNTIME%\{expected_asset_name}"
+start "" "%TARGET_EXE%"
 
 (goto) 2>nul & del "%~f0" & exit
 """)
@@ -2453,6 +2579,29 @@ start "" "%RUNTIME%\{expected_asset_name}"
     except Exception as e:
         app.logger.error(f"An unexpected error occurred during the update check: {str(e)}")
 
+
+# Open default browser to the local UI once the server is reachable
+def _open_browser_when_ready():
+    try:
+        port = int(config.get('port', 5000))
+        url = f"http://127.0.0.1:{port}/"
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            try:
+                # Probe the server; it may not be ready immediately
+                requests.get(url, timeout=0.5)
+                break
+            except Exception:
+                time.sleep(0.3)
+        try:
+            webbrowser.open(url, new=1)
+        except Exception:
+            pass
+    except Exception as e:
+        try:
+            app.logger.warning(f"Failed to auto-open browser: {e}")
+        except Exception:
+            pass
 
 # Add to startup logic (always check for updates when running as packaged executable)
 if getattr(sys, 'frozen', False):
@@ -2479,4 +2628,7 @@ if __name__ == '__main__':
         
     from waitress import serve
     app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{config.get('port', 5000)}")
+    # For end-users: auto-open the local UI in the default browser when packaged
+    if getattr(sys, 'frozen', False):
+        threading.Thread(target=_open_browser_when_ready, daemon=True).start()
     serve(app, host='0.0.0.0', port=config.get('port', 5000))

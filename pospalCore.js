@@ -932,8 +932,8 @@ async function sendOrder() {
         if (response.ok) {
             if (result.status === "success") {
                 showToast(result.message || `Order #${result.order_number} sent, all copies printed, and logged!`, 'success');
-            } else if (result.status === "warning_print_copy2_failed") {
-                showToast(result.message || `Order #${result.order_number}: Copy 1 PRINTED & LOGGED. Copy 2 FAILED.`, 'warning', 7000);
+            } else if (result.status === "warning_print_copy2_failed" || result.status === "warning_print_partial_failed") {
+                showToast(result.message || `Order #${result.order_number}: Some copies FAILED.`, 'warning', 7000);
             } else if (result.status === "error_print_failed_copy1") {
                 showToast(result.message || `Order #${result.order_number} - COPY 1 FAILED. Order NOT saved.`, 'error', 7000);
             } else if (result.status === "error_log_failed_after_print") {
@@ -942,7 +942,7 @@ async function sendOrder() {
                 showToast(result.message || `Order #${result.order_number} processed with issues: ${result.status}`, 'warning', 7000);
             }
 
-            if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "error_log_failed_after_print") {
+            if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "warning_print_partial_failed" || result.status === "error_log_failed_after_print") {
                 clearOrderData();
             }
 
@@ -1881,6 +1881,11 @@ async function initializeHardwarePrintingUI() {
         const settings = await settingsResp.json();
         const cutToggle = document.getElementById('cutAfterPrintToggle');
         if (cutToggle) cutToggle.checked = !!settings.cut_after_print;
+        const copiesInput = document.getElementById('copiesPerOrderInput');
+        if (copiesInput) {
+            const val = parseInt(settings.copies_per_order);
+            copiesInput.value = isNaN(val) ? 2 : Math.max(1, Math.min(10, val));
+        }
         await refreshPrinters();
     } catch (e) {
         console.error('Failed to initialize Hardware & Printing UI:', e);
@@ -2035,6 +2040,22 @@ document.addEventListener('change', async (e) => {
             if (!res.success) showToast(res.message || 'Failed to save setting.', 'error');
         } catch (err) {
             showToast('Error saving setting.', 'error');
+        }
+    } else if (id === 'copiesPerOrderInput') {
+        try {
+            const n = parseInt(target.value);
+            const safe = isNaN(n) ? 2 : Math.max(1, Math.min(10, n));
+            target.value = safe;
+            const resp = await fetch('/api/settings/printing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ copies_per_order: safe })
+            });
+            const res = await resp.json();
+            if (!res.success) showToast(res.message || 'Failed to save copies per order.', 'error');
+            else showToast('Saved.', 'success');
+        } catch (err) {
+            showToast('Error saving copies per order.', 'error');
         }
     } else if (id === 'printerSelect') {
         updatePrinterStatusDot();
@@ -2600,14 +2621,30 @@ async function loadTodaysOrdersForReprint() {
     if (!elements.todaysOrdersList) return;
     elements.todaysOrdersList.innerHTML = '<p class="text-xs text-gray-500 italic">' + t('ui.orderHistory.loadingToday','Loading today\'s orders...') + '</p>';
     try {
-        const response = await fetch('/api/todays_orders_for_reprint');
+        const dateEl = document.getElementById('ohDate');
+        const rangeEl = document.getElementById('ohRange');
+        const startEl = document.getElementById('ohStart');
+        const endEl = document.getElementById('ohEnd');
+        const searchEl = document.getElementById('ohSearch');
+        const dateStr = (dateEl && dateEl.value) ? dateEl.value : new Date().toISOString().slice(0,10);
+        const range = rangeEl ? (rangeEl.value || 'all') : 'all';
+        let url = `/api/orders_by_date?date=${encodeURIComponent(dateStr)}&range=${encodeURIComponent(range)}`;
+        if (range === 'custom' && startEl && endEl && startEl.value && endEl.value) {
+            url += `&start=${encodeURIComponent(startEl.value)}&end=${encodeURIComponent(endEl.value)}`;
+        }
+        const response = await fetch(url);
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({
                 message: `HTTP ${response.status}`
             }));
             throw new Error(errorData.message || `Failed to load orders: ${response.statusText}`);
         }
-        const orders = await response.json();
+        let orders = await response.json();
+        // Client-side search filter
+        const q = (searchEl && (searchEl.value || '').trim().toLowerCase()) || '';
+        if (q) {
+            orders = orders.filter(o => String(o.order_number||'').toLowerCase().includes(q) || String(o.table_number||'').toLowerCase().includes(q));
+        }
         renderTodaysOrdersList(orders);
     } catch (error) {
         console.error("Error loading today's orders for reprint:", error);
@@ -2642,19 +2679,83 @@ function renderTodaysOrdersList(orders) {
         } catch (e) { /* keep original */ }
 
         // Unified mobile-style row for both UIs
-        div.className = "p-2.5 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50";
+        div.className = "p-2.5 border border-gray-300 rounded-md bg-white hover:bg-gray-50";
         div.innerHTML = `
-            <div>
-                <span class="font-semibold text-gray-800">${t('ui.orderHistory.orderNumber','Order #')}${order.order_number}</span>
-                <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
-                <span class="text-xs text-gray-500 ml-2">${t('ui.orderHistory.time','Time:')} ${formattedTimestamp}</span>
+            <div class="flex justify-between items-center text-sm">
+                <div>
+                    <span class="font-semibold text-gray-800">${t('ui.orderHistory.orderNumber','Order #')}${order.order_number}</span>
+                    <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
+                    <span class="text-xs text-gray-500 ml-2">${t('ui.orderHistory.time','Time:')} ${formattedTimestamp}</span>
+                    <span class="text-xs text-gray-500 ml-2">Total: €${order.order_total || '-'}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button onclick=\"toggleOrderDetails('${order.order_number}')\" class=\"px-3 py-1.5 text-xs btn-secondary rounded hover:opacity-80 transition\">Details</button>
+                    <button onclick=\"reprintOrder('${order.order_number}')\" class=\"px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition\">
+                        <i class=\"fas fa-print mr-1\"></i> ${t('ui.orderHistory.reprint','Reprint')}
+                    </button>
+                </div>
             </div>
-            <button onclick=\"reprintOrder('${order.order_number}')\" class=\"px-3 py-1.5 text-xs btn-primary text-white rounded hover:opacity-80 transition\">
-                <i class=\"fas fa-print mr-1\"></i> ${t('ui.orderHistory.reprint','Reprint')}
-            </button>
+            <div id="order-details-${order.order_number}" class="hidden mt-2 p-2 bg-gray-50 border border-gray-200 rounded"></div>
         `;
         elements.todaysOrdersList.appendChild(div);
     });
+}
+
+// Initialize default date and toggle custom time UI
+document.addEventListener('DOMContentLoaded', () => {
+    const dateEl = document.getElementById('ohDate');
+    const rangeEl = document.getElementById('ohRange');
+    const customBox = document.getElementById('ohCustomRange');
+    if (dateEl) {
+        dateEl.value = new Date().toISOString().slice(0,10);
+    }
+    if (rangeEl && customBox) {
+        rangeEl.addEventListener('change', () => {
+            if (rangeEl.value === 'custom') customBox.classList.remove('hidden');
+            else customBox.classList.add('hidden');
+        });
+    }
+});
+
+async function toggleOrderDetails(orderNumber) {
+    const container = document.getElementById(`order-details-${orderNumber}`);
+    if (!container) return;
+    const isHidden = container.classList.contains('hidden');
+    if (!isHidden) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+    container.classList.remove('hidden');
+    container.innerHTML = '<p class="text-xs text-gray-500 italic">Loading details...</p>';
+    try {
+        const todayStr = new Date().toISOString().slice(0,10);
+        const resp = await fetch(`/api/order_details?date=${todayStr}&order_number=${encodeURIComponent(orderNumber)}`);
+        const data = await resp.json();
+        if (!resp.ok || data.status === 'error') {
+            throw new Error(data.message || `HTTP ${resp.status}`);
+        }
+        const itemsHtml = (data.items || []).map(it => {
+            const opts = (it.generalSelectedOptions || []).map(o => `${o.name}${(o.priceChange||0)?` (+€${Number(o.priceChange).toFixed(2)})`:''}`).join(', ');
+            const comment = (it.comment||'').trim();
+            return `<li class="mb-1"><span class="font-medium">${it.quantity}x ${it.name}</span> - €${Number(it.itemPriceWithModifiers || it.basePrice || 0).toFixed(2)}${opts?`<div class='text-xs text-gray-600'>Options: ${opts}</div>`:''}${comment?`<div class='text-xs text-gray-600'>Note: ${comment}</div>`:''}</li>`;
+        }).join('');
+        container.innerHTML = `
+            <div class="text-xs text-gray-700">
+                <div class="flex flex-wrap gap-3 mb-2">
+                    <span><span class="text-gray-500">Table:</span> ${data.table_number || 'N/A'}</span>
+                    <span><span class="text-gray-500">Payment:</span> ${String(data.payment_method||'Cash').toUpperCase()}</span>
+                    <span><span class="text-gray-500">Total:</span> €${Number(data.order_total||0).toFixed(2)}</span>
+                </div>
+                ${data.universal_comment ? `<div class="mb-2"><span class="text-gray-500">Order Notes:</span> ${data.universal_comment}</div>` : ''}
+                <ul class="list-disc ml-5">
+                    ${itemsHtml || '<li class="italic text-gray-500">No items.</li>'}
+                </ul>
+            </div>
+        `;
+    } catch (e) {
+        container.innerHTML = `<p class="text-xs text-red-600">Failed to load details: ${e.message}</p>`;
+    }
 }
 
 

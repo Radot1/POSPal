@@ -4,13 +4,21 @@ REM Build script for POSPal
 REM Description: This script creates a new 'build_output' directory and performs
 REM              the entire build process within it, keeping the root
 REM              directory clean.
-REM Version: 1.1.1 (Containerized Build Process)
+REM Version: 1.1.2 (Containerized Build Process)
 REM ============================================================================
 setlocal
 
-set VERSION=1.1.1
+set VERSION=1.1.2
 set BUILD_DIR=build_output
 set RELEASE_DIR=POSPal_v%VERSION%
+set RELEASE_DIR_ONEDIR=POSPal_onedir_v%VERSION%
+
+REM Optional toggles (set before running script or here)
+REM set BUILD_ONEDIR=1
+REM For optional code signing, set env vars before running:
+REM   SIGNING_PFX=absolute_path_to_certificate.pfx
+REM   SIGNING_PFX_PASSWORD=your_password
+REM   SIGNING_TIMESTAMP_URL=http://timestamp.sectigo.com
 
 REM --- 0. Pre-flight Check ---
 echo.
@@ -108,7 +116,8 @@ pyinstaller ^
     --onefile ^
     --noconsole ^
     --name "POSPal" ^
-    --runtime-tmpdir "%LOCALAPPDATA%\\POSPal\\runtime" ^
+    --clean ^
+    --noupx ^
     --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
     --add-data "..\POSPalDesktop.html;." ^
@@ -130,6 +139,38 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 echo [SUCCESS] Executable built successfully.
+
+REM --- 3b. Optionally build a 'onedir' variant (often fewer AV false positives) ---
+if defined BUILD_ONEDIR (
+    echo.
+    echo [BUILD] Building ONEDIR variant...
+    pyinstaller ^
+        --onedir ^
+        --noconsole ^
+        --name "POSPal" ^
+        --clean ^
+        --noupx ^
+        --add-data "..\UISelect.html;." ^
+        --add-data "..\POSPal.html;." ^
+        --add-data "..\POSPalDesktop.html;." ^
+        --add-data "..\index.html;." ^
+        --add-data "..\POSPal_Demo.html;." ^
+        --add-data "..\demo_generator.html;." ^
+        --add-data "..\managementComponent.html;." ^
+        --add-data "..\managementComponent.js;." ^
+        --add-data "..\i18n.js;." ^
+        --add-data "..\locales;locales" ^
+        --add-data "..\pospalCore.js;." ^
+        --icon "..\app_icon.ico" ^
+        ..\app.py
+    if %errorlevel% neq 0 (
+        echo [ERROR] PyInstaller failed to build the ONEDIR variant.
+        pause
+        popd
+        exit /b 1
+    )
+    echo [SUCCESS] ONEDIR variant built successfully.
+)
 
 REM --- 4. Create Final Release Package ---
 echo.
@@ -247,6 +288,21 @@ if not exist "%RELEASE_DIR%\data\device_sessions.json" (
 
 echo [SUCCESS] Final package created in "%RELEASE_DIR%"
 
+REM If ONEDIR was built, package it as well
+if defined BUILD_ONEDIR (
+    echo.
+    echo [PACKAGE] Assembling ONEDIR package...
+    mkdir "%RELEASE_DIR_ONEDIR%"
+    xcopy /e /i /y "dist\POSPal\" "%RELEASE_DIR_ONEDIR%\" >nul
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to copy ONEDIR files.
+        pause
+        popd
+        exit /b 1
+    )
+    echo [SUCCESS] ONEDIR package created in "%RELEASE_DIR_ONEDIR%"
+)
+
 REM --- 5. Final Cleanup and Move to Root ---
 echo.
 echo [CLEANUP] Moving final release to root and cleaning up...
@@ -257,6 +313,11 @@ if %errorlevel% neq 0 (
     pause
     popd
     exit /b 1
+)
+
+REM Move ONEDIR release if present
+if defined BUILD_ONEDIR (
+    move "%RELEASE_DIR_ONEDIR%" "..\" >nul
 )
 
 REM Remove all temporary build files and folders
@@ -276,6 +337,7 @@ echo ===========================================================================
 echo  Build Complete!
 echo  Your final, runnable application is located in the folder:
 echo  %RELEASE_DIR%
+if defined BUILD_ONEDIR echo  An alternative ONEDIR build is also available: %RELEASE_DIR_ONEDIR%
 echo.
 echo  The application includes:
 echo  - All essential HTML and JavaScript files
