@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.5"  # Update this with each release
+CURRENT_VERSION = "1.1.6"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -1877,7 +1877,7 @@ def check_trial_status():
             # Validate signature
             data = f"{license['hardware_id']}{APP_SECRET_KEY}".encode()
             if hashlib.sha256(data).hexdigest() == license['signature']:
-                                # Validate hardware using enhanced fingerprint
+                # Validate hardware using enhanced fingerprint
                 current_hw_id = get_enhanced_hardware_id()
                 if current_hw_id == license['hardware_id']:
                     return {"licensed": True, "active": True}
