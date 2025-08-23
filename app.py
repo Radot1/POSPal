@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.6"  # Update this with each release
+CURRENT_VERSION = "1.1.7"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -167,7 +167,7 @@ def _is_process_running(pid):
         try:
             import subprocess
             result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], 
-                                  capture_output=True, text=True, timeout=5)
+                                  capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
             return str(pid) in result.stdout
         except Exception:
             # If we can't check, assume the process might be running
@@ -188,7 +188,7 @@ def _setup_windows_firewall_rule():
         ]
         
         try:
-            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
             if check_result.returncode == 0 and rule_name in check_result.stdout:
                 app.logger.info(f"Firewall rule '{rule_name}' already exists")
                 return True, f"Firewall rule '{rule_name}' already exists"
@@ -205,7 +205,7 @@ def _setup_windows_firewall_rule():
             f'name={rule_name}', 'dir=in', 'action=allow', 'protocol=TCP', f'localport={port}'
         ]
         
-        result = subprocess.run(add_cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(add_cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
         
         # Mark that we've attempted firewall setup
         try:
@@ -1134,7 +1134,7 @@ def network_info():
             try:
                 rule_name = f"POSPal {port}"
                 check_cmd = ['netsh', 'advfirewall', 'firewall', 'show', 'rule', f'name={rule_name}']
-                result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
+                result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
                 if result.returncode == 0 and rule_name in result.stdout:
                     firewall_status = "rule_exists"
                 else:
@@ -1193,7 +1193,7 @@ def open_windows_firewall_port():
             f'name={rule_name}', 'dir=in', 'action=allow', 'protocol=TCP', f'localport={port}'
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
         except Exception as e:
             return jsonify({"success": False, "message": f"Failed to start command: {str(e)}"}), 200
 
@@ -2723,26 +2723,90 @@ setlocal
 cd /d "%~dp0"
 echo Updating POSPal... Please wait.
 
-set "TEMP_DIR=%TEMP%"
-if not defined TEMP_DIR set "TEMP_DIR=%TMP%"
-if not defined TEMP_DIR set "TEMP_DIR=%~dp0"
-
+set "ORIGINAL_DIR=%~dp0"
 set "NEW_EXE={new_exe_path}"
-set "TARGET_EXE=%TEMP_DIR%\{expected_asset_name}"
+set "TARGET_EXE=%ORIGINAL_DIR%{expected_asset_name}"
+set "BACKUP_EXE=%ORIGINAL_DIR%{expected_asset_name}.backup"
 
-if not exist "%TEMP_DIR%" mkdir "%TEMP_DIR%" >nul 2>&1
+if not exist "%NEW_EXE%" (
+    echo ERROR: New executable not found at %NEW_EXE%
+    pause
+    exit /b 1
+)
 
-if not exist "%NEW_EXE%" exit /b 1
-
+echo Unblocking downloaded file...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Try {{ Unblock-File -LiteralPath '%NEW_EXE%' }} Catch {{}}" >nul 2>&1
 
+echo Stopping POSPal processes...
 taskkill /f /im "{expected_asset_name}" >nul 2>&1
-timeout /t 2 /nobreak >nul
+taskkill /f /im "python.exe" /fi "WINDOWTITLE eq POSPal*" >nul 2>&1
 
-copy /y "%NEW_EXE%" "%TARGET_EXE%" >nul 2>&1
-if %errorlevel% neq 0 exit /b 1
+echo Waiting for processes to terminate...
+timeout /t 5 /nobreak >nul
 
+rem Try multiple times to ensure process is really dead
+for /L %%i in (1,1,3) do (
+    tasklist /fi "IMAGENAME eq {expected_asset_name}" 2>nul | find /i "{expected_asset_name}" >nul
+    if not errorlevel 1 (
+        echo Process still running, force killing attempt %%i...
+        taskkill /f /im "{expected_asset_name}" >nul 2>&1
+        timeout /t 2 /nobreak >nul
+    )
+)
+
+echo Backing up current version...
+if exist "%TARGET_EXE%" (
+    copy /y "%TARGET_EXE%" "%BACKUP_EXE%"
+    if %errorlevel% neq 0 (
+        echo WARNING: Failed to create backup
+    )
+)
+
+echo Installing new version...
+rem Try to delete the old file first
+if exist "%TARGET_EXE%" (
+    del "%TARGET_EXE%" >nul 2>&1
+)
+
+rem Copy new version
+copy /y "%NEW_EXE%" "%TARGET_EXE%"
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to copy new executable
+    echo Source: %NEW_EXE%
+    echo Target: %TARGET_EXE%
+    echo Attempting to restore backup...
+    if exist "%BACKUP_EXE%" (
+        copy /y "%BACKUP_EXE%" "%TARGET_EXE%" >nul 2>&1
+        if %errorlevel% neq 0 (
+            echo CRITICAL: Failed to restore backup!
+        ) else (
+            echo Backup restored successfully
+        )
+    )
+    pause
+    exit /b 1
+)
+
+echo Verifying installation...
+if not exist "%TARGET_EXE%" (
+    echo ERROR: New executable not found after copy!
+    if exist "%BACKUP_EXE%" (
+        echo Restoring backup...
+        copy /y "%BACKUP_EXE%" "%TARGET_EXE%" >nul 2>&1
+    )
+    pause
+    exit /b 1
+)
+
+echo Cleaning up backup...
+if exist "%BACKUP_EXE%" del "%BACKUP_EXE%" >nul 2>&1
+
+echo Starting updated POSPal...
+cd /d "%ORIGINAL_DIR%"
 start "" "%TARGET_EXE%"
+
+echo Update completed successfully!
+timeout /t 2 /nobreak >nul
 
 (goto) 2>nul & del "%~f0" & exit
 """)
