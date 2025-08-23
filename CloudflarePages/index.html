@@ -1,0 +1,136 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Menu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --text: #111827;
+      --muted: #6b7280;
+      --rule: #e5e7eb;
+      --bg: #ffffff;
+      --card: #ffffff;
+      --shadow: 0 1px 3px rgba(0,0,0,0.04);
+      --radius: 10px;
+    }
+
+    * { box-sizing: border-box; }
+    html,body { height:100%; margin:0; padding:0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 16px;
+    }
+
+    .wrap { max-width: 720px; margin: 0 auto; }
+
+    .header { padding: 12px 0 14px; border-bottom: 1px solid var(--rule); text-align: center; }
+    h1 { font-size: 18px; font-weight: 600; margin: 0; }
+
+    .content { padding-top: 10px; }
+    .loading, .error { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 8px; }
+
+    /* Category as subtle card */
+    .category { margin-top: 16px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+    h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+    .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+    .item + .item { border-top: 1px dashed var(--rule); }
+    .name { font-size: 15px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dots { flex: 1 1 auto; border-bottom: 1px dotted var(--rule); transform: translateY(-2px); opacity: .8; }
+    .price { font-weight: 700; font-size: 15px; color: var(--text); white-space: nowrap; }
+
+    @media (prefers-color-scheme: dark) {
+      :root { --text:#e5e7eb; --muted:#9ca3af; --rule:#374151; --bg:#111827; --card:#0f172a; }
+      .header { border-bottom-color: var(--rule); }
+      .category { border-color: var(--rule); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1 id="title">Menu</h1>
+    </div>
+    <div class="content">
+      <div id="content" class="loading">Loading...</div>
+    </div>
+  </div>
+  <script>
+    // Set this to your Worker URL
+    const API_BASE = 'https://menus-api.bzoumboulis.workers.dev';
+
+    function getSlugFromPath() {
+      const path = location.pathname.replace(/\/+$/, '');
+      if (path.startsWith('/s/')) return path.slice(3).replace(/^\//,'').toLowerCase();
+      return '';
+    }
+
+    async function load() {
+      const slug = getSlugFromPath();
+      const title = document.getElementById('title');
+      const content = document.getElementById('content');
+      title.textContent = slug ? `Menu – ${slug}` : 'Menu';
+      if (!slug) { content.textContent = 'No store selected.'; return; }
+
+      try {
+        const res = await fetch(`${API_BASE}/v1/stores/${encodeURIComponent(slug)}/menu`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const menu = await res.json();
+        render(menu);
+      } catch (e) {
+        content.className = 'error';
+        content.textContent = 'Failed to load menu.';
+      }
+    }
+
+    function render(menu) {
+      const content = document.getElementById('content');
+      content.innerHTML = '';
+      const cats = Object.keys(menu || {});
+      if (!cats.length) {
+        content.className = 'error';
+        content.textContent = 'No items yet.';
+        return;
+      }
+
+      cats.forEach(cat => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.className = 'category';
+
+        const h2 = document.createElement('h2');
+        h2.textContent = cat;
+        categoryDiv.appendChild(h2);
+
+        (menu[cat]||[]).forEach(it => {
+          const row = document.createElement('div');
+          row.className = 'item';
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = it.name || '';
+          const dots = document.createElement('div');
+          dots.className = 'dots';
+          const price = document.createElement('div');
+          price.className = 'price';
+          price.textContent = `€${Number(it.price||0).toFixed(2)}`;
+          row.appendChild(name);
+          row.appendChild(dots);
+          row.appendChild(price);
+          categoryDiv.appendChild(row);
+        });
+
+        content.appendChild(categoryDiv);
+      });
+    }
+
+    load();
+  </script>
+</body>
+</html>

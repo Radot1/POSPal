@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.3"  # Update this with each release
+CURRENT_VERSION = "1.1.5"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -2618,8 +2618,31 @@ def check_for_updates():
     """
     Checks for a new release on a public GitHub repository, downloads it,
     and creates a batch script to perform the update.
+    Now includes rate limiting to prevent excessive update checks.
     """
     try:
+        # Check if we've already checked for updates recently (within 24 hours)
+        update_check_file = os.path.join(DATA_DIR, 'last_update_check.json')
+        current_time = time.time()
+        
+        # Read last update check time
+        if os.path.exists(update_check_file):
+            try:
+                with open(update_check_file, 'r') as f:
+                    update_data = json.load(f)
+                last_check = update_data.get('last_check', 0)
+                last_version_checked = update_data.get('last_version_checked', '')
+                
+                # If we checked within the last 24 hours and it was the same version, skip
+                if current_time - last_check < 86400:  # 24 hours in seconds
+                    if last_version_checked == CURRENT_VERSION:
+                        app.logger.info(f"Update check skipped - already checked within 24 hours for version {CURRENT_VERSION}")
+                        return
+                        
+            except (json.JSONDecodeError, KeyError):
+                # If file is corrupted, continue with update check
+                pass
+        
         app.logger.info("Checking for application updates from public GitHub repository...")
 
         # This URL points to the latest release of a public repository.
@@ -2637,6 +2660,8 @@ def check_for_updates():
 
         if response.status_code != 200:
             app.logger.error(f"Update check failed: GitHub API returned HTTP {response.status_code}. Response: {response.text}")
+            # Still record the check attempt to prevent immediate retries
+            _record_update_check(current_time, CURRENT_VERSION)
             return
 
         latest_release_data = response.json()
@@ -2644,7 +2669,12 @@ def check_for_updates():
 
         if not latest_ver:
             app.logger.error("Update check failed: Could not find 'tag_name' in the API response.")
+            # Still record the check attempt
+            _record_update_check(current_time, CURRENT_VERSION)
             return
+
+        # Record this successful update check
+        _record_update_check(current_time, CURRENT_VERSION, latest_ver)
 
         app.logger.info(f"Current version: {CURRENT_VERSION}, Latest version from GitHub: {latest_ver}")
 
@@ -2732,6 +2762,28 @@ start "" "%TARGET_EXE%"
         app.logger.error(f"Update check failed due to a network error: {str(e)}")
     except Exception as e:
         app.logger.error(f"An unexpected error occurred during the update check: {str(e)}")
+
+
+def _record_update_check(timestamp, current_version, latest_version=None):
+    """Record when we last checked for updates to prevent excessive checking."""
+    try:
+        update_check_file = os.path.join(DATA_DIR, 'last_update_check.json')
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
+        update_data = {
+            'last_check': timestamp,
+            'last_version_checked': current_version,
+            'check_timestamp': datetime.fromtimestamp(timestamp).isoformat()
+        }
+        
+        if latest_version:
+            update_data['latest_version_found'] = latest_version
+            
+        with open(update_check_file, 'w') as f:
+            json.dump(update_data, f, indent=2)
+            
+    except Exception as e:
+        app.logger.warning(f"Could not record update check: {e}")
 
 
 # Open default browser to the local UI once the server is reachable
