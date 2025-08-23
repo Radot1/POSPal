@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="robots" content="noindex, nofollow">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Select Your Interface</title>
@@ -78,12 +79,15 @@
                         <span id="health-status" class="ml-2 text-xs text-gray-700">Idle</span>
                     </div>
                     <div class="bg-gray-50 border rounded p-2">
-                        <div class="text-xs font-medium text-gray-800 mb-1">Windows Firewall (optional)</div>
-                        <p class="text-xs text-gray-600 mb-1">If devices cannot connect, allow the port through Windows Defender Firewall:</p>
+                        <div class="text-xs font-medium text-gray-800 mb-1">Windows Firewall</div>
+                        <p class="text-xs text-gray-600 mb-1">Allow other devices to connect through Windows Defender Firewall:</p>
                         <code id="fw-command" class="block text-[11px] bg-white border rounded p-2 whitespace-nowrap overflow-hidden text-ellipsis">netsh advfirewall firewall add rule name=\"POSPal 5000\" dir=in action=allow protocol=TCP localport=5000</code>
                         <div class="mt-2 flex gap-2">
-                            <button id="run-fw-btn" class="px-2 py-1 text-xs bg-gray-900 text-white rounded hover:bg-black">Run command</button>
+                            <button id="run-fw-btn" class="px-2 py-1 text-xs bg-gray-900 text-white rounded hover:bg-black">Setup Firewall</button>
                             <button id="copy-fw-btn" class="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded">Copy</button>
+                        </div>
+                        <div id="fw-auto-status" class="mt-2 text-xs hidden">
+                            <!-- Auto-status will be injected here -->
                         </div>
                     </div>
                 </div>
@@ -130,6 +134,44 @@
                 const cmd = `netsh advfirewall firewall add rule name=\"POSPal ${p}\" dir=in action=allow protocol=TCP localport=${p}`;
                 fwCmdEl.textContent = cmd;
             }
+            
+            function updateFirewallUI(firewallStatus) {
+                const runFwBtn = document.getElementById('run-fw-btn');
+                const autoStatusEl = document.getElementById('fw-auto-status');
+                
+                if (firewallStatus === 'rule_exists') {
+                    runFwBtn.innerHTML = '<i class="fas fa-check mr-1"></i>✅ Setup Complete';
+                    runFwBtn.className = 'px-2 py-1 text-xs bg-green-600 text-white rounded';
+                    runFwBtn.disabled = true;
+                    
+                    autoStatusEl.innerHTML = '<div class="text-green-600"><i class="fas fa-check-circle mr-1"></i>Network access is working - QR codes will connect other devices</div>';
+                    autoStatusEl.classList.remove('hidden');
+                } else if (firewallStatus === 'no_rule') {
+                    runFwBtn.innerHTML = '🔧 Quick Setup';
+                    runFwBtn.className = 'px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700';
+                    runFwBtn.disabled = false;
+                    
+                    autoStatusEl.innerHTML = `
+                        <div class="text-blue-600 mb-2">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            <strong>Network Setup Needed:</strong> Other devices won't be able to connect via QR code until firewall is configured.
+                        </div>
+                        <div class="text-xs text-gray-600 bg-blue-50 p-2 rounded border-l-2 border-blue-300">
+                            <strong>One-time setup options:</strong><br>
+                            • Click "🔧 Quick Setup" below (may ask for admin password)<br>
+                            • OR restart POSPal by right-clicking → "Run as administrator"<br>
+                            • OR copy the command above and run it in Administrator Command Prompt
+                        </div>
+                    `;
+                    autoStatusEl.classList.remove('hidden');
+                } else {
+                    runFwBtn.innerHTML = 'Setup Firewall';
+                    runFwBtn.className = 'px-2 py-1 text-xs bg-gray-900 text-white rounded hover:bg-black';
+                    runFwBtn.disabled = false;
+                    
+                    autoStatusEl.classList.add('hidden');
+                }
+            }
 
             function setLan(base){
                 lanBase = base;
@@ -148,6 +190,36 @@
                 openLanLink.href = lan + '/POSPal.html';
                 setFwCommand(port);
                 setLan(lan);
+                
+                // Show firewall status
+                const firewallStatus = info.firewall_status;
+                const connectivityTips = info.connectivity_tips || {};
+                
+                // Add firewall status indicator
+                let statusHtml = '';
+                if (firewallStatus === 'rule_exists') {
+                    statusHtml = '<div class="text-green-600 text-xs mt-2"><i class="fas fa-check-circle mr-1"></i>Firewall rule exists - network access should work</div>';
+                } else if (firewallStatus === 'no_rule') {
+                    statusHtml = '<div class="text-orange-600 text-xs mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>No firewall rule detected - users may not be able to connect</div>';
+                } else if (firewallStatus === 'check_failed') {
+                    statusHtml = '<div class="text-gray-600 text-xs mt-2"><i class="fas fa-question-circle mr-1"></i>Could not check firewall status</div>';
+                }
+                
+                // Add to LAN address section
+                if (statusHtml) {
+                    const lanSection = lanEl.parentElement;
+                    const existingStatus = lanSection.querySelector('.firewall-status');
+                    if (existingStatus) existingStatus.remove();
+                    
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = 'firewall-status';
+                    statusDiv.innerHTML = statusHtml;
+                    lanSection.appendChild(statusDiv);
+                }
+                
+                // Update firewall button and auto-status
+                updateFirewallUI(firewallStatus);
+                
             }).catch(()=>{
                 // Fallbacks
                 portEl.textContent = '5000';
@@ -178,18 +250,38 @@
                     body: JSON.stringify({ port })
                 }).then(r => r.json()).then(resp => {
                     if (resp && resp.success) {
-                        runFwBtn.textContent = 'Done';
-                        setTimeout(()=> { runFwBtn.textContent = 'Run command'; runFwBtn.disabled = false; }, 1500);
+                        runFwBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Success';
+                        runFwBtn.className = 'px-2 py-1 text-xs bg-green-600 text-white rounded';
+                        
+                        // Refresh network info to update status
+                        setTimeout(() => {
+                            fetch('/api/network_info').then(r=>r.json()).then(info=>{
+                                updateFirewallUI(info.firewall_status);
+                            }).catch(()=> {
+                                updateFirewallUI('check_failed');
+                            });
+                        }, 1000);
+                        
                     } else {
-                        runFwBtn.textContent = 'Needs Admin';
-                        setTimeout(()=> { runFwBtn.textContent = 'Run command'; runFwBtn.disabled = false; }, 2000);
+                        runFwBtn.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i>Needs Admin';
+                        runFwBtn.className = 'px-2 py-1 text-xs bg-red-600 text-white rounded';
+                        setTimeout(()=> { 
+                            runFwBtn.innerHTML = 'Setup Firewall';
+                            runFwBtn.className = 'px-2 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700';
+                            runFwBtn.disabled = false; 
+                        }, 3000);
                         if (resp && resp.message) {
                             console.log('Firewall:', resp.message);
                         }
                     }
                 }).catch(err => {
-                    runFwBtn.textContent = 'Error';
-                    setTimeout(()=> { runFwBtn.textContent = 'Run command'; runFwBtn.disabled = false; }, 2000);
+                    runFwBtn.innerHTML = '<i class="fas fa-times mr-1"></i>Error';
+                    runFwBtn.className = 'px-2 py-1 text-xs bg-red-600 text-white rounded';
+                    setTimeout(()=> { 
+                        runFwBtn.innerHTML = 'Setup Firewall';
+                        runFwBtn.className = 'px-2 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700';
+                        runFwBtn.disabled = false; 
+                    }, 3000);
                     console.error('Firewall error', err);
                 });
             });

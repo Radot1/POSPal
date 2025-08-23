@@ -91,6 +91,7 @@ def acquire_single_instance_lock():
     Strategy:
     - First try a Windows named mutex (works best on Windows; requires pywin32).
     - If that fails, fall back to a simple lock file created with O_EXCL.
+    - Includes retry mechanism for transient startup issues.
     """
     global _instance_mutex_handle, _lock_file_fd
 
@@ -110,18 +111,162 @@ def acquire_single_instance_lock():
     except Exception as e:
         logging.warning("Mutex guard unavailable (%s). Falling back to lock file.", str(e))
 
-    # Fallback: lock file
+    # Fallback: lock file with retry mechanism
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            
+            # Check if there's a stale lock file from a crashed process
+            if os.path.exists(APP_INSTANCE_LOCK_FILE):
+                try:
+                    with open(APP_INSTANCE_LOCK_FILE, 'r') as f:
+                        pid_str = f.read().strip()
+                        if pid_str.isdigit():
+                            old_pid = int(pid_str)
+                            # Check if the process is still running
+                            if not _is_process_running(old_pid):
+                                logging.warning(f"Removing stale lock file from PID {old_pid}")
+                                os.remove(APP_INSTANCE_LOCK_FILE)
+                except (ValueError, OSError) as e:
+                    logging.warning(f"Error checking stale lock file: {e}")
+                    # If we can't read/check the file, try to remove it anyway
+                    try:
+                        os.remove(APP_INSTANCE_LOCK_FILE)
+                    except OSError:
+                        pass
+
+            _lock_file_fd = os.open(APP_INSTANCE_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            os.write(_lock_file_fd, str(os.getpid()).encode())
+            logging.info("Acquired single-instance lock file: %s", APP_INSTANCE_LOCK_FILE)
+            return True
+        except FileExistsError:
+            if attempt == max_retries - 1:
+                logging.error("Another POSPal instance is already running (lock file). Exiting.")
+                return False
+            else:
+                logging.warning(f"Lock file exists, retrying in 1 second... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(1)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logging.error("Failed to acquire single-instance lock: %s", str(e))
+                return False
+            else:
+                logging.warning(f"Lock acquisition failed, retrying... (attempt {attempt + 1}/{max_retries}): {e}")
+                time.sleep(1)
+
+    return False
+
+def _is_process_running(pid):
+    """Check if a process with the given PID is still running."""
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        _lock_file_fd = os.open(APP_INSTANCE_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-        os.write(_lock_file_fd, str(os.getpid()).encode())
-        logging.info("Acquired single-instance lock file: %s", APP_INSTANCE_LOCK_FILE)
-        return True
-    except FileExistsError:
-        logging.error("Another POSPal instance is already running (lock file). Exiting.")
-        return False
+        import psutil
+        return psutil.pid_exists(pid)
+    except ImportError:
+        # Fallback for Windows without psutil
+        try:
+            import subprocess
+            result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], 
+                                  capture_output=True, text=True, timeout=5)
+            return str(pid) in result.stdout
+        except Exception:
+            # If we can't check, assume the process might be running
+            return True
+
+def _setup_windows_firewall_rule():
+    """Automatically create Windows Firewall rule for POSPal during startup."""
+    if os.name != 'nt':
+        return True, "Not Windows - no firewall rule needed"
+    
+    try:
+        port = int(config.get('port', 5000))
+        rule_name = f"POSPal {port}"
+        
+        # First check if rule already exists
+        check_cmd = [
+            'netsh', 'advfirewall', 'firewall', 'show', 'rule', f'name={rule_name}'
+        ]
+        
+        try:
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            if check_result.returncode == 0 and rule_name in check_result.stdout:
+                app.logger.info(f"Firewall rule '{rule_name}' already exists")
+                return True, f"Firewall rule '{rule_name}' already exists"
+        except Exception:
+            pass
+        
+        # Check if this is first run and no firewall rule exists
+        first_run_marker = os.path.join(DATA_DIR, 'firewall_setup_attempted.json')
+        is_first_run = not os.path.exists(first_run_marker)
+        
+        # Try to create the rule
+        add_cmd = [
+            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+            f'name={rule_name}', 'dir=in', 'action=allow', 'protocol=TCP', f'localport={port}'
+        ]
+        
+        result = subprocess.run(add_cmd, capture_output=True, text=True, timeout=10)
+        
+        # Mark that we've attempted firewall setup
+        try:
+            with open(first_run_marker, 'w') as f:
+                json.dump({
+                    "attempted": True,
+                    "timestamp": datetime.now().isoformat(),
+                    "success": result.returncode == 0
+                }, f)
+        except Exception:
+            pass
+        
+        if result.returncode == 0:
+            app.logger.info(f"Successfully created Windows Firewall rule for port {port}")
+            return True, f"Created firewall rule for port {port}"
+        else:
+            error_msg = (result.stderr or result.stdout or "Unknown error").strip()
+            if 'requires elevation' in error_msg.lower() or 'access denied' in error_msg.lower():
+                # If this is first run, offer to restart with admin privileges
+                if is_first_run and getattr(sys, 'frozen', False):
+                    app.logger.warning(f"First run detected - firewall setup requires admin privileges")
+                    return False, f"First run - admin privileges needed for network access"
+                else:
+                    app.logger.warning(f"Cannot create firewall rule - requires admin privileges: {error_msg}")
+                    return False, f"Admin privileges required to create firewall rule: {error_msg}"
+            else:
+                app.logger.warning(f"Failed to create firewall rule: {error_msg}")
+                return False, f"Failed to create firewall rule: {error_msg}"
+                
     except Exception as e:
-        logging.error("Failed to acquire single-instance lock: %s", str(e))
+        app.logger.warning(f"Error setting up firewall rule: {e}")
+        return False, f"Error setting up firewall rule: {e}"
+
+def _offer_admin_restart():
+    """Offer to restart POSPal with admin privileges for firewall setup."""
+    if not getattr(sys, 'frozen', False):
+        return False  # Only works for compiled exe
+    
+    try:
+        import ctypes
+        
+        # Check if we're already running as admin
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            return False  # Already admin
+        
+        # Create restart script that will run POSPal as admin
+        restart_script = os.path.join(DATA_DIR, 'restart_as_admin.bat')
+        exe_path = sys.executable
+        
+        with open(restart_script, 'w') as f:
+            f.write(f'@echo off\n')
+            f.write(f'echo Restarting POSPal with administrator privileges for firewall setup...\n')
+            f.write(f'timeout /t 2 /nobreak >nul\n')
+            f.write(f'powershell -Command "Start-Process \\"{exe_path}\\" -Verb runAs"\n')
+            f.write(f'del "%~f0"\n')  # Delete the script after use
+        
+        app.logger.info(f"Created admin restart script: {restart_script}")
+        return restart_script
+        
+    except Exception as e:
+        app.logger.warning(f"Could not create admin restart option: {e}")
         return False
 
 def release_single_instance_lock():
@@ -892,18 +1037,71 @@ def health():
 
 
 def _get_best_lan_ip() -> str:
-    """Attempt to determine the primary LAN IPv4 address without extra deps."""
+    """Attempt to determine the primary LAN IPv4 address with improved detection."""
+    # Method 1: Try connecting to external address (most reliable)
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             # Doesn't need to be reachable; no packets are sent
             s.connect(('8.8.8.8', 80))
-            return s.getsockname()[0]
+            ip = s.getsockname()[0]
+            # Validate it's not localhost
+            if ip != '127.0.0.1':
+                return ip
     except Exception:
+        pass
+    
+    # Method 2: Try multiple external IPs
+    external_ips = ['1.1.1.1', '8.8.4.4', '208.67.222.222']
+    for ext_ip in external_ips:
         try:
-            # Fallback to gethostbyname
-            return socket.gethostbyname(socket.gethostname())
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((ext_ip, 80))
+                ip = s.getsockname()[0]
+                if ip != '127.0.0.1':
+                    return ip
         except Exception:
-            return '127.0.0.1'
+            continue
+    
+    # Method 3: Get all interfaces and find best LAN IP
+    try:
+        hostname = socket.gethostname()
+        ip_candidates = []
+        
+        # Get all addresses for hostname
+        infos = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
+        for info in infos:
+            ip = info[4][0]
+            if ip and ip != '127.0.0.1':
+                ip_candidates.append(ip)
+        
+        # Prefer private network ranges
+        private_ranges = [
+            ('192.168.', 1),    # Most common home/office
+            ('10.', 2),         # Corporate networks
+            ('172.', 3)         # Less common but valid
+        ]
+        
+        for prefix, priority in private_ranges:
+            for ip in ip_candidates:
+                if ip.startswith(prefix):
+                    return ip
+        
+        # If no private IPs, return the first non-localhost
+        if ip_candidates:
+            return ip_candidates[0]
+            
+    except Exception:
+        pass
+    
+    # Method 4: Final fallback - gethostbyname
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+        if ip != '127.0.0.1':
+            return ip
+    except Exception:
+        pass
+    
+    return '127.0.0.1'
 
 
 def _get_all_ipv4_addresses(best_ip: str) -> list:
@@ -929,17 +1127,43 @@ def network_info():
         port = int(config.get('port', 5000))
         lan_ip = _get_best_lan_ip()
         ips = _get_all_ipv4_addresses(lan_ip)
+        
+        # Check if firewall rule exists
+        firewall_status = "unknown"
+        if os.name == 'nt':
+            try:
+                rule_name = f"POSPal {port}"
+                check_cmd = ['netsh', 'advfirewall', 'firewall', 'show', 'rule', f'name={rule_name}']
+                result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and rule_name in result.stdout:
+                    firewall_status = "rule_exists"
+                else:
+                    firewall_status = "no_rule"
+            except Exception:
+                firewall_status = "check_failed"
+        else:
+            firewall_status = "not_windows"
+        
         return jsonify({
             "port": port,
             "lan_ip": lan_ip,
-            "ips": ips
+            "ips": ips,
+            "firewall_status": firewall_status,
+            "server_binding": "0.0.0.0",  # Confirm we're binding to all interfaces
+            "connectivity_tips": {
+                "same_network": f"Users should connect to: http://{lan_ip}:{port}",
+                "firewall_needed": firewall_status == "no_rule",
+                "admin_required": firewall_status == "no_rule"
+            }
         })
     except Exception as e:
         app.logger.error(f"Error building network info: {str(e)}")
         return jsonify({
             "port": int(config.get('port', 5000)),
             "lan_ip": '127.0.0.1',
-            "ips": ['127.0.0.1']
+            "ips": ['127.0.0.1'],
+            "firewall_status": "error",
+            "error": str(e)
         }), 200
 
 
@@ -2539,22 +2763,58 @@ if getattr(sys, 'frozen', False):
     threading.Timer(5, check_for_updates).start()
 
 if __name__ == '__main__':
-    # Ensure single instance
-    if not acquire_single_instance_lock():
-        sys.exit(1)
+    # Ensure single instance with retry mechanism
+    startup_success = False
+    max_startup_attempts = 2
+    
+    for startup_attempt in range(max_startup_attempts):
+        try:
+            # Ensure single instance
+            if not acquire_single_instance_lock():
+                if startup_attempt < max_startup_attempts - 1:
+                    logging.warning(f"Startup attempt {startup_attempt + 1} failed, retrying in 2 seconds...")
+                    time.sleep(2)
+                    continue
+                else:
+                    logging.error("Failed to acquire single instance lock after all attempts. Another instance may be running.")
+                    sys.exit(1)
 
-    initialize_trial()
-    # Verify we can write to DATA_DIR
-    try:
-        test_file = os.path.join(DATA_DIR, 'permission_test.tmp')
-        with open(test_file, 'w') as f:
-            f.write('test')
-        os.remove(test_file)
-    except Exception as e:
-        app.logger.critical(f"CRITICAL: Cannot write to data directory: {DATA_DIR}. Error: {str(e)}")
-        # In a real GUI app, you'd show a message box here.
-        # For now, we exit with an error code.
-        sys.exit(f"Error: Insufficient permissions to write to the data directory: {DATA_DIR}")
+            initialize_trial()
+            # Verify we can write to DATA_DIR
+            try:
+                test_file = os.path.join(DATA_DIR, 'permission_test.tmp')
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+            except Exception as e:
+                app.logger.critical(f"CRITICAL: Cannot write to data directory: {DATA_DIR}. Error: {str(e)}")
+                # In a real GUI app, you'd show a message box here.
+                # For now, we exit with an error code.
+                sys.exit(f"Error: Insufficient permissions to write to the data directory: {DATA_DIR}")
+            
+            # Setup Windows Firewall rule for network access
+            firewall_success, firewall_msg = _setup_windows_firewall_rule()
+            if firewall_success:
+                app.logger.info(f"Firewall setup: {firewall_msg}")
+            else:
+                app.logger.warning(f"Firewall setup failed: {firewall_msg}")
+                app.logger.warning("Users on other devices may not be able to connect. Run as Administrator or manually create firewall rule.")
+            
+            startup_success = True
+            break
+            
+        except Exception as e:
+            logging.error(f"Startup attempt {startup_attempt + 1} failed with error: {e}")
+            if startup_attempt < max_startup_attempts - 1:
+                logging.warning("Retrying startup in 2 seconds...")
+                time.sleep(2)
+            else:
+                logging.error("All startup attempts failed.")
+                sys.exit(1)
+    
+    if not startup_success:
+        logging.error("Application failed to start properly.")
+        sys.exit(1)
         
     from waitress import serve
     app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{config.get('port', 5000)}")
