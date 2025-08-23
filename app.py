@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.2"  # Update this with each release
+CURRENT_VERSION = "1.1.3"  # Update this with each release
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
