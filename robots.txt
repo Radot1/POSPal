@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://radot1.github.io/POSPal/sitemap.xml
+
+# Specific pages for Greek POS market
+Allow: /index.html
+Allow: /POSPal_Demo_Index.html
+Allow: /POSPal_Demo.html
+
+# Disallow irrelevant files
+Disallow: /data/
+Disallow: /*.json
+Disallow: /test_*.py
+Disallow: /build.bat
+Disallow: /requirements.txt
+Disallow: /*.md$
+
+# Crawl-delay for responsible crawling
+Crawl-delay: 1
