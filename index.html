@@ -1,595 +1,589 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="el">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POSPal - Your Journey to a Smarter Business</title>
+    <title>POSPal - PDA + QR μενού σε μία λύση</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        /* --- Base Styles --- */
-        :root {
-            --brand-blue: #002366;
-            --brand-green: #66cc33;
-            --light-gray: #f7fafc;
-            --dark-gray: #2d3748;
-            --medium-gray: #4a5568; /* Darkened for better contrast */
-            --hero-bg: #f0f4f8;
-        }
-        html, body {
-            min-height: 100%;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-        body {
-            font-family: 'Poppins', sans-serif;
-            scroll-behavior: smooth;
-            color: var(--dark-gray);
-            background-color: var(--light-gray);
-        }
-        h1, h2, h3, h4, h5, h6 {
-            font-family: 'Lora', serif;
-            color: var(--brand-blue);
-        }
-        
-        /* Custom classes to use CSS variables with Tailwind */
-        .text-brand-blue { color: var(--brand-blue); }
-        .bg-brand-blue { background-color: var(--brand-blue); }
-        .hover\:text-brand-green:hover { color: var(--brand-green); }
-
-
-        /* --- CTA Button Styles --- */
-        .cta-button {
-            transition: all 0.3s ease;
-            border-radius: 8px;
-            font-weight: 600;
-            display: inline-flex; /* Use inline-flex for alignment */
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 0.7rem 1.25rem;
-            font-size: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .cta-primary {
-            background-color: var(--brand-green);
-            color: white;
-        }
-        .cta-primary:hover {
-            background-color: #57b32c;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-        }
-        .cta-secondary {
-            background-color: #e2e8f0;
-            color: var(--brand-blue);
-            border: 2px solid transparent;
-        }
-        .cta-secondary:hover {
-            background-color: #cbd5e1;
-            color: var(--brand-blue);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.1);
-        }
-        
-        .cta-container {
-            animation: cta-enter 0.6s ease-out 0.8s forwards;
-            opacity: 0;
-            transform: translateY(10px);
-        }
-
-        @keyframes cta-enter {
-            to {
-                opacity: 1;
-                transform: translateY(0);
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'inter': ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'brand': {
+                            50: '#f0fdf4',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        },
+                        'accent': {
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                        }
+                    }
+                }
             }
         }
-
-        /* --- Optimized Metro Map Styles --- */
-        .hero-map-bg {
-            background-color: var(--hero-bg);
-            position: relative;
-            overflow-x: clip;
-            overflow-y: visible;
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .bounce-in { animation: bounceIn 0.6s ease-out; }
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); opacity: 1; }
         }
-        .map-line {
-            fill: none;
-            stroke-width: 8px;
-            stroke-linecap: round;
-            stroke-linejoin: round;
+        .fade-in-up { animation: fadeInUp 0.8s ease-out forwards; opacity: 0; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .main-line { stroke: var(--brand-green); }
-        .exit-line { stroke: var(--medium-gray); }
-
-        .station-group {
-            cursor: pointer;
-            opacity: 0;
-            animation: fade-in 1s ease 0.5s forwards;
-            will-change: transform;
-        }
-        
-        .station-dot {
-            stroke-width: 6px;
-            transition: stroke 0.2s ease-in-out; /* Transition only the color */
-        }
-        
-        .station-group:hover .station-dot {
-            stroke: var(--brand-blue);
-        }
-
-        .station-group.active .station-dot {
-             stroke: var(--brand-blue); /* This handles the blue color */
-        }
-        .station-group.completed .station-dot {
-            fill: var(--brand-green);
-        }
-
-        .station-label {
-            font-family: 'Poppins', sans-serif;
-            font-weight: 600;
-            fill: var(--dark-gray);
-            font-size: 18px;
-            text-shadow: 0 0 4px white, 0 0 4px white;
-            transition: fill 0.3s ease;
-        }
-        .station-group.active .station-label {
-            fill: var(--brand-blue);
-            font-weight: 700;
-        }
-
-        .station-sublabel {
-            font-size: 14px;
-            fill: var(--medium-gray);
-        }
-        
-        #train-marker-desktop, #train-marker-mobile {
-            fill: var(--brand-blue);
-            stroke: white;
-            stroke-width: 3px;
-            transition: cx 0.5s cubic-bezier(0.65, 0, 0.35, 1), cy 0.5s cubic-bezier(0.65, 0, 0.35, 1);
-            will-change: cx, cy;
-        }
-
-        @keyframes fade-in {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        #hero-headline, #info-panel {
-            transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-            will-change: transform, opacity;
-        }
-        #info-panel {
-            opacity: 0;
-            transform: translateY(15px);
-        }
-        #info-panel.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        
-        .cta-highlight {
-            animation: pulse-glow 2s infinite;
-        }
-        @keyframes pulse-glow {
-            0% { box-shadow: 0 0 0 0 rgba(102, 204, 51, 0.7); }
-            70% { box-shadow: 0 0 0 15px rgba(102, 204, 51, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(102, 204, 51, 0); }
-        }
-
-        /* --- Content Flow Styles --- */
-        .section-divider {
-            line-height: 0; 
-            background-color: transparent;
-        }
-        .section-divider svg {
-            width: 100%;
-            height: auto;
-        }
-        .section-title {
-            opacity: 0;
-            transform: translateY(20px);
-            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
-            will-change: opacity, transform;
-        }
-        .section-title.is-visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
+        .stagger-4 { animation-delay: 0.4s; }
     </style>
 </head>
-<body class="bg-light-gray">
+<body class="bg-white">
 
     <!-- Header -->
-    <header class="bg-white/80 backdrop-blur-lg shadow-sm sticky top-0 z-50">
-        <div class="container mx-auto px-6 py-3 flex justify-between items-center">
-            <a href="#" class="flex items-center space-x-3">
-                <!-- LOGO FIX: Replaced broken link with a placeholder. Replace the src with your actual logo URL. -->
-                <img src="https://raw.githubusercontent.com/Radot1/POSPal/refs/heads/main/app_icon.ico" alt="POSPal Logo" class="h-10 w-10 object-contain rounded-md">
-                <h1 class="text-xl font-bold text-brand-blue font-lora">POSPal</h1>
-            </a>
-            <div class="flex items-center space-x-4">
-                <button id="mobile-menu-button" class="md:hidden text-brand-blue hover:text-brand-green focus:outline-none">
-                    <i class="fas fa-bars text-2xl"></i>
+    <header class="bg-white/95 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-3">
+                    <img src="app_icon.ico" alt="POSPal Logo" class="w-10 h-10 rounded-xl">
+                    <span class="text-2xl font-bold text-gray-900">POSPal</span>
+                </div>
+                <div class="hidden md:flex items-center space-x-6">
+                    <a href="POSPal_Demo_Index.html" class="text-gray-600 hover:text-brand-600 font-medium transition-colors">Demo</a>
+                    <a href="#pricing" class="text-gray-600 hover:text-brand-600 font-medium transition-colors">Τιμή</a>
+                    <a href="#contact" class="bg-brand-600 text-white px-6 py-2 rounded-lg hover:bg-brand-700 transition-colors font-medium">Ξεκίνα τώρα</a>
+                </div>
+                <button id="mobile-menu" class="md:hidden text-gray-600">
+                    <i class="fas fa-bars text-xl"></i>
                 </button>
             </div>
         </div>
     </header>
 
-    <!-- Mobile Menu -->
-    <div id="mobile-menu" class="hidden fixed inset-0 bg-white z-50">
-        <div class="flex justify-end p-6">
-            <button id="close-menu-button">
-                <i class="fas fa-times text-3xl text-gray-600"></i>
-            </button>
+    <!-- Hero Section -->
+    <section class="relative overflow-hidden bg-gradient-to-br from-gray-50 to-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid lg:grid-cols-2 gap-12 items-center py-16 lg:py-24">
+                
+                <!-- Left Content -->
+                <div class="text-center lg:text-left">
+                    <div class="mb-6">
+                        <span class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-accent-50 text-accent-700 border border-accent-200">
+                            <i class="fas fa-star mr-2 text-accent-500"></i>
+                            Χωρίς συνδρομές · Εφάπαξ αγορά
+                        </span>
         </div>
-        <div class="flex flex-col items-center justify-center h-full -mt-12 space-y-8">
-            <a href="#features" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-brand-green">Features</a>
-            <a href="#how-it-works" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-brand-green">How It Works</a>
-            <a href="#pricing" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-brand-green">Pricing</a>
-            <a href="#faq" class="mobile-menu-link text-2xl font-semibold text-gray-800 hover:text-brand-green">FAQ</a>
-            <a href="#distributors" class="cta-button cta-primary mt-8">
-                Buy License
+                    
+                    <h1 class="text-4xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6 fade-in-up">
+                        <span class="text-brand-600">PDA + QR μενού</span><br>
+                        σε μία λύση
+                    </h1>
+                    
+                    <p class="text-xl text-gray-600 mb-4 fade-in-up stagger-1">
+                        Τάξη στις παραγγελίες, χωρίς συνδρομές.
+                    </p>
+                    
+                    <p class="text-lg text-gray-500 mb-8 fade-in-up stagger-2">
+                        Μία αγορά, ένα setup, χωρίς συνδρομές.<br>
+                        Μία 30ήμερη δωρεάν δοκιμή θα σε πείσει.
+                    </p>
+                    
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start fade-in-up stagger-3">
+                        <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" 
+                           class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl">
+                            <i class="fas fa-download mr-3"></i>
+                            Ξεκίνα δωρεάν (30 ημέρες)
+                        </a>
+                        <a href="POSPal_Demo_Index.html" 
+                           class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-brand-600 bg-white border-2 border-brand-600 rounded-xl hover:bg-brand-50 transition-all">
+                            <i class="fas fa-play mr-3"></i>
+                            Δες Demo
             </a>
         </div>
     </div>
 
-    <!-- ===== HERO SECTION (RESTRUCTURED) ===== -->
-    <main class="hero-map-bg">
-    <!-- Use grid layout for better vertical control -->
-    <div class="container mx-auto px-4 grid grid-rows-[auto,1fr,auto] h-[calc(100svh-68px)] md:h-auto py-4 md:py-12">
-        
-        <!-- Top Section: Headline -->
-        <div class="text-center row-start-1">
-            <h2 id="hero-headline" class="text-2xl sm:text-3xl font-bold text-brand-dark leading-tight font-lora">
-                <span id="hero-headline-mobile" class="md:hidden">Better Business, Risk‑Free</span>
-                <span id="hero-headline-desktop" class="hidden md:inline">Your Risk-Free Path to a Better Business</span>
-            </h2>
-        </div>
+                <!-- Right Visual -->
+                <div class="relative fade-in-up stagger-4">
+                    <div class="bg-white rounded-2xl shadow-2xl p-4 border border-gray-100">
+                        <div class="relative w-full h-96 rounded-xl overflow-hidden bg-black border border-gray-200">
+                            <!-- Mobile UI iframe -->
+                            <iframe id="mobile-view" src="POSPal_Demo.html" class="absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" style="border:0; transform: scale(0.8); transform-origin: top left; width: 125%; height: 125%;" sandbox="allow-scripts allow-same-origin"></iframe>
+                            
+                            <!-- Analytics overlay (authentic management modal) -->
+                            <div id="analytics-view" class="absolute inset-0 bg-white transition-opacity duration-700 ease-in-out opacity-0 overflow-hidden">
+                                <!-- Exact header from POSPal_Demo.html -->
+                                <div class="flex flex-col justify-between items-start mb-2 gap-2 p-3 border-b border-gray-200">
+                                    <h3 class="text-lg font-semibold text-gray-800">Performance Overview</h3>
+                                    <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-lg flex-wrap w-full">
+                                        <button class="date-range-btn active text-xs px-2 py-1 rounded-md transition-colors font-semibold" style="background-color: #111827; color: white;">Today</button>
+                                        <button class="date-range-btn text-xs px-2 py-1 rounded-md transition-colors text-gray-600">This Week</button>
+                                        <button class="date-range-btn text-xs px-2 py-1 rounded-md transition-colors text-gray-600">This Month</button>
+                                        <button class="date-range-btn text-xs px-2 py-1 rounded-md transition-colors text-gray-600">Custom</button>
+                                    </div>
+                                </div>
+                                
+                                <!-- KPI Cards Grid - exact layout from demo -->
+                                <div class="grid grid-cols-2 gap-2 mb-3 px-3">
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-medium text-gray-500">Gross Revenue</h4>
+                                        <p class="text-xl font-bold text-gray-900 mt-1">€4,892.75</p>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-medium text-gray-500">Total Orders</h4>
+                                        <p class="text-xl font-bold text-gray-900 mt-1">83</p>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-medium text-gray-500">Avg. Order Value</h4>
+                                        <p class="text-xl font-bold text-gray-900 mt-1">€58.95</p>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-semibold text-gray-700 mb-2">Payment Methods</h4>
+                                        <div class="space-y-2 mt-2">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-xs text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span>
+                                                <span class="font-bold text-gray-800 text-xs">€1,985.50</span>
+                                            </div>
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-xs text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span>
+                                                <span class="font-bold text-gray-800 text-xs">€2,907.25</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Best Sellers Section - exact from demo -->
+                                <div class="px-3">
+                                    <div class="bg-white p-3 rounded-lg border">
+                                        <h4 class="font-semibold text-gray-700 mb-2 text-sm">Best Selling Items (by Qty)</h4>
+                                        <div class="space-y-2 max-h-32 overflow-y-auto">
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">French Fries</span>
+                                                <span class="font-bold text-gray-900">88</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">Coca-Cola</span>
+                                                <span class="font-bold text-gray-900">75</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">Classic Cheeseburger</span>
+                                                <span class="font-bold text-gray-900">45</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">Caesar Salad</span>
+                                                <span class="font-bold text-gray-900">32</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-center space-x-2">
+                            <button id="dot-0" class="w-2 h-2 rounded-full bg-brand-600 transition-colors dot-nav" onclick="switchView(0)"></button>
+                            <button id="dot-1" class="w-2 h-2 rounded-full bg-gray-300 transition-colors dot-nav" onclick="switchView(1)"></button>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1 text-center">
+                            <span id="view-indicator">Mobile POS</span>
+                        </div>
+                    </div>
 
-        <!-- Middle Section: SVG Map -->
-        <div class="relative w-full row-start-2 min-h-[200px] my-2 md:h-[400px] md:mt-6">
-            <!-- Desktop Map -->
-            <svg id="metro-map-desktop" class="hidden md:block absolute inset-0 w-full h-full" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
-                <!-- SVG Paths -->
-                <path class="map-line main-line" d="M100 200 H 850 C 975 200, 1050 100, 1100 100"></path>
-                <path class="map-line exit-line" d="M850 200 C 975 200, 1050 300, 1100 300"></path>
-
-                <!-- SVG Stations -->
-                <g id="d-station1" class="station-group" transform="translate(100, 200)" style="animation-delay: 0.1s;">
-                    <circle class="station-dot" cx="0" cy="0" r="15" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="0" y="-30" text-anchor="middle">Step 1</text>
-                    <text class="station-sublabel" x="0" y="40" text-anchor="middle">Interactive Demo</text>
-                </g>
-                <g id="d-station2" class="station-group" transform="translate(350, 200)" style="animation-delay: 0.2s;">
-                    <circle class="station-dot" cx="0" cy="0" r="15" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="0" y="-30" text-anchor="middle">Step 2</text>
-                    <text class="station-sublabel" x="0" y="40" text-anchor="middle">Download App</text>
-                </g>
-                <g id="d-station3" class="station-group" transform="translate(600, 200)" style="animation-delay: 0.3s;">
-                    <circle class="station-dot" cx="0" cy="0" r="15" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="0" y="-30" text-anchor="middle">Step 3</text>
-                    <text class="station-sublabel" x="0" y="40" text-anchor="middle">30-Day Trial</text>
-                </g>
-                <g id="d-station4" class="station-group" transform="translate(850, 200)" style="animation-delay: 0.4s;">
-                    <circle class="station-dot" cx="0" cy="0" r="15" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="0" y="-30" text-anchor="middle">Step 4</text>
-                    <text class="station-sublabel" x="0" y="40" text-anchor="middle">Decision Time</text>
-                </g>
-                <g id="d-station5" class="station-group" transform="translate(1100, 100)" style="animation-delay: 0.5s;">
-                    <circle class="station-dot" cx="0" cy="0" r="15" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="0" y="-30" text-anchor="middle">Option A</text>
-                    <text class="station-sublabel" x="0" y="40" text-anchor="middle">Buy License</text>
-                </g>
-                <g id="d-station6" class="station-group" transform="translate(1100, 300)" style="animation-delay: 0.6s;">
-                    <circle class="station-dot" cx="0" cy="0" r="15" fill="white" stroke="var(--medium-gray)"></circle>
-                    <text class="station-label" x="0" y="-30" text-anchor="middle">Option B</text>
-                    <text class="station-sublabel" x="0" y="40" text-anchor="middle">Exit Risk-Free</text>
-                </g>
-                
-                <!-- Train Marker -->
-                <circle id="train-marker-desktop" r="10"></circle>
-            </svg>
-            <!-- Mobile Map -->
-            <svg id="metro-map-mobile" class="md:hidden absolute inset-0 w-full h-full" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet">
-                <!-- SVG Paths -->
-                <path class="map-line main-line" d="M200 50 V 275 C 200 325, 150 375, 100 375"></path>
-                <path class="map-line exit-line" d="M200 275 C 200 325, 250 375, 300 375"></path>
-
-                <!-- SVG Stations -->
-                <g id="m-station1" class="station-group" transform="translate(200, 50)" style="animation-delay: 0.1s;">
-                    <circle class="station-dot" cx="0" cy="0" r="12" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="-20" y="5" text-anchor="end">Step 1</text>
-                </g>
-                <g id="m-station2" class="station-group" transform="translate(200, 125)" style="animation-delay: 0.2s;">
-                    <circle class="station-dot" cx="0" cy="0" r="12" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="-20" y="5" text-anchor="end">Step 2</text>
-                </g>
-                <g id="m-station3" class="station-group" transform="translate(200, 200)" style="animation-delay: 0.3s;">
-                    <circle class="station-dot" cx="0" cy="0" r="12" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="-20" y="5" text-anchor="end">Step 3</text>
-                </g>
-                <g id="m-station4" class="station-group" transform="translate(200, 275)" style="animation-delay: 0.4s;">
-                    <circle class="station-dot" cx="0" cy="0" r="12" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="-20" y="5" text-anchor="end">Step 4</text>
-                </g>
-                <g id="m-station5" class="station-group" transform="translate(100, 375)" style="animation-delay: 0.5s;">
-                    <circle class="station-dot" cx="0" cy="0" r="12" fill="white" stroke="var(--brand-green)"></circle>
-                    <text class="station-label" x="0" y="-25" text-anchor="middle">Buy License</text>
-                </g>
-                <g id="m-station6" class="station-group" transform="translate(300, 375)" style="animation-delay: 0.6s;">
-                    <circle class="station-dot" cx="0" cy="0" r="12" fill="white" stroke="var(--medium-gray)"></circle>
-                    <text class="station-label" x="0" y="-25" text-anchor="middle">Exit</text>
-                </g>
-                
-                <!-- Train Marker -->
-                <circle id="train-marker-mobile" r="8"></circle>
-            </svg>
-        </div>
-
-        <!-- Bottom Section: Controls -->
-        <div class="text-center row-start-3 mt-auto">
-            <div id="info-panel" class="text-base sm:text-lg text-gray-700 max-w-2xl mx-auto bg-white/50 backdrop-blur-sm p-3 sm:p-4 rounded-lg min-h-[85px]">
-                <p id="info-text">Click any station on the map to learn more about the journey.</p>
-            </div>
-            <div class="mt-3 sm:mt-4 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-x-4 cta-container">
-                <a id="cta-demo" href="POSPal_Demo_Index.html" class="cta-button cta-primary w-full sm:w-auto">
-                    <i class="fas fa-play mr-2"></i>
-                    <span>Interactive Demo</span>
-                </a>
-                <a id="cta-step2" href="#distributors" class="cta-button cta-secondary w-full sm:w-auto">
-                    <i class="fas fa-shopping-cart mr-2"></i>
-                    <span>Buy License</span>
-                </a>
-                <a id="cta-step1" href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="cta-button cta-secondary w-full sm:w-auto">
-                    <i class="fas fa-download mr-2"></i>
-                    <span>Download</span>
-                </a>
-            </div>
-        </div>
-    </div>
-</main>
-    
-    <!-- Wave Divider -->
-    <div class="section-divider bg-hero-bg">
-        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="white"/>
-        </svg>
-    </div>
-
-    <!-- The rest of the page sections -->
-    <section id="features" class="pt-16 pb-16 bg-white">
-        <div class="container mx-auto px-6">
-            <div class="text-center max-w-3xl mx-auto mb-12">
-                <h2 class="section-title text-3xl font-bold text-brand-dark">Why Business Owners Choose POSPal</h2>
-                <p class="mt-4 text-gray-600">The affordable alternative to complex, expensive systems</p>
-            </div>
-            <div class="grid md:grid-cols-3 gap-8">
-                <div class="text-center p-4"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-euro-sign"></i></div><h4 class="text-xl font-semibold">Cost Effective</h4><p class="mt-3 text-gray-600">Avoid expensive subscriptions. One payment gives you lifetime ownership.</p></div>
-                <div class="text-center p-4"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-plug"></i></div><h4 class="text-xl font-semibold">Easy Setup</h4><p class="mt-3 text-gray-600">We handle printer setup and installation - no technical skills needed.</p></div>
-                <div class="text-center p-4"><div class="text-brand-green text-5xl mb-4"><i class="fas fa-sync-alt"></i></div><h4 class="text-xl font-semibold">Always Updated</h4><p class="mt-3 text-gray-600">Free automatic updates with new features and improvements.</p></div>
+                    <!-- QR Menu Connection -->
+                    <div class="mt-6 bg-white rounded-xl shadow-lg p-4 border border-gray-200">
+                        <div class="flex items-center space-x-4">
+                            <div class="flex-shrink-0">
+                                <div class="w-16 h-16 bg-white rounded-lg border border-gray-200 shadow-sm flex items-center justify-center p-2">
+                                    <svg width="48" height="48" viewBox="0 0 200 200" class="text-gray-900">
+                                        <!-- Elegant QR Code pattern -->
+                                        <rect width="200" height="200" fill="white"/>
+                                        <!-- Corner markers -->
+                                        <rect x="15" y="15" width="45" height="45" fill="currentColor" rx="4"/>
+                                        <rect x="140" y="15" width="45" height="45" fill="currentColor" rx="4"/>
+                                        <rect x="15" y="140" width="45" height="45" fill="currentColor" rx="4"/>
+                                        <rect x="22" y="22" width="31" height="31" fill="white" rx="2"/>
+                                        <rect x="147" y="22" width="31" height="31" fill="white" rx="2"/>
+                                        <rect x="22" y="147" width="31" height="31" fill="white" rx="2"/>
+                                        <rect x="28" y="28" width="19" height="19" fill="currentColor" rx="2"/>
+                                        <rect x="153" y="28" width="19" height="19" fill="currentColor" rx="2"/>
+                                        <rect x="28" y="153" width="19" height="19" fill="currentColor" rx="2"/>
+                                        <!-- Data modules -->
+                                        <rect x="70" y="25" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="85" y="25" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="100" y="25" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="70" y="40" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="100" y="40" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="25" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="40" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="70" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="85" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="100" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="115" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="155" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="170" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <!-- Additional patterns -->
+                                        <rect x="70" y="85" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="115" y="85" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="40" y="100" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="85" y="100" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="155" y="100" width="8" height="8" fill="currentColor" rx="1"/>
+                                    </svg>
+                                </div>
+                                <p class="text-xs text-gray-500 text-center mt-1">QR Menu</p>
+                            </div>
+                            <div class="flex-1">
+                                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                    <div class="text-xs text-gray-500 mb-1">Live Demo Menu</div>
+                                    <a href="https://menus-5ar.pages.dev/s/cafetest" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 underline font-medium break-all">menus-5ar.pages.dev/s/cafetest</a>
+                                    <div class="mt-2 space-y-1">
+                                        <div class="flex items-center text-xs text-gray-600">
+                                            <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                            <span>Καφέ - €2.50</span>
+                                        </div>
+                                        <div class="flex items-center text-xs text-gray-600">
+                                            <div class="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                                            <span>Σάντουιτς - €4.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Sync indicator -->
+                        <div class="mt-4 flex items-center justify-center text-sm text-accent-600">
+                            <i class="fas fa-sync-alt mr-2 animate-spin"></i>
+                            Άμεσος συγχρονισμός
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
 
-    <!-- Wave Divider -->
-    <div class="section-divider bg-white">
-        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="var(--light-gray)"/>
-        </svg>
-    </div>
-
-    <section id="how-it-works" class="pt-16 pb-16 bg-light-gray"><div class="container mx-auto px-6"><div class="text-center max-w-3xl mx-auto mb-12"><h2 class="section-title text-3xl font-bold text-brand-dark">Simple & Risk-Free</h2><p class="mt-4 text-gray-600">Try POSPal for 30 days with no obligation</p></div><div class="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto"><div class="text-center"><div class="bg-white rounded-full h-20 w-20 flex items-center justify-center mx-auto text-brand-blue text-3xl font-bold shadow-md">1</div><h4 class="mt-6 text-xl font-semibold">Download App</h4><p class="mt-2 text-medium-gray">Get POSPal and start your 30-day trial</p></div><div class="text-center"><div class="bg-white rounded-full h-20 w-20 flex items-center justify-center mx-auto text-brand-blue text-3xl font-bold shadow-md">2</div><h4 class="mt-6 text-xl font-semibold">30-Day Trial</h4><p class="mt-2 text-medium-gray">Full access during the trial period</p></div><div class="text-center"><div class="bg-white rounded-full h-20 w-20 flex items-center justify-center mx-auto text-brand-blue text-3xl font-bold shadow-md">3</div><h4 class="mt-6 text-xl font-semibold">Buy License</h4><p class="mt-2 text-medium-gray">€200 one-time payment via distributor</p></div></div></div></section>
-    
-    <!-- Wave Divider -->
-    <div class="section-divider bg-light-gray">
-        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="white"/>
-        </svg>
-    </div>
-
-    <section id="pricing" class="pt-16 pb-16 bg-white"><div class="container mx-auto px-6"><div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden"><div class="p-8"><div class="uppercase tracking-wide text-sm text-brand-green font-semibold">One-Time Payment</div><div class="mt-2 flex items-baseline"><span class="text-4xl font-extrabold">€200</span><span class="ml-2 text-gray-500">/ lifetime</span></div><p class="mt-2 text-gray-500">After 30-day free trial</p><ul class="mt-6 space-y-3"><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Free printer setup service</li><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Lifetime software license</li><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Automatic updates forever</li><li class="flex items-center"><i class="fas fa-check-circle text-green-500 mr-2"></i>Email support</li></ul><div class="mt-8"><a href="#distributors" class="cta-button cta-primary w-full py-3 text-center">Buy License</a></div></div></div></div></section>
-    
-    <!-- Wave Divider -->
-    <div class="section-divider bg-white">
-        <svg viewBox="0 0 1440 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1440 99.1549H0V0C240 54.5352 480 81.8028 720 81.8028C960 81.8028 1200 54.5352 1440 0V99.1549Z" fill="var(--light-gray)"/>
-        </svg>
-    </div>
-
-    <section id="faq" class="pt-16 pb-16 bg-light-gray"><div class="container mx-auto px-6 max-w-3xl"><div class="text-center mb-12"><h2 class="section-title text-3xl font-bold text-brand-dark">Frequently Asked Questions</h2></div><div class="space-y-4"><div class="border-b pb-4"><h4 class="font-semibold text-lg">What's included in the free trial?</h4><p class="mt-2 text-medium-gray">Our 30-day trial includes full access to all features with personal installation support. We'll set up your printers and ensure everything works with your specific setup.</p></div><div class="border-b pb-4"><h4 class="font-semibold text-lg">What happens after 30 days?</h4><p class="mt-2 text-medium-gray">If you love POSPal, you'll pay the one-time €200 fee to continue using it. If not, there's no obligation to purchase.</p></div><div class="border-b pb-4"><h4 class="font-semibold text-lg">Can I run POSPal on my existing hardware?</h4><p class="mt-2 text-medium-gray">Yes! You need a Windows computer for the server and any modern device with a browser (tablet, phone, laptop) for your staff. We'll help configure your receipt printer during installation.</p></div><div class="border-b pb-4"><h4 class="font-semibold text-lg">How is POSPal different from other systems?</h4><p class="mt-2 text-medium-gray">Unlike subscription-based POS systems, POSPal has one affordable payment with no ongoing fees. We focus on essential business features without complex enterprise bloat that drives up costs.</p></div></div></div></section>
-    
-    <section class="py-16 bg-brand-blue text-white"><div class="container mx-auto px-6 text-center"><h2 class="section-title text-3xl font-bold text-white">Ready to Simplify Your Business?</h2><p class="mt-4 text-xl max-w-2xl mx-auto text-gray-200">Join hundreds of small businesses using POSPal</p><a href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="cta-button cta-primary inline-block mt-8 py-4 px-12 text-lg">Download</a><div class="mt-4 text-gray-200">No signup required - 30-day trial included</div></div></section>
-
-    <!-- Distributors Section -->
-    <section id="distributors" class="pt-16 pb-16 bg-white">
-        <div class="container mx-auto px-6">
-            <div class="text-center max-w-3xl mx-auto mb-12">
-                <h2 class="section-title text-3xl font-bold text-brand-dark">Authorized Distributors</h2>
-                <p class="mt-4 text-gray-600">Purchase a license through an authorized distributor. Download of the app is public for everyone.</p>
+    <!-- Value Props -->
+    <section class="py-20 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                    Γιατί να επιλέξεις POSPal;
+                </h2>
+                <p class="text-xl text-gray-600">Όλα όσα χρειάζεσαι, χωρίς τα προβλήματα των άλλων συστημάτων</p>
             </div>
+            
+            <div class="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                <!-- Card 1 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-accent-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-euro-sign text-accent-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Μία αγορά, ένα setup, χωρίς συνδρομές
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Μία 30ήμερη δωρεάν δοκιμή θα σε πείσει. Όχι κρυφές χρεώσεις, όχι μηνιαίες συνδρομές.
+                    </p>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-brand-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-user-cog text-brand-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Κάν' το μόνος σου: Προσθήκη/αφαίρεση/ανατιμολόγηση
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Το QR μενού ενημερώνεται άμεσα. Χωρίς τηλεφωνήματα, χωρίς αναμονή.
+                    </p>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-chart-line text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Εσύ έχεις τον έλεγχο: Δες τα στατιστικά σου, το ημερήσιο Ζ και τα best sellers σου
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Δες αν «πιάνει»—δοκίμασε νέα προϊόντα, σύγκρινε κατηγορίες και μέτρα την απόδοσή τους σήμερα.
+                    </p>
+        </div>
+
+                <!-- Card 4 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-times-circle text-red-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Όχι άλλο χάος με χαρτάκια που χάνονται ή μηνύματα που παραλείπονται
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Μία τυποποιημένη ροή με εκτυπωμένα δελτία. Όλα οργανωμένα, όλα ελεγχόμενα.
+                    </p>
+            </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How it Works -->
+    <section class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                    Πώς δουλεύει;
+                </h2>
+                <p class="text-xl text-gray-600">Τρία απλά βήματα για να ξεκινήσεις</p>
+            </div>
+            
             <div class="grid md:grid-cols-3 gap-8">
-                <div class="bg-gray-50 p-6 rounded-lg shadow">
-                    <h3 class="text-xl font-semibold text-brand-blue">Acme POS Solutions</h3>
-                    <p class="mt-2 text-gray-600">Region: Global</p>
-                    <ul class="mt-4 space-y-2 text-gray-700">
-                        <li><i class="fas fa-phone mr-2 text-brand-blue"></i>+1 (555) 123-4567</li>
-                        <li><i class="fas fa-envelope mr-2 text-brand-blue"></i>sales@acmepos.example</li>
-                        <li><i class="fas fa-globe mr-2 text-brand-blue"></i><a class="hover:underline" href="#" target="_blank">www.acmepos.example</a></li>
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-2xl font-bold">1</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">Κατέβασε το POSPal</h3>
+                    <p class="text-gray-600">Δωρεάν download και εγκατάσταση σε λίγα λεπτά</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-2xl font-bold">2</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">Δοκίμασε 30 ημέρες</h3>
+                    <p class="text-gray-600">Πλήρης πρόσβαση σε όλες τις δυνατότητες, χωρίς περιορισμούς</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-2xl font-bold">3</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">Αγόρασε άδεια</h3>
+                    <p class="text-gray-600">Μόνο αν σου αρέσει. Εφάπαξ πληρωμή, δικό σου για πάντα</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="py-20 bg-gray-900 text-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl lg:text-4xl font-bold mb-4">Απλή τιμολόγηση</h2>
+            <p class="text-xl text-gray-300 mb-12">Χωρίς κρυφές χρεώσεις, χωρίς εκπλήξεις</p>
+            
+            <div class="bg-white text-gray-900 rounded-2xl shadow-2xl p-8 max-w-md mx-auto">
+                <div class="text-center">
+                    <h3 class="text-2xl font-bold mb-4">POSPal License</h3>
+                    <div class="mb-6">
+                        <span class="text-5xl font-bold text-brand-600">€290</span>
+                        <span class="text-gray-500 text-lg">/ εφάπαξ (launch)</span>
+                        <div class="mt-1 text-xs text-gray-500">Μετά το launch: €490</div>
+    </div>
+
+                    <ul class="text-left space-y-3 mb-8">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            30ήμερη δωρεάν δοκιμή
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            Άδεια ανά server — απεριόριστες συσκευές
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            PDA + QR website μαζί
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            Δωρεάν ενημερώσεις για πάντα
+                        </li>
+
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            Χωρίς μηνιαίες χρεώσεις
+                        </li>
+                    </ul>
+                    
+                    <a href="#contact" class="w-full bg-brand-600 text-white py-4 rounded-xl font-semibold hover:bg-brand-700 transition-colors inline-block">
+                        Ξεκίνα δωρεάν
+                    </a>
+                </div>
+            </div>
+    </div>
+    </section>
+
+    <!-- CTA -->
+    <section id="contact" class="py-20 gradient-bg text-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl lg:text-4xl font-bold mb-6">
+                Έτοιμος να βάλεις τάξη στις παραγγελίες σου;
+            </h2>
+            <p class="text-xl mb-8 opacity-90">
+                Κατέβασε το POSPal τώρα και ξεκίνα τη δωρεάν δοκιμή
+            </p>
+            
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" 
+                   class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold bg-white text-brand-600 rounded-xl hover:bg-gray-100 transition-all transform hover:scale-105">
+                    <i class="fas fa-download mr-3"></i>
+                    Κατέβασε τώρα - Δωρεάν
+                </a>
+                <a href="POSPal_Demo_Index.html" 
+                   class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white border-2 border-white rounded-xl hover:bg-white hover:text-brand-600 transition-all">
+                    <i class="fas fa-play mr-3"></i>
+                    Δες το Demo
+                </a>
+    </div>
+
+            <p class="mt-6 text-sm opacity-75">
+                Χωρίς εγγραφή · 30ήμερη δοκιμή
+            </p>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-300 py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid md:grid-cols-4 gap-8">
+                <div>
+                    <div class="flex items-center space-x-3 mb-4">
+                        <img src="app_icon.ico" alt="POSPal Logo" class="w-8 h-8 rounded-lg">
+                        <span class="text-xl font-bold text-white">POSPal</span>
+                    </div>
+                    <p class="text-sm mb-4">Απλή λύση POS για μικρές επιχειρήσεις</p>
+                    <div class="mt-3">
+                        <a href="https://www.instagram.com/pospalsoftware/" target="_blank" class="text-gray-300 hover:text-white transition-colors">
+                            <i class="fab fa-instagram text-xl mr-2"></i>@pospalsoftware
+                        </a>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="text-white font-semibold mb-4">Προϊόν</h4>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="POSPal_Demo_Index.html" class="hover:text-white">Demo</a></li>
+                        <li><a href="#pricing" class="hover:text-white">Τιμή</a></li>
+                        <li><a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" class="hover:text-white">Download</a></li>
                     </ul>
                 </div>
-                <!-- Add more distributors here as they become available -->
+                
+                                <div>
+                    <h4 class="text-white font-semibold mb-4">Υποστήριξη</h4>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="#" class="hover:text-white">Οδηγός εγκατάστασης</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h4 class="text-white font-semibold mb-4">Νομικά</h4>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="EULA.md" target="_blank" class="hover:text-white">EULA</a></li>
+                        <li><a href="PRIVACY.md" target="_blank" class="hover:text-white">Απόρρητο</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-700 mt-8 pt-8 text-center text-sm">
+                <p>&copy; 2025 Robert Zoumboulis-Airey. Όλα τα δικαιώματα διατηρούνται.</p>
             </div>
         </div>
-    </section>
-    
-    <footer class="bg-gray-900 text-gray-400 py-12"><div class="container mx-auto px-6"><div class="grid md:grid-cols-4 gap-8"><div><h4 class="text-white text-lg font-bold mb-4">POSPal</h4><p class="text-sm text-gray-300">Affordable POS solutions for small businesses</p><div class="mt-3"><a href="https://www.instagram.com/pospalsoftware/" target="_blank" class="text-gray-300 hover:text-white"><i class="fab fa-instagram mr-2"></i>@pospalsoftware</a></div></div><div><h4 class="text-white text-lg font-bold mb-4">Licensing</h4><ul class="space-y-2 text-sm text-gray-300"><li><a href="#distributors" class="hover:text-white"><i class="fas fa-store mr-2"></i>Find a Distributor</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Resources</h4><ul class="space-y-2 text-sm"><li class="text-gray-300"><a href="#" class="hover:text-white">Documentation</a></li><li class="text-gray-300"><a href="POSPal_Demo_Index.html" target="_blank" class="hover:text-white">Interactive Demo</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Installation Guide</a></li></ul></div><div><h4 class="text-white text-lg font-bold mb-4">Legal</h4><ul class="space-y-2 text-sm"><li class="text-gray-300"><a href="EULA.md" target="_blank" class="hover:text-white">End User License Agreement (EULA)</a></li><li class="text-gray-300"><a href="PRIVACY.md" target="_blank" class="hover:text-white">Privacy Policy</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Terms of Service</a></li><li class="text-gray-300"><a href="#" class="hover:text-white">Refund Policy</a></li></ul></div></div><div class="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-300"><p>&copy; 2025 Robert Zoumboulis-Airey. All rights reserved.</p></div></div></footer>
+    </footer>
 
     <script>
-        // --- Mobile Menu Script ---
-        const mobileMenuButton = document.getElementById('mobile-menu-button');
-        const closeMenuButton = document.getElementById('close-menu-button');
-        const mobileMenu = document.getElementById('mobile-menu');
-        const mobileMenuLinks = document.querySelectorAll('.mobile-menu-link');
-
-        mobileMenuButton.addEventListener('click', () => {
-            mobileMenu.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
+        // Mobile menu toggle (placeholder)
+        document.getElementById('mobile-menu').addEventListener('click', function() {
+            const menu = document.getElementById('mobile-menu');
+            // Implement dropdown later
         });
-        const closeMenu = () => {
-            mobileMenu.classList.add('hidden');
-            document.body.style.overflow = '';
-        };
-        closeMenuButton.addEventListener('click', closeMenu);
-        mobileMenuLinks.forEach(link => link.addEventListener('click', closeMenu));
 
-        // --- Metro Map Script ---
-        document.addEventListener('DOMContentLoaded', () => {
-            const desktopMarker = document.getElementById('train-marker-desktop');
-            const mobileMarker = document.getElementById('train-marker-mobile');
-            const infoPanel = document.getElementById('info-panel');
-            const infoText = document.getElementById('info-text');
-            const mainHeadline = document.getElementById('hero-headline');
-            const headlineMobile = document.getElementById('hero-headline-mobile');
-            const headlineDesktop = document.getElementById('hero-headline-desktop');
-            const ctaStep1 = document.getElementById('cta-step1');
-            const ctaStep2 = document.getElementById('cta-step2');
-            const ctaDemo = document.getElementById('cta-demo');
-
-            let tourTimeout;
-            let isAutoPlaying = true;
-            let currentStationId = '';
-
-            // Data for each station on the map
-            const stationData = {
-                station1: { 
-                    headline: "Explore Every Feature, Instantly.",
-                    text: "See POSPal in action with our interactive demo. No signup required.",
-                    ctaId: 'cta-demo',
-                    desktopPos: { x: 100, y: 200 },
-                    mobilePos: { x: 200, y: 50 }
-                },
-                station2: { 
-                    headline: "Download the App.",
-                    text: "Get the latest release and start your 30-day trial.",
-                    ctaId: 'cta-step1',
-                    desktopPos: { x: 350, y: 200 },
-                    mobilePos: { x: 200, y: 125 }
-                },
-                station3: { 
-                    headline: "Try POSPal for 30 Days.",
-                    text: "Use all features during your trial period.",
-                    ctaId: 'cta-step2',
-                    desktopPos: { x: 600, y: 200 },
-                    mobilePos: { x: 200, y: 200 }
-                },
-                station4: { 
-                    headline: "Buy a License from a Distributor.",
-                    text: "One-time payment to continue using POSPal.",
-                    ctaId: 'cta-step2',
-                    desktopPos: { x: 850, y: 200 },
-                    mobilePos: { x: 200, y: 275 }
-                },
-                station5: { 
-                    headline: "Your Business, Your System. Forever.",
-                    text: "Love it? Pay once and own it forever. Includes all future updates.",
-                    ctaId: 'cta-step2',
-                    desktopPos: { x: 1100, y: 100 },
-                    mobilePos: { x: 100, y: 375 }
-                },
-                station6: { 
-                    headline: "A Safe and Easy Exit.",
-                    text: "Not for you? No problem. We part as friends, no questions asked.",
-                    ctaId: null,
-                    desktopPos: { x: 1100, y: 300 },
-                    mobilePos: { x: 300, y: 375 }
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
                 }
-            };
-
-            const handleStationClick = (stationId) => {
-                if (currentStationId === stationId) return;
-                currentStationId = stationId;
-                const data = stationData[stationId];
-                if (!data) return;
-                mainHeadline.style.opacity = 0;
-                infoPanel.classList.remove('visible');
-                setTimeout(() => {
-                    headlineMobile.textContent = data.headline;
-                    headlineDesktop.textContent = data.headline;
-                    infoText.textContent = data.text;
-                    mainHeadline.style.opacity = 1;
-                    infoPanel.classList.add('visible');
-                }, 250);
-                desktopMarker.setAttribute('cx', data.desktopPos.x);
-                desktopMarker.setAttribute('cy', data.desktopPos.y);
-                mobileMarker.setAttribute('cx', data.mobilePos.x);
-                mobileMarker.setAttribute('cy', data.mobilePos.y);
-                document.querySelectorAll('.station-group').forEach(s => {
-                    s.classList.remove('active');
-                    const baseId = s.id.substring(2); // e.g., 'd-station1' -> 'station1'
-                    if (baseId === stationId) {
-                        s.classList.add('active');
-                    }
-                });
-                ctaStep1.classList.remove('cta-highlight');
-                ctaStep2.classList.remove('cta-highlight');
-                ctaDemo.classList.remove('cta-highlight');
-                if (data.ctaId) {
-                    document.getElementById(data.ctaId).classList.add('cta-highlight');
-                }
-            };
-
-            const stopAutoPlay = () => {
-                isAutoPlaying = false;
-                clearTimeout(tourTimeout);
-            };
-
-            const startAutoPlay = () => {
-                const stationIds = Object.keys(stationData);
-                let currentIndex = 0;
-                const nextStation = () => {
-                    if (!isAutoPlaying) return;
-                    handleStationClick(stationIds[currentIndex]);
-                    currentIndex = (currentIndex + 1) % stationIds.length;
-                    tourTimeout = setTimeout(nextStation, 4000);
-                };
-                nextStation();
-            };
-
-            document.querySelectorAll('.station-group').forEach(station => {
-                const baseId = station.id.substring(2);
-                station.addEventListener('click', () => {
-                    stopAutoPlay();
-                    handleStationClick(baseId);
-                }); 
             });
-
-            tourTimeout = setTimeout(startAutoPlay, 1500);
         });
 
-        // --- Intersection Observer for Section Title Animations ---
-        document.addEventListener('DOMContentLoaded', () => {
-            const titles = document.querySelectorAll('.section-title');
-            
-            const observer = new IntersectionObserver((entries, observer) => {
+                // Add animation classes when elements come into view
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
-                        entry.target.classList.add('is-visible');
-                        observer.unobserve(entry.target);
-                    }
-                });
-            }, {
-                rootMargin: '0px',
-                threshold: 0.1
+                    entry.target.classList.add('bounce-in');
+                }
             });
+        }, observerOptions);
 
-            titles.forEach(title => {
-                observer.observe(title);
-            });
+        // Observe cards for animation
+        document.querySelectorAll('.card-hover').forEach(card => {
+            observer.observe(card);
         });
+
+        // View switcher with dot navigation
+        const mobileView = document.getElementById('mobile-view');
+        const analyticsView = document.getElementById('analytics-view');
+        const viewIndicator = document.getElementById('view-indicator');
+        const dot0 = document.getElementById('dot-0');
+        const dot1 = document.getElementById('dot-1');
+        let currentView = 0;
+        let autoInterval;
+
+        function switchView(viewIndex) {
+            currentView = viewIndex;
+            
+            // Reset auto interval
+            clearInterval(autoInterval);
+            startAutoProgression();
+            
+            if (viewIndex === 0) {
+                mobileView.style.opacity = '1';
+                analyticsView.style.opacity = '0';
+                viewIndicator.textContent = 'Mobile POS';
+                dot0.classList.add('bg-brand-600');
+                dot0.classList.remove('bg-gray-300');
+                dot1.classList.add('bg-gray-300');
+                dot1.classList.remove('bg-brand-600');
+            } else {
+                mobileView.style.opacity = '0';
+                analyticsView.style.opacity = '1';
+                viewIndicator.textContent = 'Analytics';
+                dot1.classList.add('bg-brand-600');
+                dot1.classList.remove('bg-gray-300');
+                dot0.classList.add('bg-gray-300');
+                dot0.classList.remove('bg-brand-600');
+            }
+        }
+
+        function startAutoProgression() {
+            autoInterval = setInterval(() => {
+                currentView = currentView === 0 ? 1 : 0;
+                switchView(currentView);
+            }, 4000);
+        }
+
+        // Make switchView globally available
+        window.switchView = switchView;
+        
+        // Start auto progression
+        startAutoProgression();
+
+
+
+
     </script>
 </body>
 </html>
