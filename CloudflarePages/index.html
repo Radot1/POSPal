@@ -3,19 +3,20 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Menu</title>
+  <title>POSPal Menu</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
+      --brand-green: #16a34a;
       --text: #111827;
       --muted: #6b7280;
       --rule: #e5e7eb;
       --bg: #ffffff;
       --card: #ffffff;
       --shadow: 0 1px 3px rgba(0,0,0,0.04);
-      --radius: 10px;
+      --radius: 8px;
     }
 
     * { box-sizing: border-box; }
@@ -31,36 +32,104 @@
 
     .wrap { max-width: 720px; margin: 0 auto; }
 
-    .header { padding: 12px 0 14px; border-bottom: 1px solid var(--rule); text-align: center; }
-    h1 { font-size: 18px; font-weight: 600; margin: 0; }
+    .header { 
+      padding: 20px 0; 
+      border-bottom: 1px solid var(--rule); 
+      text-align: center; 
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
 
-    .content { padding-top: 10px; }
+    .logo {
+      width: 24px;
+      height: 24px;
+      background-image: url('./app_icon.ico');
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+
+    h1 { 
+      font-size: 22px; 
+      font-weight: 600; 
+      margin: 0;
+      color: var(--brand-green);
+    }
+
+    .content { padding-top: 16px; }
     .loading, .error { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 8px; }
 
-    /* Category as subtle card */
+    /* Simple category styling */
     .category { margin-top: 16px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
-    h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--brand-green); text-transform: uppercase; letter-spacing: .04em; }
 
     .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
     .item + .item { border-top: 1px dashed var(--rule); }
     .name { font-size: 15px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .dots { flex: 1 1 auto; border-bottom: 1px dotted var(--rule); transform: translateY(-2px); opacity: .8; }
-    .price { font-weight: 700; font-size: 15px; color: var(--text); white-space: nowrap; }
+    .price { 
+      font-weight: 700; 
+      font-size: 15px; 
+      color: var(--brand-green); 
+      white-space: nowrap;
+      background: rgba(22, 163, 74, 0.1);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    /* Simple footer */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--rule);
+      margin-top: 16px;
+    }
+
+    .footer a {
+      color: var(--brand-green);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Subtle hover effects */
+    .category {
+      transition: box-shadow 0.2s ease;
+    }
+
+    .category:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .item:hover {
+      background-color: rgba(22, 163, 74, 0.05);
+    }
 
     @media (prefers-color-scheme: dark) {
       :root { --text:#e5e7eb; --muted:#9ca3af; --rule:#374151; --bg:#111827; --card:#0f172a; }
-      .header { border-bottom-color: var(--rule); }
-      .category { border-color: var(--rule); }
+      .price { background: rgba(22, 163, 74, 0.2); }
+      .item:hover { background-color: rgba(22, 163, 74, 0.1); }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="header">
+      <div class="logo"></div>
       <h1 id="title">Menu</h1>
     </div>
     <div class="content">
       <div id="content" class="loading">Loading...</div>
+    </div>
+    <div class="footer">
+      <div>Powered by <a href="https://radot1.github.io/POSPal/" target="_blank">POSPal</a> - Modern Point of Sale System</div>
     </div>
   </div>
   <script>
