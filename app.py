@@ -2045,94 +2045,24 @@ def get_analytics():
             end = start + timedelta(days=1)
         
         # Read orders from CSV file
-        # Use today's CSV snapshot; if not exists generate dummy data for testing
+        # Use today's CSV snapshot; if not exists, return empty analytics (no auto-seeding)
         today_path = os.path.join(DATA_DIR, f"orders_{datetime.now().strftime('%Y-%m-%d')}.csv")
         orders_csv = today_path
         if not os.path.exists(orders_csv):
-            # Generate dummy data for the day to allow testing analytics
-            os.makedirs(DATA_DIR, exist_ok=True)
-            fieldnames = ['order_number','table_number','timestamp','items_summary','universal_comment','order_total','payment_method','printed_status','items_json']
-            start_time = datetime.now().replace(hour=7, minute=0, second=0, microsecond=0)
-            demo_rows = []
-            # Create ~36 orders across the day with varying items, options, and payments
-            import random
-            products = [
-                {"name":"Cappuccino","price":3.2},
-                {"name":"Latte","price":3.5},
-                {"name":"Espresso","price":2.5},
-                {"name":"Croissant","price":2.2},
-                {"name":"Toastie","price":4.2},
-                {"name":"Sandwich","price":5.8},
-                {"name":"Tea","price":2.0}
-            ]
-            addons_catalog = [
-                {"name":"Extra Shot","priceChange":0.5},
-                {"name":"Syrup","priceChange":0.3},
-                {"name":"Almond Milk","priceChange":0.4}
-            ]
-            total_orders_to_create = 36
-            for i in range(1, total_orders_to_create + 1):
-                ts = start_time + timedelta(minutes=random.randint(0, 14) + (i-1)*20)
-                num_items = random.randint(1, 4)
-                items = []
-                total = 0.0
-                for _ in range(num_items):
-                    prod = random.choice(products)
-                    qty = random.randint(1, 2)
-                    # Randomly add paid options
-                    selected_options = []
-                    if random.random() < 0.5:
-                        # up to 2 addons
-                        for opt in random.sample(addons_catalog, k=random.randint(1, min(2, len(addons_catalog)))):
-                            selected_options.append({"name": opt["name"], "priceChange": opt["priceChange"]})
-                    unit_price = prod["price"] + sum(opt["priceChange"] for opt in selected_options)
-                    items.append({
-                        "name": prod["name"],
-                        "quantity": qty,
-                        "itemPriceWithModifiers": unit_price,
-                        "generalSelectedOptions": selected_options
-                    })
-                    total += unit_price * qty
-                payment_method = 'Card' if random.random() < 0.6 else 'Cash'
-                demo_rows.append({
-                    'order_number': i,
-                    'table_number': str(random.randint(1, 15)),
-                    'timestamp': ts.strftime('%Y-%m-%d %H:%M:%S'),
-                    'items_summary': '',
-                    'universal_comment': '',
-                    'order_total': f"{total:.2f}",
-                    'payment_method': payment_method,
-                    'printed_status': 'All Copies Printed',
-                    'items_json': json.dumps(items)
-                })
-            with open(orders_csv, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                for row in demo_rows:
-                    writer.writerow(row)
-
-            # Create a default menu.json if none exists so category analytics work
-            if not os.path.exists(MENU_FILE):
-                default_menu = {
-                    "Coffee": [
-                        {"id": 1, "name": "Cappuccino", "price": 3.2},
-                        {"id": 2, "name": "Latte", "price": 3.5},
-                        {"id": 3, "name": "Espresso", "price": 2.5}
-                    ],
-                    "Tea": [
-                        {"id": 4, "name": "Tea", "price": 2.0}
-                    ],
-                    "Bakery": [
-                        {"id": 5, "name": "Croissant", "price": 2.2}
-                    ],
-                    "Food": [
-                        {"id": 6, "name": "Toastie", "price": 4.2},
-                        {"id": 7, "name": "Sandwich", "price": 5.8}
-                    ]
-                }
-                os.makedirs(DATA_DIR, exist_ok=True)
-                with open(MENU_FILE, 'w', encoding='utf-8') as mf:
-                    json.dump(default_menu, mf, indent=2)
+            return jsonify({
+                "grossRevenue": 0.0,
+                "totalOrders": 0,
+                "atv": 0.0,
+                "paymentMethods": {"cash": 0.0, "card": 0.0},
+                "paymentCounts": {"cash": 0, "card": 0},
+                "salesByHour": [],
+                "salesByCategory": [],
+                "topRevenueItems": [],
+                "bestSellers": [],
+                "worstSellers": [],
+                "topAddons": [],
+                "totalItems": 0
+            })
         
         total_sales = 0.0
         total_orders = 0
