@@ -1,0 +1,25 @@
+# GitHub Pages Jekyll configuration for POSPal
+title: "POSPal - Σύστημα POS για Εστιατόρια"
+description: "Σύστημα POS για εστιατόρια και καφετέριες στην Ελλάδα"
+
+# Ensure XML files are served with correct MIME type
+include:
+  - "sitemap.xml"
+  - "robots.txt"
+
+# Plugins
+plugins:
+  - jekyll-sitemap
+
+# SEO settings
+lang: el
+locale: el_GR
+
+# Exclude unnecessary files from build
+exclude:
+  - README.txt
+  - requirements.txt
+  - build.bat
+  - test_*.py
+  - data/
+  - "*.md"
