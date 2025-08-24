@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.7"  # Update this with each release
+CURRENT_VERSION = "1.1.8"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -53,7 +53,42 @@ else:
     # If run as a normal python script
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     
-DATA_DIR = os.path.join(BASE_DIR, 'data')
+# Enhanced path resolution: try multiple locations for data directory
+def find_data_directory():
+    """Find the data directory by trying multiple possible locations"""
+    possible_paths = [
+        # Customer's installation path
+        r'C:\POSPal\data',
+        # Primary: relative to executable/script
+        os.path.join(BASE_DIR, 'data'),
+        # Fallback: current working directory + data
+        os.path.join(os.getcwd(), 'data'),
+        # Fallback: executable directory + data (for cases where cwd is different)
+        os.path.join(os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)), 'data'),
+        # Fallback: script directory + data (for development)
+        os.path.dirname(os.path.abspath(__file__)) + '\\data' if not getattr(sys, 'frozen', False) else None
+    ]
+    
+    # Filter out None values and check which paths exist
+    valid_paths = [path for path in possible_paths if path and os.path.exists(path)]
+    
+    if valid_paths:
+        # Prefer the path that contains menu.json
+        for path in valid_paths:
+            if os.path.exists(os.path.join(path, 'menu.json')):
+                app.logger.info(f"Found data directory with menu.json: {path}")
+                return path
+        # If no path has menu.json, use the first valid path
+        app.logger.info(f"Using data directory: {valid_paths[0]}")
+        return valid_paths[0]
+    else:
+        # If no existing data directory found, create one relative to executable
+        default_path = os.path.join(BASE_DIR, 'data')
+        app.logger.warning(f"No existing data directory found. Creating default: {default_path}")
+        os.makedirs(default_path, exist_ok=True)
+        return default_path
+
+DATA_DIR = find_data_directory()
 
 TRIAL_INFO_FILE = os.path.join(DATA_DIR, 'trial.json')
 LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
@@ -177,6 +212,17 @@ def _setup_windows_firewall_rule():
     """Automatically create Windows Firewall rule for POSPal during startup."""
     if os.name != 'nt':
         return True, "Not Windows - no firewall rule needed"
+    
+    # Also ensure the port is actually available
+    import socket
+    port = int(config.get('port', 5000))
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('0.0.0.0', port))
+            app.logger.info(f"Port {port} is available for binding")
+    except OSError as e:
+        app.logger.error(f"Port {port} is not available: {e}")
+        return False, f"Port {port} is not available: {e}"
     
     try:
         port = int(config.get('port', 5000))
@@ -1403,12 +1449,74 @@ def get_order_status():
 
 @app.route('/api/menu', methods=['GET'])
 def get_menu():
+    global MENU_FILE
     try:
+        # Enhanced logging for debugging path issues
+        app.logger.info(f"Menu request received. Checking file: {MENU_FILE}")
+        app.logger.info(f"Current working directory: {os.getcwd()}")
+        app.logger.info(f"BASE_DIR: {BASE_DIR}")
+        app.logger.info(f"DATA_DIR: {DATA_DIR}")
+        app.logger.info(f"File exists check: {os.path.exists(MENU_FILE)}")
+        
         if not os.path.exists(MENU_FILE):
-            app.logger.warning(f"Menu file {MENU_FILE} not found during GET request. Returning empty menu.")
-            return jsonify({}) 
+            app.logger.warning(f"Menu file {MENU_FILE} not found during GET request.")
+            # Try to find the file in installation directory (C:\POSPal\data\menu.json)
+            alt_paths = [
+                r'C:\POSPal\data\menu.json',  # Customer's installation path
+                os.path.join(os.getcwd(), 'data', 'menu.json'),
+                os.path.join(os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__), 'data', 'menu.json'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'menu.json')
+            ]
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    app.logger.info(f"Found menu.json in alternative location: {alt_path}")
+                    try:
+                        with open(alt_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            app.logger.info(f"Successfully loaded menu from alternative path with {len(data)} categories")
+                            # Update the global MENU_FILE path for future use
+                            MENU_FILE = alt_path
+                            return jsonify(data)
+                    except Exception as e:
+                        app.logger.warning(f"Failed to load from alternative path {alt_path}: {e}")
+            
+            app.logger.error("Could not find menu.json in any expected location")
+            return jsonify({"error": "Menu file not found", "message": "Please ensure menu.json exists in the data directory"}), 404 
+        
         with open(MENU_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
+            
+            # Auto-fix menu structure inconsistencies
+            fixed_items = 0
+            for category, items in data.items():
+                if isinstance(items, list):
+                    for item in items:
+                        if 'hasGeneralOptions' not in item:
+                            # Determine hasGeneralOptions based on options property
+                            if 'options' in item and item['options']:
+                                item['hasGeneralOptions'] = True
+                                item['generalOptions'] = item['options']
+                            else:
+                                item['hasGeneralOptions'] = False
+                                item['generalOptions'] = []
+                            fixed_items += 1
+                        
+                        # Ensure generalOptions exists even if hasGeneralOptions is false
+                        if 'generalOptions' not in item:
+                            item['generalOptions'] = item.get('options', [])
+                            fixed_items += 1
+            
+            if fixed_items > 0:
+                app.logger.info(f"Auto-fixed {fixed_items} menu structure inconsistencies")
+                # Save the corrected menu back to file
+                try:
+                    with open(MENU_FILE, 'w', encoding='utf-8') as write_f:
+                        json.dump(data, write_f, indent=2, ensure_ascii=False)
+                    app.logger.info(f"Menu structure corrections saved to {MENU_FILE}")
+                except Exception as save_e:
+                    app.logger.warning(f"Could not save menu corrections: {save_e}")
+            
+            app.logger.info(f"Successfully loaded menu from {MENU_FILE} with {len(data)} categories")
             return jsonify(data)
     except FileNotFoundError: 
         app.logger.error(f"Menu file {MENU_FILE} was not found unexpectedly. Returning empty menu.")
@@ -1877,12 +1985,31 @@ def check_trial_status():
             # Validate signature
             data = f"{license['hardware_id']}{APP_SECRET_KEY}".encode()
             if hashlib.sha256(data).hexdigest() == license['signature']:
-                # Validate hardware using enhanced fingerprint
+                # Validate hardware using enhanced fingerprint with backward compatibility
                 current_hw_id = get_enhanced_hardware_id()
-                if current_hw_id == license['hardware_id']:
+                # Try both current format and hex format for backward compatibility
+                mac_node = uuid.getnode()
+                mac_hex = f'{mac_node:012x}'
+                
+                if (current_hw_id == license['hardware_id'] or 
+                    mac_hex == license['hardware_id'] or 
+                    current_hw_id.replace(':', '') == license['hardware_id']):
+                    app.logger.info(f"License validated successfully for customer: {license.get('customer', 'unknown')}")
                     return {"licensed": True, "active": True}
-        except:
-            app.logger.warning("Invalid license file")
+                else:
+                    app.logger.warning(f"Hardware ID mismatch. License: {license['hardware_id']}, Current: {current_hw_id}, Hex: {mac_hex}")
+        except Exception as e:
+            app.logger.warning(f"Invalid license file: {e}")
+            # Log more details for troubleshooting
+            if os.path.exists(LICENSE_FILE):
+                try:
+                    with open(LICENSE_FILE, 'r') as f:
+                        content = f.read()
+                        app.logger.warning(f"License file exists but failed validation. Content length: {len(content)} chars")
+                except Exception as read_e:
+                    app.logger.warning(f"Cannot read license file: {read_e}")
+            else:
+                app.logger.warning(f"License file does not exist at: {LICENSE_FILE}")
     
     # Trial check - aggregate across all storage locations and pick the earliest valid
     try:
@@ -1930,16 +2057,69 @@ def check_trial_status():
 def get_trial_status():
     return jsonify(check_trial_status())
 
+@app.route('/api/system_status')
+def get_system_status():
+    """System diagnostic endpoint for troubleshooting customer issues"""
+    import socket
+    status = {
+        "version": CURRENT_VERSION,
+        "license": check_trial_status(),
+        "network": {},
+        "files": {},
+        "analytics": {}
+    }
+    
+    try:
+        # Network info
+        hostname = socket.gethostname()
+        try:
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            temp_socket.connect(("8.8.8.8", 80))
+            primary_ip = temp_socket.getsockname()[0]
+            temp_socket.close()
+        except:
+            primary_ip = socket.gethostbyname(hostname)
+        
+        port = config.get('port', 5000)
+        status["network"] = {
+            "hostname": hostname,
+            "primary_ip": primary_ip,
+            "port": port,
+            "mobile_url": f"http://{primary_ip}:{port}"
+        }
+        
+        # File status
+        status["files"] = {
+            "menu_exists": os.path.exists(MENU_FILE),
+            "menu_path": MENU_FILE,
+            "license_exists": os.path.exists(LICENSE_FILE),
+            "license_path": LICENSE_FILE,
+            "data_dir": DATA_DIR
+        }
+        
+        # Analytics data
+        csv_files = [f for f in os.listdir(DATA_DIR) if f.startswith('orders_') and f.endswith('.csv')] if os.path.exists(DATA_DIR) else []
+        status["analytics"] = {
+            "csv_files_count": len(csv_files),
+            "csv_files": csv_files[:5],  # Show first 5
+            "has_recent_data": len(csv_files) > 0
+        }
+        
+    except Exception as e:
+        status["error"] = str(e)
+    
+    return jsonify(status)
+
 def get_enhanced_hardware_id():
-    """Get enhanced hardware fingerprint using multiple identifiers"""
+    """Get enhanced hardware fingerprint using multiple identifiers - EXACT MATCH to license generator"""
     import subprocess
     import platform
     
-    # Get MAC address (current method)
+    # Get MAC address (EXACT match to license generator)
     mac = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
                    for i in range(0, 8*6, 8))
     
-    # Get CPU info
+    # Get CPU info (EXACT match to license generator)
     try:
         cpu_info = platform.processor()
         if not cpu_info:
@@ -1947,7 +2127,7 @@ def get_enhanced_hardware_id():
     except:
         cpu_info = "UNKNOWN"
     
-    # Get disk serial (Windows specific)
+    # Get disk serial (EXACT match to license generator)
     disk_serial = "UNKNOWN"
     try:
         result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], 
@@ -1956,10 +2136,10 @@ def get_enhanced_hardware_id():
             lines = result.stdout.strip().split('\n')
             if len(lines) > 1:
                 disk_serial = lines[1].strip()
-    except:
+    except Exception as e:
         pass
     
-    # Get Windows installation ID
+    # Get Windows installation ID (EXACT match to license generator)
     win_id = "UNKNOWN"
     try:
         result = subprocess.run(['wmic', 'os', 'get', 'SerialNumber'], 
@@ -1968,10 +2148,10 @@ def get_enhanced_hardware_id():
             lines = result.stdout.strip().split('\n')
             if len(lines) > 1:
                 win_id = lines[1].strip()
-    except:
+    except Exception as e:
         pass
     
-    # Combine all identifiers and hash
+    # Combine all identifiers and hash (EXACT same as license generator)
     combined = f"{mac}|{cpu_info}|{disk_serial}|{win_id}"
     enhanced_id = hashlib.sha256(combined.encode()).hexdigest()[:16]
     
@@ -2263,16 +2443,95 @@ def get_analytics():
             # Custom date range
             start = datetime.strptime(start_date, '%Y-%m-%d')
             end = datetime.strptime(end_date, '%Y-%m-%d') + timedelta(days=1)
+            target_date = start
+        elif range_type == 'week':
+            # This week (Monday to Sunday)
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            start = today - timedelta(days=today.weekday())  # Monday
+            end = start + timedelta(days=7)  # Next Monday
+            target_date = start
+        elif range_type == 'month':
+            # This month
+            today = datetime.now()
+            start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Next month's first day
+            if start.month == 12:
+                end = start.replace(year=start.year + 1, month=1)
+            else:
+                end = start.replace(month=start.month + 1)
+            target_date = start
         else:
             # Today's analytics
             start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             end = start + timedelta(days=1)
+            target_date = start
         
         # Read orders from CSV file
-        # Use today's CSV snapshot; if not exists, return empty analytics (no auto-seeding)
+        # Check for today's CSV file, then try alternative locations and dates
         today_path = os.path.join(DATA_DIR, f"orders_{datetime.now().strftime('%Y-%m-%d')}.csv")
         orders_csv = today_path
+        
+        # If today's file doesn't exist, try looking for recent CSV files
         if not os.path.exists(orders_csv):
+            app.logger.info(f"Today's CSV file not found: {orders_csv}")
+            
+            # Check alternative installation path
+            alt_today_path = os.path.join(r'C:\POSPal\data', f"orders_{datetime.now().strftime('%Y-%m-%d')}.csv")
+            if os.path.exists(alt_today_path):
+                orders_csv = alt_today_path
+                app.logger.info(f"Found CSV in alternative location: {alt_today_path}")
+            else:
+                # Look for any recent CSV files in both locations
+                csv_files = []
+                for data_dir in [DATA_DIR, r'C:\POSPal\data']:
+                    if os.path.exists(data_dir):
+                        try:
+                            for file in os.listdir(data_dir):
+                                if file.startswith('orders_') and file.endswith('.csv'):
+                                    csv_path = os.path.join(data_dir, file)
+                                    csv_files.append((csv_path, os.path.getmtime(csv_path)))
+                        except Exception as e:
+                            app.logger.warning(f"Error scanning directory {data_dir}: {e}")
+                
+                if csv_files:
+                    # For custom date range, try to find exact date first, then most recent
+                    if range_type == 'custom' and start_date:
+                        date_specific_files = [f for f in csv_files if start_date in f[0]]
+                        if date_specific_files:
+                            orders_csv = date_specific_files[0][0]
+                            app.logger.info(f"Using date-specific CSV file: {orders_csv}")
+                        else:
+                            csv_files.sort(key=lambda x: x[1], reverse=True)
+                            orders_csv = csv_files[0][0]
+                            app.logger.info(f"Date-specific file not found, using most recent: {orders_csv}")
+                    else:
+                        # Use the most recent CSV file
+                        csv_files.sort(key=lambda x: x[1], reverse=True)
+                        orders_csv = csv_files[0][0]
+                        app.logger.info(f"Using most recent CSV file: {orders_csv}")
+                else:
+                    app.logger.warning("No CSV files found in any location")
+        
+        # Prepare list of CSV files for the date range
+        csv_files_in_range = []
+        if range_type in ['custom', 'week', 'month'] or (range_type == 'today' and not os.path.exists(today_path)):
+            # For date ranges or when today's file doesn't exist, collect all CSV files in the range
+            current_date = start
+            while current_date < end:
+                date_csv_path = os.path.join(DATA_DIR, f"orders_{current_date.strftime('%Y-%m-%d')}.csv")
+                if os.path.exists(date_csv_path):
+                    csv_files_in_range.append(date_csv_path)
+                # Also check alternative path
+                alt_date_csv_path = os.path.join(r'C:\POSPal\data', f"orders_{current_date.strftime('%Y-%m-%d')}.csv")
+                if os.path.exists(alt_date_csv_path) and alt_date_csv_path not in csv_files_in_range:
+                    csv_files_in_range.append(alt_date_csv_path)
+                current_date += timedelta(days=1)
+        else:
+            # For today's analytics when file exists, use the single file we found
+            if 'orders_csv' in locals() and os.path.exists(orders_csv):
+                csv_files_in_range = [orders_csv]
+        
+        if not csv_files_in_range:
             return jsonify({
                 "grossRevenue": 0.0,
                 "totalOrders": 0,
@@ -2313,60 +2572,67 @@ def get_analytics():
         except Exception:
             pass
         
-        with open(orders_csv, 'r', newline='', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                try:
-                    order_date = datetime.strptime(row.get('timestamp') or row.get('Date'), '%Y-%m-%d %H:%M:%S')
-                    if start <= order_date < end:
-                        order_total = float(row.get('order_total') or row.get('Total') or 0.0)
-                        total_sales += order_total
-                        total_orders += 1
-                        
-                        # Sales by hour
-                        hour = order_date.hour
-                        sales_by_hour[hour] += order_total
-
-                        # Daypart removed per requirements
-                        
-                        # Payment methods
-                        payment_method = row.get('payment_method') or row.get('Payment Method', 'Cash')
-                        payment_methods[payment_method] += 1
-                        
-                        # Top items (parse items JSON)
+        # Process all CSV files in the date range
+        for orders_csv in csv_files_in_range:
+            app.logger.info(f"Processing CSV file: {orders_csv}")
+            try:
+                with open(orders_csv, 'r', newline='', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
                         try:
-                            items = json.loads(row.get('items_json') or row.get('Items') or '[]')
-                            order_no = row.get('order_number') or row.get('OrderNumber') or str(uuid.uuid4())
-                            for item in items:
-                                item_name = item.get('name', 'Unknown')
-                                quantity = int(item.get('quantity', 1))
-                                unit_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
-                                item_qty[item_name] += quantity
-                                item_rev[item_name] += unit_price * quantity
+                            order_date = datetime.strptime(row.get('timestamp') or row.get('Date'), '%Y-%m-%d %H:%M:%S')
+                            if start <= order_date < end:
+                                order_total = float(row.get('order_total') or row.get('Total') or 0.0)
+                                total_sales += order_total
+                                total_orders += 1
+                        
+                                # Sales by hour
+                                hour = order_date.hour
+                                sales_by_hour[hour] += order_total
 
-                                # Add-ons/options revenue and attach rate
+                                # Daypart removed per requirements
+                                
+                                # Payment methods
+                                payment_method = row.get('payment_method') or row.get('Payment Method', 'Cash')
+                                payment_methods[payment_method] += 1
+                                
+                                # Top items (parse items JSON)
                                 try:
-                                    opts = item.get('generalSelectedOptions') or []
-                                    if isinstance(opts, list):
-                                        seen_addons_in_order = set()
-                                        for opt in opts:
-                                            opt_name = opt.get('name')
-                                            if not opt_name:
-                                                continue
-                                            price_change = float(opt.get('priceChange', 0.0))
-                                            if price_change > 0:
-                                                addon_rev[opt_name] += price_change * quantity
-                                            seen_addons_in_order.add(opt_name)
-                                        for opt_name in seen_addons_in_order:
-                                            addon_order_set[opt_name].add(order_no)
-                                except Exception:
+                                    items = json.loads(row.get('items_json') or row.get('Items') or '[]')
+                                    order_no = row.get('order_number') or row.get('OrderNumber') or str(uuid.uuid4())
+                                    for item in items:
+                                        item_name = item.get('name', 'Unknown')
+                                        quantity = int(item.get('quantity', 1))
+                                        unit_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                                        item_qty[item_name] += quantity
+                                        item_rev[item_name] += unit_price * quantity
+
+                                        # Add-ons/options revenue and attach rate
+                                        try:
+                                            opts = item.get('generalSelectedOptions') or []
+                                            if isinstance(opts, list):
+                                                seen_addons_in_order = set()
+                                                for opt in opts:
+                                                    opt_name = opt.get('name')
+                                                    if not opt_name:
+                                                        continue
+                                                    price_change = float(opt.get('priceChange', 0.0))
+                                                    if price_change > 0:
+                                                        addon_rev[opt_name] += price_change * quantity
+                                                    seen_addons_in_order.add(opt_name)
+                                                for opt_name in seen_addons_in_order:
+                                                    addon_order_set[opt_name].add(order_no)
+                                        except Exception:
+                                            pass
+                                except (json.JSONDecodeError, KeyError):
                                     pass
-                        except (json.JSONDecodeError, KeyError):
-                            pass
                             
-                except (ValueError, KeyError) as e:
-                    app.logger.warning(f"Error parsing order row: {e}")
-                    continue
+                        except (ValueError, KeyError) as e:
+                            app.logger.warning(f"Error parsing order row: {e}")
+                            continue
+            except Exception as e:
+                app.logger.warning(f"Error processing CSV file {orders_csv}: {e}")
+                continue
         
         average_order_value = total_sales / total_orders if total_orders > 0 else 0
         # Build best and worst sellers by quantity
@@ -2896,6 +3162,11 @@ if __name__ == '__main__':
                     sys.exit(1)
 
             initialize_trial()
+            # Log the data directory that was found
+            app.logger.info(f"POSPal startup: Using data directory: {DATA_DIR}")
+            app.logger.info(f"POSPal startup: Menu file path: {MENU_FILE}")
+            app.logger.info(f"POSPal startup: Menu file exists: {os.path.exists(MENU_FILE)}")
+            
             # Verify we can write to DATA_DIR
             try:
                 test_file = os.path.join(DATA_DIR, 'permission_test.tmp')
@@ -2933,7 +3204,66 @@ if __name__ == '__main__':
         sys.exit(1)
         
     from waitress import serve
-    app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{config.get('port', 5000)}")
+    port = config.get('port', 5000)
+    app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{port}")
+    
+    # Enhanced network information for mobile connection troubleshooting
+    try:
+        import socket
+        hostname = socket.gethostname()
+        
+        # Get all possible IP addresses
+        try:
+            # Try to get the actual network IP by connecting to external address
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            temp_socket.connect(("8.8.8.8", 80))
+            primary_ip = temp_socket.getsockname()[0]
+            temp_socket.close()
+        except:
+            primary_ip = socket.gethostbyname(hostname)
+        
+        app.logger.info(f"=== MOBILE CONNECTION INFO ===")
+        app.logger.info(f"Primary IP: {primary_ip}")
+        app.logger.info(f"Hostname: {hostname}")
+        app.logger.info(f"Port: {port}")
+        app.logger.info(f"")
+        app.logger.info(f"🔗 MOBILE DEVICES CONNECT TO:")
+        app.logger.info(f"   http://{primary_ip}:{port}")
+        app.logger.info(f"")
+        app.logger.info(f"📱 TROUBLESHOOTING STEPS:")
+        app.logger.info(f"   1. Ensure mobile device is on same WiFi network")
+        app.logger.info(f"   2. Check Windows Firewall allows port {port}")
+        app.logger.info(f"   3. Try running POSPal as Administrator")
+        app.logger.info(f"   4. Alternative IPs to try:")
+        
+        # List alternative IP addresses
+        try:
+            import subprocess
+            result = subprocess.run(['ipconfig'], capture_output=True, text=True, shell=True)
+            if result.returncode == 0:
+                lines = result.stdout.split('\n')
+                for i, line in enumerate(lines):
+                    if 'IPv4 Address' in line and '192.168.' in line or '10.' in line or '172.' in line:
+                        ip = line.split(':')[-1].strip()
+                        if ip != primary_ip:
+                            app.logger.info(f"      http://{ip}:{port}")
+        except:
+            pass
+        
+        # Test if port is actually bindable
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            test_socket.bind(('0.0.0.0', port))
+            test_socket.close()
+            app.logger.info(f"✅ Port {port} is available for binding")
+        except Exception as e:
+            app.logger.error(f"❌ Port {port} binding test failed: {e}")
+            app.logger.error(f"   This will prevent mobile connections!")
+        
+        app.logger.info(f"==============================")
+    except Exception as e:
+        app.logger.warning(f"Network diagnostics failed: {e}")
     # For end-users: auto-open the local UI in the default browser when packaged
     if getattr(sys, 'frozen', False):
         threading.Thread(target=_open_browser_when_ready, daemon=True).start()

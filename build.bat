@@ -4,11 +4,11 @@ REM Build script for POSPal
 REM Description: This script creates a new 'build_output' directory and performs
 REM              the entire build process within it, keeping the root
 REM              directory clean.
-REM Version: 1.1.7 (Containerized Build Process)
+REM Version: 1.1.8 (Containerized Build Process)
 REM ============================================================================
 setlocal
 
-set VERSION=1.1.7
+set VERSION=1.1.8
 set BUILD_DIR=build_output
 set RELEASE_DIR=POSPal_v%VERSION%
 set RELEASE_DIR_ONEDIR=POSPal_onedir_v%VERSION%
@@ -201,14 +201,18 @@ if exist "..\data\config.json" (
     ) > "%RELEASE_DIR%\data\config.json"
 )
 
-rem Copy existing data files if they exist
-if exist "..\data\menu.json" (
-    copy "..\data\menu.json" "%RELEASE_DIR%\data\"
-    echo [COPY] Copied existing menu.json
-) else (
-    echo [SETUP] No existing menu.json found. Creating an empty menu.
-    echo {} > "%RELEASE_DIR%\data\menu.json"
-)
+rem For deployment builds, always create an empty menu (comment out to include existing menu)
+echo [SETUP] Creating empty menu for deployment build.
+echo {} > "%RELEASE_DIR%\data\menu.json"
+
+rem Copy existing data files if they exist (DISABLED FOR DEPLOYMENT)
+rem if exist "..\data\menu.json" (
+rem     copy "..\data\menu.json" "%RELEASE_DIR%\data\"
+rem     echo [COPY] Copied existing menu.json
+rem ) else (
+rem     echo [SETUP] No existing menu.json found. Creating an empty menu.
+rem     echo {} > "%RELEASE_DIR%\data\menu.json"
+rem )
 
 rem Copy other existing data files
 if exist "..\data\trial.json" (

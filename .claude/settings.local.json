@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal\\data/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal\\data/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal\\data/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal\\data/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
+      "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
+      "Bash(python:*)",
+      "Bash(copy:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
