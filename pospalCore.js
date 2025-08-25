@@ -3,6 +3,9 @@ let menu = {};
 let selectedCategory = null;
 let editingItem = null;
 
+// --- Printer Session State ---
+let printerVerificationStatus = 'unknown'; // 'unknown', 'verified', 'failed'
+
 // --- Constants ---
 const SELECTED_TABLE_KEY = 'pospal_selected_table';
 const UNIVERSAL_COMMENT_KEY = 'pospal_universal_comment';
@@ -361,6 +364,53 @@ async function fetchAndUpdateOrderNumber() {
     }
 }
 
+async function autoVerifyPrinter() {
+    console.log('Auto-verifying printer on startup...');
+    try {
+        // First check if we have a printer configured and if it's accessible
+        const response = await fetch('/api/printers');
+        const data = await response.json();
+        
+        if (!data.selected) {
+            console.log('No printer selected, skipping auto-verification');
+            printerVerificationStatus = 'failed';
+            return;
+        }
+
+        // Check printer status
+        const statusResp = await fetch(`/api/printer/status?name=${encodeURIComponent(data.selected)}`);
+        const statusInfo = await statusResp.json();
+        
+        // If printer has error or is not accessible, skip auto-test
+        if (statusInfo.error || (typeof statusInfo.status_code === 'number' && statusInfo.status_code !== 0)) {
+            console.log('Printer not ready for auto-verification:', statusInfo);
+            printerVerificationStatus = 'failed';
+            return;
+        }
+
+        // Perform silent test print
+        const testResp = await fetch('/api/printer/test', { method: 'POST' });
+        const testResult = await testResp.json();
+        
+        if (testResult.success) {
+            printerVerificationStatus = 'verified';
+            console.log('Printer auto-verification successful');
+            
+            // Update the UI status dot if it exists (for settings page)
+            const dot = document.getElementById('printerStatusDot');
+            if (dot) {
+                dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:#16a34a"></span><span>Ready</span></span>`;
+            }
+        } else {
+            printerVerificationStatus = 'failed';
+            console.log('Printer auto-verification failed:', testResult.message);
+        }
+    } catch (error) {
+        printerVerificationStatus = 'failed';
+        console.log('Error during printer auto-verification:', error);
+    }
+}
+
 function initializeAppState() {
     console.log('initializeAppState called');
     fetchAndUpdateOrderNumber();
@@ -387,6 +437,10 @@ function initializeAppState() {
     } else {
         console.log('universalOrderCommentInput_desktop not found');
     }
+    
+    // Auto-verify printer on startup
+    autoVerifyPrinter();
+    
     console.log('initializeAppState completed');
 }
 
@@ -883,20 +937,13 @@ async function sendOrder() {
     }
 
 
-    // Preflight: block if printer not ready (no override)
-    try {
-        const sel = document.getElementById('printerSelect');
-        const name = sel && sel.value ? encodeURIComponent(sel.value) : '';
-        const statusResp = await fetch(`/api/printer/status?name=${name}`);
-        const info = await statusResp.json();
-        const code = typeof info.status_code === 'number' ? info.status_code : null;
-        const isPdf = (sel && sel.value || '').toLowerCase().includes('pdf');
-        if (isPdf || code === null || code !== 0) {
-            showToast('Printer not ready. Open Settings to fix and retry.', 'error', 7000);
-            return;
+    // Preflight: block if printer not verified this session
+    if (printerVerificationStatus !== 'verified') {
+        if (printerVerificationStatus === 'failed') {
+            showToast('Printer verification failed at startup. Open Settings to test and retry.', 'error', 7000);
+        } else {
+            showToast('Printer not verified yet. Open Settings to test and retry.', 'error', 7000);
         }
-    } catch (e) {
-        showToast('Unable to verify printer status. Please check printer and retry.', 'error', 7000);
         return;
     }
 
@@ -1921,9 +1968,13 @@ async function updatePrinterStatusDot() {
         const info = await resp.json();
         let statusText = 'Unknown';
         let color = '#6b7280';
-        if (info && typeof info.status_code === 'number') {
+        
+        // Check session verification status first
+        if (printerVerificationStatus === 'verified') {
+            statusText = 'Ready'; color = '#16a34a';
+        } else if (info && typeof info.status_code === 'number') {
             const code = info.status_code;
-            // Map 0 to Unknown (gray) instead of Ready; Ready will be set only after a successful print
+            // Map 0 to Unknown (gray) instead of Ready; Ready will be set only after verification
             if (code !== 0) { statusText = 'Attention'; color = '#f59e0b'; }
             else { statusText = 'Unknown'; color = '#6b7280'; }
         } else if (info && info.error) {
@@ -1964,14 +2015,17 @@ async function testPrint() {
         const resp = await fetch('/api/printer/test', { method: 'POST' });
         const res = await resp.json();
         if (res.success) {
+            printerVerificationStatus = 'verified'; // Update session status
             if (resultEl) { resultEl.textContent = `Last test: Success (Printed) ${new Date().toLocaleTimeString()}`; resultEl.className = 'text-xs text-green-600'; }
             const dot = document.getElementById('printerStatusDot');
             if (dot) dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style=\"width:10px;height:10px;border-radius:9999px;background:#16a34a\"></span><span>Ready</span></span>`;
         } else {
+            printerVerificationStatus = 'failed'; // Update session status
             if (resultEl) { resultEl.textContent = `Last test: Failed (${new Date().toLocaleTimeString()})`; resultEl.className = 'text-xs text-red-600'; }
             showToast(res.message || 'Test print failed.', 'error');
         }
     } catch (e) {
+        printerVerificationStatus = 'failed'; // Update session status
         if (resultEl) { resultEl.textContent = `Last test: Error (${new Date().toLocaleTimeString()})`; resultEl.className = 'text-xs text-red-600'; }
         showToast('Error performing test print.', 'error');
     } finally {
