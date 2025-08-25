@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.1.8"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
+CURRENT_VERSION = "1.1.9"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -90,8 +90,21 @@ def find_data_directory():
 
 DATA_DIR = find_data_directory()
 
+def find_license_file():
+    """Find license.key in the same directory as the executable"""
+    # The license should always be next to the .exe file
+    exe_dir = os.path.dirname(sys.executable)
+    license_path = os.path.join(exe_dir, 'license.key')
+    
+    if os.path.exists(license_path):
+        print(f"Found license file at: {license_path}")
+        return license_path
+    
+    print(f"License file not found at: {license_path}")
+    return license_path  # Return the path anyway for error reporting
+
 TRIAL_INFO_FILE = os.path.join(DATA_DIR, 'trial.json')
-LICENSE_FILE = os.path.join(BASE_DIR, 'license.key')
+LICENSE_FILE = find_license_file()
 # Additional hardening: also store a copy of the trial info under ProgramData
 PROGRAM_DATA_DIR = os.path.join(os.environ.get('PROGRAMDATA', r'C:\\ProgramData'), 'POSPal')
 PROGRAM_TRIAL_FILE = os.path.join(PROGRAM_DATA_DIR, 'trial.json')
@@ -1974,42 +1987,113 @@ def handle_order():
         "logged": csv_log_succeeded,
         "message": message
     }), 200
+
+def diagnose_license_failure(license_file_path):
+    """Comprehensive license diagnosis for troubleshooting"""
+    app.logger.info("=== LICENSE DIAGNOSIS START ===")
+    
+    # Check file existence and permissions
+    app.logger.info(f"License file path: {license_file_path}")
+    app.logger.info(f"File exists: {os.path.exists(license_file_path)}")
+    
+    if not os.path.exists(license_file_path):
+        app.logger.error("LICENSE DIAGNOSIS: File does not exist!")
+        return False
+    
+    # Check file readability
+    try:
+        with open(license_file_path, 'r') as f:
+            content = f.read()
+        app.logger.info(f"File readable: Yes, {len(content)} characters")
+    except Exception as e:
+        app.logger.error(f"LICENSE DIAGNOSIS: Cannot read file - {e}")
+        return False
+    
+    # Check JSON parsing
+    try:
+        license_data = json.loads(content)
+        app.logger.info(f"JSON valid: Yes")
+        app.logger.info(f"License customer: {license_data.get('customer', 'MISSING')}")
+        app.logger.info(f"License hardware_id: {license_data.get('hardware_id', 'MISSING')}")
+        app.logger.info(f"License signature: {license_data.get('signature', 'MISSING')[:16]}...")
+    except Exception as e:
+        app.logger.error(f"LICENSE DIAGNOSIS: Invalid JSON - {e}")
+        return False
+    
+    # Check hardware ID matching
+    current_hw_id = get_enhanced_hardware_id()
+    mac_node = uuid.getnode()
+    mac_hex = f'{mac_node:012x}'
+    
+    app.logger.info(f"Current enhanced HW ID: {current_hw_id}")
+    app.logger.info(f"Current MAC hex: {mac_hex}")
+    app.logger.info(f"Current MAC node: {mac_node}")
+    
+    # Check all possible matches
+    license_hw_id = license_data.get('hardware_id', '')
+    matches = {
+        'enhanced_match': current_hw_id == license_hw_id,
+        'mac_hex_match': mac_hex == license_hw_id,
+        'mac_no_colon_match': current_hw_id.replace(':', '') == license_hw_id
+    }
+    
+    app.logger.info(f"Hardware ID matches: {matches}")
+    
+    # Check signature validation
+    try:
+        data = f"{license_hw_id}{APP_SECRET_KEY}".encode()
+        expected_signature = hashlib.sha256(data).hexdigest()
+        signature_match = expected_signature == license_data.get('signature', '')
+        app.logger.info(f"Signature valid: {signature_match}")
+        if not signature_match:
+            app.logger.info(f"Expected signature: {expected_signature}")
+            app.logger.info(f"License signature:  {license_data.get('signature', '')}")
+    except Exception as e:
+        app.logger.error(f"LICENSE DIAGNOSIS: Signature validation error - {e}")
+    
+    app.logger.info("=== LICENSE DIAGNOSIS END ===")
+    return True
     
 def check_trial_status():
-    """Check trial status with tamper protection"""
+    """Check trial status with enhanced diagnostics"""
     # License check (highest priority)
     if os.path.exists(LICENSE_FILE):
+        # Add comprehensive diagnosis
+        diagnose_license_failure(LICENSE_FILE)
+        
         try:
             with open(LICENSE_FILE) as f:
                 license = json.load(f)
+            
             # Validate signature
             data = f"{license['hardware_id']}{APP_SECRET_KEY}".encode()
             if hashlib.sha256(data).hexdigest() == license['signature']:
                 # Validate hardware using enhanced fingerprint with backward compatibility
                 current_hw_id = get_enhanced_hardware_id()
-                # Try both current format and hex format for backward compatibility
                 mac_node = uuid.getnode()
                 mac_hex = f'{mac_node:012x}'
                 
                 if (current_hw_id == license['hardware_id'] or 
                     mac_hex == license['hardware_id'] or 
                     current_hw_id.replace(':', '') == license['hardware_id']):
-                    app.logger.info(f"License validated successfully for customer: {license.get('customer', 'unknown')}")
+                    app.logger.info(f"LICENSE SUCCESS: Validated for customer: {license.get('customer', 'unknown')}")
                     return {"licensed": True, "active": True}
                 else:
-                    app.logger.warning(f"Hardware ID mismatch. License: {license['hardware_id']}, Current: {current_hw_id}, Hex: {mac_hex}")
-        except Exception as e:
-            app.logger.warning(f"Invalid license file: {e}")
-            # Log more details for troubleshooting
-            if os.path.exists(LICENSE_FILE):
-                try:
-                    with open(LICENSE_FILE, 'r') as f:
-                        content = f.read()
-                        app.logger.warning(f"License file exists but failed validation. Content length: {len(content)} chars")
-                except Exception as read_e:
-                    app.logger.warning(f"Cannot read license file: {read_e}")
+                    app.logger.error(f"LICENSE FAILED: Hardware ID mismatch")
+                    app.logger.error(f"  License expects: {license['hardware_id']}")
+                    app.logger.error(f"  Current enhanced: {current_hw_id}")
+                    app.logger.error(f"  Current MAC hex: {mac_hex}")
             else:
-                app.logger.warning(f"License file does not exist at: {LICENSE_FILE}")
+                app.logger.error("LICENSE FAILED: Invalid signature")
+                
+        except json.JSONDecodeError as e:
+            app.logger.error(f"LICENSE FAILED: Invalid JSON format - {e}")
+        except KeyError as e:
+            app.logger.error(f"LICENSE FAILED: Missing required field - {e}")
+        except Exception as e:
+            app.logger.error(f"LICENSE FAILED: Unexpected error - {e}")
+    else:
+        app.logger.info(f"License file not found at: {LICENSE_FILE}")
     
     # Trial check - aggregate across all storage locations and pick the earliest valid
     try:
@@ -2115,9 +2199,9 @@ def get_enhanced_hardware_id():
     import subprocess
     import platform
     
-    # Get MAC address (EXACT match to license generator)
-    mac = ':'.join(f'{(uuid.getnode() >> i) & 0xff:02x}' 
-                   for i in range(0, 8*6, 8))
+    # Get MAC address (FIXED - correct bit shifting)
+    mac_node = uuid.getnode()
+    mac = ':'.join(f'{(mac_node >> (8 * (5-i))) & 0xff:02x}' for i in range(6))
     
     # Get CPU info (EXACT match to license generator)
     try:
@@ -2130,8 +2214,8 @@ def get_enhanced_hardware_id():
     # Get disk serial (EXACT match to license generator)
     disk_serial = "UNKNOWN"
     try:
-        result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], 
-                              capture_output=True, text=True, timeout=5)
+        result = subprocess.run(['wmic', 'diskdrive', 'where', 'index=0', 'get', 'serialnumber'], 
+                              capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode == 0:
             lines = result.stdout.strip().split('\n')
             if len(lines) > 1:
@@ -2139,11 +2223,11 @@ def get_enhanced_hardware_id():
     except Exception as e:
         pass
     
-    # Get Windows installation ID (EXACT match to license generator)
+    # Get Windows ID (EXACT match to license generator)
     win_id = "UNKNOWN"
     try:
-        result = subprocess.run(['wmic', 'os', 'get', 'SerialNumber'], 
-                              capture_output=True, text=True, timeout=5)
+        result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'], 
+                              capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode == 0:
             lines = result.stdout.strip().split('\n')
             if len(lines) > 1:
