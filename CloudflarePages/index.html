@@ -43,12 +43,16 @@
     }
 
     .logo {
-      width: 24px;
-      height: 24px;
-      background-image: url('./app_icon.ico');
+      width: 32px;
+      height: 32px;
+      background-image: url('/app_icon.ico');
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
+      /* Fallback styling in case image doesn't load */
+      background-color: var(--brand-green);
+      border-radius: 4px;
+      flex-shrink: 0;
     }
 
     h1 { 
@@ -61,13 +65,68 @@
     .content { padding-top: 16px; }
     .loading, .error { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 8px; }
 
+    /* Category navigation */
+    .category-nav { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .category-btn { 
+      background: var(--card); 
+      border: 1px solid var(--rule); 
+      border-radius: var(--radius); 
+      padding: 8px 16px; 
+      font-size: 13px; 
+      font-weight: 500; 
+      color: var(--muted); 
+      cursor: pointer; 
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .category-btn:hover { background: rgba(22, 163, 74, 0.1); border-color: var(--brand-green); }
+    .category-btn.active { background: var(--brand-green); color: white; border-color: var(--brand-green); }
+
     /* Simple category styling */
     .category { margin-top: 16px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+    .category.hidden { display: none; }
     h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--brand-green); text-transform: uppercase; letter-spacing: .04em; }
 
-    .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+    .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; transition: all 0.2s ease; }
     .item + .item { border-top: 1px dashed var(--rule); }
-    .name { font-size: 15px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-content { flex: 1; min-width: 0; }
+    .item-name { 
+      font-size: 15px; 
+      font-weight: 500; 
+      color: var(--text); 
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    /* Clickable items with options styling */
+    .item.has-options {
+      cursor: pointer;
+      padding: 12px 16px;
+      margin: 0 -16px;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(22, 163, 74, 0.03) 0%, rgba(22, 163, 74, 0.08) 100%);
+      border-left: 3px solid var(--brand-green);
+      position: relative;
+    }
+    .item.has-options:hover {
+      background: linear-gradient(135deg, rgba(22, 163, 74, 0.08) 0%, rgba(22, 163, 74, 0.15) 100%);
+      transform: translateX(2px);
+      box-shadow: var(--shadow);
+    }
+    
+    .has-options-badge {
+      display: inline-flex;
+      align-items: center;
+      background: var(--brand-green);
+      color: white;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(22, 163, 74, 0.3);
+    }
     .dots { flex: 1 1 auto; border-bottom: 1px dotted var(--rule); transform: translateY(-2px); opacity: .8; }
     .price { 
       font-weight: 700; 
@@ -112,10 +171,95 @@
       background-color: rgba(22, 163, 74, 0.05);
     }
 
+    /* Modal styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 16px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 400px;
+      width: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      transform: scale(0.9);
+      transition: transform 0.2s ease;
+    }
+    .modal-overlay.show .modal { transform: scale(1); }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.2s ease;
+    }
+    .modal-close:hover {
+      background: var(--rule);
+      color: var(--text);
+    }
+    .modal-options {
+      margin: 0;
+      padding: 0;
+    }
+    .modal-option {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px dashed var(--rule);
+      font-size: 14px;
+    }
+    .modal-option:last-child { border-bottom: none; }
+    .modal-option-name {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .modal-option-price {
+      color: var(--brand-green);
+      font-weight: 600;
+    }
+    .modal-option-price.negative { color: #dc2626; }
+
     @media (prefers-color-scheme: dark) {
       :root { --text:#e5e7eb; --muted:#9ca3af; --rule:#374151; --bg:#111827; --card:#0f172a; }
       .price { background: rgba(22, 163, 74, 0.2); }
       .item:hover { background-color: rgba(22, 163, 74, 0.1); }
+      .category-btn:hover { background: rgba(22, 163, 74, 0.2); }
+      .modal-option-price.negative { color: #f87171; }
     }
   </style>
 </head>
@@ -130,6 +274,19 @@
     </div>
     <div class="footer">
       <div>Powered by <a href="https://radot1.github.io/POSPal/" target="_blank">POSPal</a> - Modern Point of Sale System</div>
+    </div>
+  </div>
+  
+  <!-- Options Modal -->
+  <div id="optionsModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle" class="modal-title">Item Options</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div id="modalContent" class="modal-options">
+        <!-- Options will be populated here -->
+      </div>
     </div>
   </div>
   <script>
@@ -160,44 +317,164 @@
       }
     }
 
+    let currentCategory = null;
+
     function render(menu) {
-      const content = document.getElementById('content');
-      content.innerHTML = '';
-      const cats = Object.keys(menu || {});
-      if (!cats.length) {
-        content.className = 'error';
-        content.textContent = 'No items yet.';
-        return;
+      try {
+        const content = document.getElementById('content');
+        content.innerHTML = '';
+        const cats = Object.keys(menu || {});
+        if (!cats.length) {
+          content.className = 'error';
+          content.textContent = 'No items yet.';
+          return;
+        }
+
+      // Set initial category if none selected
+      if (!currentCategory || !cats.includes(currentCategory)) {
+        currentCategory = cats[0];
       }
 
+      // Create category navigation
+      if (cats.length > 1) {
+        const navDiv = document.createElement('div');
+        navDiv.className = 'category-nav';
+        
+        cats.forEach(cat => {
+          const btn = document.createElement('button');
+          btn.className = `category-btn ${cat === currentCategory ? 'active' : ''}`;
+          btn.textContent = cat;
+          btn.onclick = () => showCategory(cat, menu);
+          navDiv.appendChild(btn);
+        });
+        
+        content.appendChild(navDiv);
+      }
+
+      // Create all category divs but hide non-active ones
       cats.forEach(cat => {
         const categoryDiv = document.createElement('div');
-        categoryDiv.className = 'category';
+        categoryDiv.className = `category ${cat === currentCategory ? '' : 'hidden'}`;
+        categoryDiv.dataset.category = cat;
 
         const h2 = document.createElement('h2');
         h2.textContent = cat;
         categoryDiv.appendChild(h2);
 
         (menu[cat]||[]).forEach(it => {
-          const row = document.createElement('div');
-          row.className = 'item';
-          const name = document.createElement('div');
-          name.className = 'name';
-          name.textContent = it.name || '';
+          const item = document.createElement('div');
+          const hasOptions = it.hasGeneralOptions && it.generalOptions && it.generalOptions.length > 0;
+          item.className = hasOptions ? 'item has-options' : 'item';
+          
+          // Create item content section
+          const itemContent = document.createElement('div');
+          itemContent.className = 'item-content';
+          
+          // Create item name with optional badge
+          const itemName = document.createElement('div');
+          itemName.className = 'item-name';
+          
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = it.name || '';
+          itemName.appendChild(nameSpan);
+          
+          if (hasOptions) {
+            const badge = document.createElement('span');
+            badge.className = 'has-options-badge';
+            badge.textContent = 'Add Extras';
+            itemName.appendChild(badge);
+            
+            // Add click handler for modal
+            item.onclick = () => showOptionsModal(it);
+          }
+          
+          itemContent.appendChild(itemName);
+          
+          // Create dots
           const dots = document.createElement('div');
           dots.className = 'dots';
+          
+          // Create price
           const price = document.createElement('div');
           price.className = 'price';
           price.textContent = `€${Number(it.price||0).toFixed(2)}`;
-          row.appendChild(name);
-          row.appendChild(dots);
-          row.appendChild(price);
-          categoryDiv.appendChild(row);
+          
+          item.appendChild(itemContent);
+          item.appendChild(dots);
+          item.appendChild(price);
+          categoryDiv.appendChild(item);
         });
 
         content.appendChild(categoryDiv);
       });
+      } catch (e) {
+        const content = document.getElementById('content');
+        content.className = 'error';
+        content.textContent = 'Error displaying menu.';
+      }
     }
+
+    function showCategory(categoryName, menu) {
+      currentCategory = categoryName;
+      
+      // Update button states
+      document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent === categoryName);
+      });
+      
+      // Show/hide categories
+      document.querySelectorAll('.category').forEach(categoryDiv => {
+        const isTarget = categoryDiv.dataset.category === categoryName;
+        categoryDiv.classList.toggle('hidden', !isTarget);
+      });
+    }
+
+    // Modal functions
+    function showOptionsModal(item) {
+      const modal = document.getElementById('optionsModal');
+      const title = document.getElementById('modalTitle');
+      const content = document.getElementById('modalContent');
+      
+      title.textContent = `${item.name} - Options`;
+      content.innerHTML = '';
+      
+      if (item.generalOptions && item.generalOptions.length > 0) {
+        item.generalOptions.forEach(option => {
+          const optionDiv = document.createElement('div');
+          optionDiv.className = 'modal-option';
+          
+          const optionName = document.createElement('span');
+          optionName.className = 'modal-option-name';
+          optionName.textContent = option.name;
+          
+          const optionPrice = document.createElement('span');
+          const price = Number(option.price || option.priceChange || 0);
+          optionPrice.className = `modal-option-price ${price < 0 ? 'negative' : ''}`;
+          const priceText = price >= 0 ? `+€${price.toFixed(2)}` : `€${price.toFixed(2)}`;
+          optionPrice.textContent = priceText;
+          
+          optionDiv.appendChild(optionName);
+          optionDiv.appendChild(optionPrice);
+          content.appendChild(optionDiv);
+        });
+      }
+      
+      modal.classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+    
+    function closeModal() {
+      const modal = document.getElementById('optionsModal');
+      modal.classList.remove('show');
+      document.body.style.overflow = '';
+    }
+    
+    // Close modal when clicking overlay
+    document.getElementById('optionsModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeModal();
+      }
+    });
 
     load();
   </script>
