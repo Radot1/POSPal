@@ -443,6 +443,93 @@
                             </div>
                             <button class="btn-primary mt-2 px-4 py-2 rounded" onclick="changeManagementPassword()" data-i18n="ui.password.savePassword">Save Password</button>
                         </div>
+                        <div class="bg-white p-3 rounded border">
+                            <h4 class="font-medium text-gray-700 mb-2">
+                                <i class="fas fa-network-wired mr-2"></i>Mobile Connection Fix
+                            </h4>
+                            
+                            <!-- Collapsible Instructions -->
+                            <div class="mb-3">
+                                <button onclick="toggleInstructions()" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800">
+                                    <i id="instructionsArrow" class="fas fa-chevron-right transition-transform"></i>
+                                    <span>Click here for setup instructions</span>
+                                </button>
+                                <div id="instructionsPanel" class="hidden mt-2 bg-blue-50 border border-blue-200 rounded p-3 text-sm">
+                                    <div class="font-medium text-blue-900 mb-2"><i class="fas fa-info-circle mr-1"></i>How to Use This Feature</div>
+                                    <div class="space-y-1 text-blue-800 text-xs">
+                                        <div><strong>🔸 Problem:</strong> Mobile devices can't access POSPal (white screen, timeout)</div>
+                                        <div><strong>🔸 Solution:</strong> Try different ports one by one</div>
+                                        <div><strong>🔸 Steps:</strong></div>
+                                        <div class="ml-4 space-y-0.5">
+                                            <div>1. Make sure POSPal is running as Administrator</div>
+                                            <div>2. Pick a different port below</div>  
+                                            <div>3. Click "Change Port"</div>
+                                            <div>4. Try connecting from mobile again</div>
+                                            <div>5. If still doesn't work, try another port</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Admin Status -->
+                            <div id="adminStatus" class="p-2 rounded text-sm mb-3">
+                                <span id="adminStatusText" class="font-medium"></span>
+                            </div>
+                            
+                            <!-- Port Selection -->
+                            <div id="portSelectionArea" class="space-y-3">
+                                <div class="font-medium text-sm">
+                                    Current Port: <span id="currentPortDisplay" class="font-mono bg-gray-100 px-2 py-1 rounded">5000</span>
+                                </div>
+                                
+                                <div>
+                                    <div class="text-sm text-gray-700 mb-2">Try a different port:</div>
+                                    <div class="space-y-2">
+                                        <label class="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="selectedPort" value="8080" class="h-4 w-4">
+                                            <span class="font-mono">8080</span>
+                                            <span class="text-xs text-gray-500">- Most common alternative</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="selectedPort" value="3000" class="h-4 w-4">
+                                            <span class="font-mono">3000</span>
+                                            <span class="text-xs text-gray-500">- Development port</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="selectedPort" value="8000" class="h-4 w-4">
+                                            <span class="font-mono">8000</span>
+                                            <span class="text-xs text-gray-500">- Alternative web port</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="selectedPort" value="9000" class="h-4 w-4">
+                                            <span class="font-mono">9000</span>
+                                            <span class="text-xs text-gray-500">- High port option</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="selectedPort" value="8888" class="h-4 w-4">
+                                            <span class="font-mono">8888</span>
+                                            <span class="text-xs text-gray-500">- Easy to remember</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer">
+                                            <input type="radio" name="selectedPort" value="5001" class="h-4 w-4">
+                                            <span class="font-mono">5001</span>
+                                            <span class="text-xs text-gray-500">- Close to default</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="pt-3 border-t">
+                                    <button id="changePortBtn" class="btn-primary px-6 py-2 rounded w-full" onclick="changePort()" disabled>
+                                        <i class="fas fa-exchange-alt mr-2"></i>Change Port
+                                    </button>
+                                    <div class="text-xs text-gray-500 text-center mt-1">Select a port above first</div>
+                                </div>
+                                
+                                <div class="text-center">
+                                    <span id="portChangeResult" class="text-sm"></span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div id="onlineMenuManagement" class="hidden">

@@ -1934,6 +1934,10 @@ async function initializeHardwarePrintingUI() {
             copiesInput.value = isNaN(val) ? 2 : Math.max(1, Math.min(10, val));
         }
         await refreshPrinters();
+        
+        // Load network settings
+        await loadNetworkSettings();
+        
     } catch (e) {
         console.error('Failed to initialize Hardware & Printing UI:', e);
     }
@@ -2076,6 +2080,128 @@ async function changeManagementPassword() {
     }
 }
 
+// Network Settings Functions
+async function loadNetworkSettings() {
+    try {
+        const response = await fetch('/api/settings/network');
+        const settings = await response.json();
+        
+        // Update current port display
+        document.getElementById('currentPortDisplay').textContent = settings.port;
+        
+        // Show admin status
+        updateAdminStatus(settings.is_admin);
+        
+        // Disable port selection if not admin
+        const portArea = document.getElementById('portSelectionArea');
+        if (!settings.is_admin) {
+            portArea.style.opacity = '0.5';
+            portArea.style.pointerEvents = 'none';
+        }
+        
+    } catch (error) {
+        console.error('Error loading network settings:', error);
+        showToast('Error loading network settings.', 'error');
+    }
+}
+
+function updateAdminStatus(isAdmin) {
+    const statusDiv = document.getElementById('adminStatus');
+    const statusText = document.getElementById('adminStatusText');
+    
+    if (isAdmin) {
+        statusDiv.className = 'p-2 rounded text-sm bg-green-50 border border-green-200 mb-3';
+        statusText.innerHTML = '<i class="fas fa-check-circle text-green-600 mr-1"></i>Running as Administrator - Port changes available';
+    } else {
+        statusDiv.className = 'p-2 rounded text-sm bg-red-50 border border-red-200 mb-3';
+        statusText.innerHTML = '<i class="fas fa-times-circle text-red-600 mr-1"></i>Not Administrator - Must restart as Administrator to change ports';
+    }
+}
+
+function toggleInstructions() {
+    const panel = document.getElementById('instructionsPanel');
+    const arrow = document.getElementById('instructionsArrow');
+    
+    if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        arrow.classList.add('rotate-90');
+    } else {
+        panel.classList.add('hidden');
+        arrow.classList.remove('rotate-90');
+    }
+}
+
+async function changePort() {
+    const selectedPort = document.querySelector('input[name="selectedPort"]:checked');
+    if (!selectedPort) {
+        showToast('Please select a port first.', 'error');
+        return;
+    }
+    
+    const newPort = parseInt(selectedPort.value);
+    const resultSpan = document.getElementById('portChangeResult');
+    const changeBtn = document.getElementById('changePortBtn');
+    
+    // Disable button and show loading
+    changeBtn.disabled = true;
+    changeBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Changing Port...';
+    resultSpan.textContent = 'Updating configuration and firewall...';
+    resultSpan.className = 'text-sm text-blue-600';
+    
+    try {
+        // Change the port in config
+        const response = await fetch('/api/settings/general', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ port: newPort })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to update port configuration');
+        }
+        
+        // Setup firewall rule for new port
+        const firewallResponse = await fetch('/api/windows_firewall/open_port', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ port: newPort })
+        });
+        
+        const firewallResult = await firewallResponse.json();
+        
+        // Update UI
+        document.getElementById('currentPortDisplay').textContent = newPort;
+        
+        if (firewallResult.success) {
+            resultSpan.textContent = `✅ Port changed to ${newPort} and firewall configured! Restart POSPal to use new port.`;
+            resultSpan.className = 'text-sm text-green-600';
+            showToast(`Port changed to ${newPort}! Please restart POSPal.`, 'success');
+        } else {
+            resultSpan.textContent = `⚠️ Port changed to ${newPort} but firewall setup failed. You may need to manually allow port ${newPort}.`;
+            resultSpan.className = 'text-sm text-orange-600';
+            showToast(`Port changed but firewall setup failed: ${firewallResult.message}`, 'warning');
+        }
+        
+        // Clear radio selection
+        selectedPort.checked = false;
+        
+    } catch (error) {
+        console.error('Error changing port:', error);
+        resultSpan.textContent = `❌ Failed to change port: ${error.message}`;
+        resultSpan.className = 'text-sm text-red-600';
+        showToast('Error changing port.', 'error');
+    } finally {
+        // Re-enable button
+        changeBtn.disabled = false;
+        changeBtn.innerHTML = '<i class="fas fa-exchange-alt mr-2"></i>Change Port';
+        
+        // Auto-hide result message
+        setTimeout(() => {
+            resultSpan.textContent = '';
+        }, 8000);
+    }
+}
+
 // Persist settings when toggles change
 document.addEventListener('change', async (e) => {
     const target = e.target;
@@ -2115,6 +2241,20 @@ document.addEventListener('change', async (e) => {
         updatePrinterStatusDot();
     }
 });
+
+// Handle radio button changes for port selection
+document.addEventListener('change', (e) => {
+    if (e.target.name === 'selectedPort') {
+        const changeBtn = document.getElementById('changePortBtn');
+        const helpText = changeBtn.nextElementSibling;
+        
+        changeBtn.disabled = false;
+        helpText.textContent = `Ready to change to port ${e.target.value}`;
+        helpText.classList.remove('text-gray-500');
+        helpText.classList.add('text-blue-600');
+    }
+});
+
 
 function renderExistingItemsInModal() {
     if (!elements.existingItemsListModal) return;
@@ -3136,11 +3276,32 @@ function renderSalesByHourChart(salesByHour) {
 
     const barWidth = 40;
     const spaceWidth = 16;
-    container.style.minWidth = `${salesByHour.length * (barWidth + spaceWidth) + 60}px`; // extra for Y axis
+    container.style.minWidth = `${salesByHour.length * (barWidth + spaceWidth) + 60}px`;
     container.style.maxHeight = '100%';
     container.style.overflowY = 'hidden';
+    container.style.position = 'relative';
 
     const maxRevenue = Math.max(...salesByHour.map(h => h.total), 0);
+
+    // Create global tooltip
+    const tooltip = document.createElement('div');
+    tooltip.id = 'chart-tooltip';
+    tooltip.style.cssText = `
+        position: absolute;
+        background: #1f2937;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        pointer-events: none;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        white-space: nowrap;
+    `;
+    container.appendChild(tooltip);
 
     // Y-axis (5 ticks)
     const yAxis = document.createElement('div');
@@ -3167,26 +3328,98 @@ function renderSalesByHourChart(salesByHour) {
         
         if (isDesktopUI) {
             barWrapper.style.cssText = 'width: 2.5rem; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;';
-            barWrapper.innerHTML = `
-                <div style="width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative;">
-                    <div style="background-color: #e5e7eb; width: 75%; border-radius: 0.125rem 0.125rem 0 0; transition: background-color 0.2s; height: ${barHeight}%" onmouseover="this.nextElementSibling.style.opacity='1'; this.style.backgroundColor='#818cf8'" onmouseout="this.nextElementSibling.style.opacity='0'; this.style.backgroundColor='#e5e7eb'"></div>
-                    <div style="position: absolute; bottom: calc(${barHeight}% + 6px); margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;">
-                        €${hourData.total.toFixed(2)}
-                    </div>
-                </div>
-                <span style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">${String(hourData.hour).padStart(2, '0')}</span>
-            `;
         } else {
             barWrapper.className = 'w-10 flex flex-col items-center justify-end h-full';
-            barWrapper.innerHTML = `
-                <div class="w-full h-full flex items-end justify-center group relative">
-                    <div class="bg-gray-200 w-3/4 rounded-t-sm transition-colors" style="height: ${barHeight}%" onmouseover="this.nextElementSibling.classList.remove('opacity-0'); this.classList.add('bg-indigo-400')" onmouseout="this.nextElementSibling.classList.add('opacity-0'); this.classList.remove('bg-indigo-400')"></div>
-                    <div class="absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 transition-opacity pointer-events-none z-10">€${hourData.total.toFixed(2)}</div>
-                </div>
-                <span class="text-xs text-gray-500 mt-1">${String(hourData.hour).padStart(2, '0')}</span>
-            `;
         }
-        
+
+        // Create bar container
+        const barContainer = document.createElement('div');
+        if (isDesktopUI) {
+            barContainer.style.cssText = 'width: 100%; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative;';
+        } else {
+            barContainer.className = 'w-full h-full flex items-end justify-center relative';
+        }
+
+        // Create the bar
+        const bar = document.createElement('div');
+        if (isDesktopUI) {
+            bar.style.cssText = `
+                background-color: #4f46e5;
+                width: 75%;
+                border-radius: 2px 2px 0 0;
+                transition: all 0.3s ease;
+                height: ${barHeight}%;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                cursor: pointer;
+            `;
+        } else {
+            bar.className = 'bg-indigo-600 w-3/4 rounded-t-sm transition-all duration-300 shadow-sm cursor-pointer';
+            bar.style.height = `${barHeight}%`;
+        }
+
+        // Add event listeners
+        bar.addEventListener('mouseenter', function(e) {
+            // Update tooltip
+            tooltip.textContent = `€${hourData.total.toFixed(2)}`;
+            tooltip.style.opacity = '1';
+            
+            // Position tooltip inside the chart area - to the right of the bar
+            const rect = this.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const tooltipRect = tooltip.getBoundingClientRect();
+            
+            let left = rect.right - containerRect.left + 10; // Position to the right of the bar
+            let top = rect.top - containerRect.top + (rect.height / 2) - 12; // Center vertically on the bar
+            
+            // If tooltip would go outside right edge, position it to the left of the bar
+            if (left + tooltipRect.width > container.offsetWidth - 5) {
+                left = rect.left - containerRect.left - tooltipRect.width - 10;
+            }
+            
+            // Keep tooltip within vertical bounds
+            if (top < 5) top = 5;
+            if (top + tooltipRect.height > container.offsetHeight - 5) top = container.offsetHeight - tooltipRect.height - 5;
+            
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+            
+            // Style bar
+            if (isDesktopUI) {
+                this.style.backgroundColor = '#6366f1';
+                this.style.transform = 'scale(1.05)';
+            } else {
+                this.classList.add('bg-indigo-500', 'scale-105');
+                this.classList.remove('bg-indigo-600');
+            }
+        });
+
+        bar.addEventListener('mouseleave', function(e) {
+            // Hide tooltip
+            tooltip.style.opacity = '0';
+            
+            // Reset bar
+            if (isDesktopUI) {
+                this.style.backgroundColor = '#4f46e5';
+                this.style.transform = 'scale(1)';
+            } else {
+                this.classList.remove('bg-indigo-500', 'scale-105');
+                this.classList.add('bg-indigo-600');
+            }
+        });
+
+        // Create hour label
+        const hourLabel = document.createElement('span');
+        if (isDesktopUI) {
+            hourLabel.style.cssText = 'font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;';
+        } else {
+            hourLabel.className = 'text-xs text-gray-500 mt-1';
+        }
+        hourLabel.textContent = String(hourData.hour).padStart(2, '0');
+
+        // Assemble
+        barContainer.appendChild(bar);
+        barWrapper.appendChild(barContainer);
+        barWrapper.appendChild(hourLabel);
         container.appendChild(barWrapper);
     });
 }

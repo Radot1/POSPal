@@ -221,12 +221,93 @@ def _is_process_running(pid):
             # If we can't check, assume the process might be running
             return True
 
+def _is_running_as_admin():
+    """Check if the current process is running with administrator privileges."""
+    if os.name != 'nt':
+        return True  # Non-Windows systems don't need admin for port binding
+    
+    try:
+        import ctypes
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+def _setup_windows_firewall_rules_for_ports(ports_to_configure):
+    """Setup Windows Firewall rules for multiple ports."""
+    if os.name != 'nt':
+        return True, "Not Windows - no firewall rules needed"
+    
+    import socket
+    configured_ports = []
+    failed_ports = []
+    
+    for port in ports_to_configure:
+        try:
+            port = int(port)
+            # Test if port is available
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(('0.0.0.0', port))
+            except OSError as e:
+                app.logger.warning(f"Port {port} is not available: {e}")
+                failed_ports.append(f"Port {port} unavailable")
+                continue
+            
+            rule_name = f"POSPal {port}"
+            
+            # Check if rule already exists
+            check_cmd = ['netsh', 'advfirewall', 'firewall', 'show', 'rule', f'name={rule_name}']
+            try:
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                if check_result.returncode == 0 and rule_name in check_result.stdout:
+                    app.logger.info(f"Firewall rule '{rule_name}' already exists")
+                    configured_ports.append(port)
+                    continue
+            except Exception:
+                pass
+            
+            # Create the firewall rule
+            add_cmd = [
+                'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                f'name={rule_name}', 'dir=in', 'action=allow', 'protocol=TCP', f'localport={port}'
+            ]
+            
+            result = subprocess.run(add_cmd, capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            if result.returncode == 0:
+                app.logger.info(f"Created firewall rule for port {port}")
+                configured_ports.append(port)
+            else:
+                error_msg = (result.stderr or result.stdout or "Unknown error").strip()
+                app.logger.warning(f"Failed to create firewall rule for port {port}: {error_msg}")
+                failed_ports.append(f"Port {port}: {error_msg}")
+                
+        except Exception as e:
+            app.logger.warning(f"Error setting up firewall rule for port {port}: {e}")
+            failed_ports.append(f"Port {port}: {e}")
+    
+    if configured_ports:
+        success_msg = f"Configured firewall rules for ports: {configured_ports}"
+        if failed_ports:
+            success_msg += f" (Failed: {failed_ports})"
+        return True, success_msg
+    else:
+        return False, f"Failed to configure any firewall rules: {failed_ports}"
+
 def _setup_windows_firewall_rule():
     """Automatically create Windows Firewall rule for POSPal during startup."""
     if os.name != 'nt':
         return True, "Not Windows - no firewall rule needed"
     
-    # Also ensure the port is actually available
+    # Check if multi-port mode is enabled
+    if config.get('enable_multi_port', False):
+        # Configure firewall for primary port + fallback ports
+        primary_port = int(config.get('port', 5000))
+        fallback_ports = config.get('fallback_ports', [8080, 3000, 8000, 9000])
+        all_ports = [primary_port] + [p for p in fallback_ports if p != primary_port]
+        return _setup_windows_firewall_rules_for_ports(all_ports)
+    
+    # Original single-port behavior (backwards compatible)
     import socket
     port = int(config.get('port', 5000))
     try:
@@ -572,6 +653,9 @@ def load_config():
         "copies_per_order": 2,
         # UI language for in-app interface (receipts remain English-only)
         "language": "en",
+        # Network connectivity settings for problematic routers/firewalls
+        "enable_multi_port": False,
+        "fallback_ports": [8080, 3000, 8000, 9000],
         # Cloudflare Online Menu publishing defaults
         "cloudflare_api_base": "https://menus-api.bzoumboulis.workers.dev/",
         "cloudflare_api_key": "",
@@ -1382,7 +1466,8 @@ def general_settings():
     if request.method == 'GET':
         # Only expose non-sensitive general settings
         return jsonify({
-            "language": str(config.get('language', 'en'))
+            "language": str(config.get('language', 'en')),
+            "port": int(config.get('port', 5000))
         })
     # POST
     data = request.get_json(silent=True) or {}
@@ -1392,6 +1477,14 @@ def general_settings():
         if lang not in ('en', 'el'):
             return jsonify({"success": False, "message": "Unsupported language."}), 400
         payload['language'] = lang
+    if 'port' in data:
+        try:
+            port = int(data['port'])
+            if port < 1024 or port > 65535:
+                return jsonify({"success": False, "message": "Port must be between 1024-65535."}), 400
+            payload['port'] = port
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "message": "Invalid port number."}), 400
     if not payload:
         return jsonify({"success": False, "message": "No valid settings provided."}), 400
     if save_config(payload):
@@ -1402,6 +1495,78 @@ def general_settings():
             pass
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Failed to save settings."}), 500
+
+
+@app.route('/api/settings/network', methods=['GET', 'POST'])
+def network_settings():
+    if request.method == 'GET':
+        return jsonify({
+            "port": int(config.get('port', 5000)),
+            "enable_multi_port": bool(config.get('enable_multi_port', False)),
+            "fallback_ports": config.get('fallback_ports', [8080, 3000, 8000, 9000]),
+            "is_admin": _is_running_as_admin(),
+            "predefined_port_sets": [
+                {"name": "Default", "ports": [8080, 3000, 8000, 9000]},
+                {"name": "High Ports", "ports": [8080, 8888, 9090, 9999]},
+                {"name": "Alternative", "ports": [3000, 4000, 5001, 6000]},
+                {"name": "Corporate Friendly", "ports": [8080, 8443, 9080, 9443]}
+            ]
+        })
+    
+    # POST - Update network settings
+    data = request.get_json() or {}
+    updates = {}
+    
+    if 'enable_multi_port' in data:
+        # Check admin privileges for multi-port mode
+        if data['enable_multi_port'] and not _is_running_as_admin():
+            return jsonify({
+                "success": False, 
+                "message": "Administrator privileges required for multi-port mode. Please restart POSPal as Administrator."
+            }), 403
+        
+        updates['enable_multi_port'] = bool(data['enable_multi_port'])
+    
+    if 'fallback_ports' in data:
+        # Validate fallback ports
+        try:
+            ports = data['fallback_ports']
+            if isinstance(ports, list):
+                # Convert to integers and filter valid port range
+                valid_ports = [int(p) for p in ports if 1024 <= int(p) <= 65535]
+                updates['fallback_ports'] = valid_ports[:10]  # Limit to 10 ports max
+            else:
+                return jsonify({"success": False, "message": "fallback_ports must be a list"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "message": "Invalid port numbers"}), 400
+    
+    if not updates:
+        return jsonify({"success": False, "message": "No valid settings provided"}), 400
+    
+    if save_config(updates):
+        # If multi-port was enabled, try to configure firewall rules
+        if updates.get('enable_multi_port', False):
+            try:
+                primary_port = int(config.get('port', 5000))
+                fallback_ports = config.get('fallback_ports', [8080, 3000, 8000, 9000])
+                all_ports = [primary_port] + [p for p in fallback_ports if p != primary_port]
+                success, msg = _setup_windows_firewall_rules_for_ports(all_ports)
+                return jsonify({
+                    "success": True, 
+                    "firewall_setup": success,
+                    "firewall_message": msg
+                })
+            except Exception as e:
+                app.logger.warning(f"Network settings saved but firewall setup failed: {e}")
+                return jsonify({
+                    "success": True,
+                    "firewall_setup": False,
+                    "firewall_message": f"Settings saved but firewall setup failed: {e}"
+                })
+        
+        return jsonify({"success": True})
+    
+    return jsonify({"success": False, "message": "Failed to save network settings"}), 500
 
 
 @app.route('/api/settings/password', methods=['POST'])
@@ -1918,15 +2083,29 @@ def handle_order():
     printed_all = True
     printed_any = False
     copies_to_print = max(1, int(config.get('copies_per_order', COPIES_PER_ORDER)))
+    
+    # Calculate dynamic delay based on order complexity
+    total_items = sum(int(item.get('quantity', 1)) for item in order_data_internal.get('items', []))
+    base_delay_between_copies = 0.5
+    item_based_delay = min(total_items * 0.3, 10.0)  # 0.3s per item, max 10s
+    dynamic_delay = base_delay_between_copies + item_based_delay
+    
+    # Calculate retry delay based on order complexity
+    base_retry_delay = 1.0
+    retry_delay = base_retry_delay + item_based_delay
+    
+    app.logger.info(f"Order #{authoritative_order_number} has {total_items} items. Using {dynamic_delay:.1f}s delay between copies and {retry_delay:.1f}s retry delay.")
 
     for i in range(1, copies_to_print + 1):
         if i > 1:
-            time.sleep(0.5)
+            app.logger.info(f"Waiting {dynamic_delay:.1f}s before printing copy {i} (order complexity: {total_items} items)")
+            time.sleep(dynamic_delay)
         app.logger.info(f"Attempting to print copy {i} for order #{authoritative_order_number}")
         try:
             ok = print_kitchen_ticket(order_data_internal, copy_info="")
             if not ok:
-                time.sleep(1.0)
+                app.logger.warning(f"Print failed, waiting {retry_delay:.1f}s before retry for copy {i} (order #{authoritative_order_number})")
+                time.sleep(retry_delay)
                 app.logger.warning(f"Retrying print for copy {i} (order #{authoritative_order_number})")
                 ok = print_kitchen_ticket(order_data_internal, copy_info="")
         except Exception as e_print:
@@ -2340,22 +2519,9 @@ def reprint_order_endpoint():
 
         app.logger.info(f"Reprint (Kitchen Copy) successful for order #{order_number_to_reprint}.")
         
-        time.sleep(0.5) 
-        reprint_copy2_success = print_kitchen_ticket(reprint_order_data, 
-                                                     copy_info="", 
-                                                     original_timestamp_str=original_timestamp)
-
-        if not reprint_copy2_success:
-            app.logger.warning(f"Reprint (Copy 2) FAILED for order #{order_number_to_reprint}, but Kitchen Copy was reprinted.")
-            return jsonify({
-                "status": "warning_reprint_copy2_failed", 
-                "message": f"Order #{order_number_to_reprint}: Kitchen Copy REPRINTED. Copy 2 REPRINT FAILED. Check printer."
-            }), 200
-        
-        app.logger.info(f"Reprint (Copy 2) successful for order #{order_number_to_reprint}.")
         return jsonify({
             "status": "success", 
-            "message": f"Order #{order_number_to_reprint} REPRINTED successfully (2 copies)."
+            "message": f"Order #{order_number_to_reprint} REPRINTED successfully."
         }), 200
 
     except json.JSONDecodeError:
@@ -3351,4 +3517,5 @@ if __name__ == '__main__':
     # For end-users: auto-open the local UI in the default browser when packaged
     if getattr(sys, 'frozen', False):
         threading.Thread(target=_open_browser_when_ready, daemon=True).start()
+    
     serve(app, host='0.0.0.0', port=config.get('port', 5000))
