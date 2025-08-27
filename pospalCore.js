@@ -466,29 +466,12 @@ async function loadMenu() {
             renderProductsForSelectedCategory();
         }
     } catch (error) {
-        console.warn('API unavailable – falling back to stub data');
+        console.warn('API unavailable – menu data not loaded');
         console.log('Error details:', error);
-        // Fallback menu data for development
-        menu = {
-            "Beverages": [
-                { id: 1, name: "Coffee", price: 2.50, hasGeneralOptions: false },
-                { id: 2, name: "Tea", price: 2.00, hasGeneralOptions: false }
-            ],
-            "Food": [
-                { id: 3, name: "Sandwich", price: 8.50, hasGeneralOptions: false },
-                { id: 4, name: "Pizza", price: 12.00, hasGeneralOptions: false }
-            ]
-        };
-        selectedCategory = Object.keys(menu)[0];
-        console.log('Fallback menu created:', menu);
-        console.log('Selected category:', selectedCategory);
+        menu = {};
+        selectedCategory = null;
         renderCategories();
         populateManagementCategorySelect();
-        // Ensure products are rendered for the initial category in fallback mode
-        if (selectedCategory) {
-            renderProductsForSelectedCategory();
-        }
-        showToast('Using demo menu data. Start server for full functionality.', 'warning');
     }
 }
 
