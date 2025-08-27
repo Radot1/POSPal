@@ -1136,7 +1136,21 @@ function expandDesktopNumpad() {
 }
 
 async function handleTableNumberChange(event) {
-    const newTableNumber = event.target.value.trim();
+    const inputValue = event.target.value.trim();
+    
+    // Check if input contains only numbers
+    if (inputValue && !/^\d+$/.test(inputValue)) {
+        // Show notification to user
+        showToast("Table number must contain only numbers. Letters and special characters are not allowed.", "warning");
+        
+        // Clear the input field
+        event.target.value = "";
+        selectedTableNumber = "";
+        await updateSelectedTable();
+        return;
+    }
+    
+    const newTableNumber = inputValue;
     if (selectedTableNumber !== newTableNumber) {
         selectedTableNumber = newTableNumber;
         await updateSelectedTable();
@@ -2082,21 +2096,30 @@ async function changeManagementPassword() {
 
 // Network Settings Functions
 async function loadNetworkSettings() {
+    // Check if network settings UI elements exist (mobile version doesn't have them)
+    const currentPortDisplay = document.getElementById('currentPortDisplay');
+    const adminStatus = document.getElementById('adminStatus');
+    const portSelectionArea = document.getElementById('portSelectionArea');
+    
+    if (!currentPortDisplay || !adminStatus || !portSelectionArea) {
+        // Mobile version - skip network settings loading
+        return;
+    }
+    
     try {
         const response = await fetch('/api/settings/network');
         const settings = await response.json();
         
         // Update current port display
-        document.getElementById('currentPortDisplay').textContent = settings.port;
+        currentPortDisplay.textContent = settings.port;
         
         // Show admin status
         updateAdminStatus(settings.is_admin);
         
         // Disable port selection if not admin
-        const portArea = document.getElementById('portSelectionArea');
         if (!settings.is_admin) {
-            portArea.style.opacity = '0.5';
-            portArea.style.pointerEvents = 'none';
+            portSelectionArea.style.opacity = '0.5';
+            portSelectionArea.style.pointerEvents = 'none';
         }
         
     } catch (error) {
@@ -2413,7 +2436,7 @@ async function moveCategoryPosition(categoryNameToMove, direction) {
     if (success) {
         showToast('Category order updated.', 'success');
         await maybeAutoPublishMenu();
-        await loadMenu();
+        renderCategories();
         loadManagementData();
     } else {
         showToast('Failed to save new category order. Reverting.', 'error');

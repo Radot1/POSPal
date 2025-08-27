@@ -458,6 +458,7 @@ SelectFontB = ESC + b'M\x01' # Smaller Font B (often used for details)
 FullCut = GS + b'V\x00'
 PartialCut = GS + b'V\x01' # Or m=66 for some printers
 
+
 # Disable legacy PDF fallback (not supported). Define flags and stub to avoid lints.
 PDF_FALLBACK_ENABLED = False
 def generate_pdf_ticket(order_data, copy_info, original_timestamp_str=None):
@@ -706,10 +707,118 @@ limiter = Limiter(
 )
 
 
-def to_bytes(s, encoding='cp437'): # cp437 is a common encoding for ESC/POS
+def to_bytes(s, encoding='cp437'): 
+    """Convert string to bytes with Greek character transliteration for thermal printers"""
     if isinstance(s, bytes):
         return s
-    return s.encode(encoding, errors='replace') # 'replace' will put a ? for unmappable chars
+    
+    # Check if string contains Greek characters
+    has_greek = any('\u0370' <= char <= '\u03FF' or '\u1F00' <= char <= '\u1FFF' for char in s)
+    
+    if has_greek:
+        # Always transliterate Greek characters to readable Latin
+        transliterated = transliterate_greek_enhanced(s)
+        return transliterated.encode('cp437', errors='replace')
+    else:
+        # English/Latin text - use standard encoding
+        return s.encode(encoding, errors='replace')
+
+def transliterate_greek_enhanced(text):
+    """
+    Enhanced Greek transliteration with better readability for receipts.
+    Uses context-aware mapping and common Greek food/business terms.
+    """
+    
+    # First handle common Greek food/business terms that customers will recognize
+    common_terms = {
+        'καφές': 'KAFES',           # Coffee
+        'καφέ': 'KAFE',
+        'τσάι': 'TSAI',             # Tea  
+        'νερό': 'NERO',             # Water
+        'τυρόπιτα': 'TYROPITA',     # Cheese pie
+        'σπανακόπιτα': 'SPANAKOPITA', # Spinach pie
+        'μουσακάς': 'MOUSAKAS',     # Moussaka
+        'σαλάτα': 'SALATA',         # Salad
+        'κρέας': 'KREAS',           # Meat
+        'ψάρι': 'PSARI',            # Fish
+        'πατάτες': 'PATATES',       # Potatoes
+        'κρεμμύδι': 'KREMMYDI',     # Onion
+        'ντομάτα': 'DOMATA',        # Tomato
+        'τυρί': 'TYRI',             # Cheese
+        'ψωμί': 'PSOMI',            # Bread
+        'κρασί': 'KRASI',           # Wine
+        'μπίρα': 'BIRA',            # Beer
+        'γάλα': 'GALA',             # Milk
+        'ζάχαρη': 'ZAHARI',         # Sugar
+        'αλάτι': 'ALATI',           # Salt
+        'πιπέρι': 'PIPERI',         # Pepper
+        'ελιές': 'ELIES',           # Olives
+        'φέτα': 'FETA',             # Feta cheese
+        'γιαούρτι': 'GIAOYRTI',     # Yogurt
+        'μέλι': 'MELI',             # Honey
+        'σοκολάτα': 'SOKOLATA',     # Chocolate
+        'παγωτό': 'PAGOTO',         # Ice cream
+    }
+    
+    # Check for whole word matches first (case insensitive)
+    text_lower = text.lower()
+    for greek_word, latin_word in common_terms.items():
+        if greek_word in text_lower:
+            text = text.replace(greek_word, latin_word)
+            text = text.replace(greek_word.upper(), latin_word)
+            text = text.replace(greek_word.capitalize(), latin_word)
+    
+    # Enhanced character-by-character mapping
+    enhanced_greek_to_latin = {
+        # Basic Greek alphabet with better phonetic mapping
+        'α': 'a', 'β': 'v', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'i', 'θ': 'th',
+        'ι': 'i', 'κ': 'k', 'λ': 'l', 'μ': 'm', 'ν': 'n', 'ξ': 'ks', 'ο': 'o', 'π': 'p',
+        'ρ': 'r', 'σ': 's', 'ς': 's', 'τ': 't', 'υ': 'y', 'φ': 'f', 'χ': 'h', 'ψ': 'ps', 'ω': 'o',
+        
+        # Capital letters
+        'Α': 'A', 'Β': 'V', 'Γ': 'G', 'Δ': 'D', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'I', 'Θ': 'TH',
+        'Ι': 'I', 'Κ': 'K', 'Λ': 'L', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'KS', 'Ο': 'O', 'Π': 'P',
+        'Ρ': 'R', 'Σ': 'S', 'Τ': 'T', 'Υ': 'Y', 'Φ': 'F', 'Χ': 'H', 'Ψ': 'PS', 'Ω': 'O',
+        
+        # Accented characters (maintain vowel sounds)
+        'ά': 'a', 'έ': 'e', 'ή': 'i', 'ί': 'i', 'ό': 'o', 'ύ': 'y', 'ώ': 'o',
+        'ΐ': 'i', 'ΰ': 'y', 'ϊ': 'i', 'ϋ': 'y',
+        
+        # Common digraph patterns in Greek
+        'ου': 'ou', 'ΟΥ': 'OU', 'Ου': 'Ou',
+        'αι': 'ai', 'ΑΙ': 'AI', 'Αι': 'Ai',
+        'ει': 'ei', 'ΕΙ': 'EI', 'Ει': 'Ei',
+        'οι': 'oi', 'ΟΙ': 'OI', 'Οι': 'Oi',
+        'υι': 'yi', 'ΥΙ': 'YI', 'Υι': 'Yi',
+        'αυ': 'af', 'ΑΥ': 'AF', 'Αυ': 'Af',
+        'ευ': 'ef', 'ΕΥ': 'EF', 'Ευ': 'Ef',
+        
+        # Common prefixes and suffixes
+        'μπ': 'b', 'ΜΠ': 'B', 'Μπ': 'B',      # μπ -> b sound
+        'ντ': 'd', 'ΝΤ': 'D', 'Ντ': 'D',      # ντ -> d sound  
+        'γκ': 'g', 'ΓΚ': 'G', 'Γκ': 'G',      # γκ -> g sound
+        'τζ': 'tz', 'ΤΖ': 'TZ', 'Τζ': 'Tz',   # τζ -> tz sound
+        'τσ': 'ts', 'ΤΣ': 'TS', 'Τς': 'Ts',   # τσ -> ts sound
+    }
+    
+    # Apply character mapping
+    result = ''
+    i = 0
+    while i < len(text):
+        # Try two-character patterns first
+        if i < len(text) - 1:
+            two_char = text[i:i+2]
+            if two_char in enhanced_greek_to_latin:
+                result += enhanced_greek_to_latin[two_char]
+                i += 2
+                continue
+        
+        # Single character mapping
+        char = text[i]
+        result += enhanced_greek_to_latin.get(char, char)
+        i += 1
+    
+    return result
     
 def save_config(updated_values: dict):
     """Merge-update CONFIG_FILE atomically and refresh globals."""
@@ -1440,6 +1549,7 @@ def test_print():
         return jsonify({"success": False, "message": str(e)}), 200
 
 
+
 @app.route('/api/settings/printing', methods=['GET', 'POST'])
 def printing_settings():
     if request.method == 'GET':
@@ -1758,6 +1868,9 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
     try:
         ticket_content = bytearray()
         ticket_content += InitializePrinter
+        
+        # Initialize printer with standard settings only
+        
         NORMAL_FONT_LINE_WIDTH = 42 
         SMALL_FONT_LINE_WIDTH = 56
 
@@ -1768,8 +1881,6 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         ticket_content += BoldOff 
         
         ticket_content += AlignCenter + SelectFontA + NormalText
-        header_text = "Kitchen Order"
-        ticket_content += to_bytes(header_text + "\n")
         
         ticket_content += AlignLeft 
         

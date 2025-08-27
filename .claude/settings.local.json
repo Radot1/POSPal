@@ -10,7 +10,8 @@
       "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
       "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
       "Bash(python:*)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "Bash(del test_greek_encoding.py)"
     ],
     "deny": [],
     "ask": []
