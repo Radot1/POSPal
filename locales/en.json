@@ -97,8 +97,8 @@
       "howToActivate": "How to Activate",
       "steps": {
         "s1": "Copy your unique Hardware ID from above.",
-        "s2": "Contact an authorized distributor (see the website's 'Buy License' section) and provide your Hardware ID.",
-        "s3": "You will receive a `license.key` file back.",
+        "s2": "Visit our website and purchase a license using your Hardware ID.",
+        "s3": "You will receive a `license.key` file via email.",
         "s4": "Place the `license.key` file in the same folder as the `POSPal.exe` application.",
         "s5": "Restart the POSPal application to activate the full version."
       },
