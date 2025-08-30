@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Cancelled - POSPal</title>
+    <link rel="icon" href="https://pospal.gr/favicon.ico">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #fef2f2 0%, #fef5f5 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .cancelled-container {
+            max-width: 600px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            text-align: center;
+        }
+        
+        .cancelled-header {
+            background: #ef4444;
+            color: white;
+            padding: 40px 30px;
+        }
+        
+        .cancelled-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .cancelled-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 10px;
+        }
+        
+        .cancelled-subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            margin: 0;
+        }
+        
+        .cancelled-content {
+            padding: 40px 30px;
+        }
+        
+        .try-again-section {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+        
+        .try-again-section h3 {
+            color: #374151;
+            margin: 0 0 15px;
+        }
+        
+        .try-again-section p {
+            color: #6b7280;
+            line-height: 1.6;
+            margin: 0 0 20px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 25px 0;
+        }
+        
+        .action-button {
+            display: inline-block;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.3s;
+            min-width: 140px;
+        }
+        
+        .primary-button {
+            background: #16a34a;
+            color: white;
+        }
+        
+        .primary-button:hover {
+            background: #15803d;
+            transform: translateY(-2px);
+        }
+        
+        .secondary-button {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .secondary-button:hover {
+            background: #4b5563;
+        }
+        
+        .outline-button {
+            background: transparent;
+            color: #6b7280;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .outline-button:hover {
+            border-color: #16a34a;
+            color: #16a34a;
+        }
+        
+        .help-section {
+            border-top: 1px solid #e5e7eb;
+            padding-top: 25px;
+            margin-top: 25px;
+        }
+        
+        .help-section h3 {
+            color: #374151;
+            margin: 0 0 15px;
+        }
+        
+        .help-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .help-option {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .help-option h4 {
+            margin: 0 0 10px;
+            color: #374151;
+            font-size: 16px;
+        }
+        
+        .help-option p {
+            margin: 0 0 15px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .help-option a {
+            color: #16a34a;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .help-option a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 768px) {
+            .cancelled-container {
+                margin: 0 10px;
+            }
+            
+            .cancelled-header, .cancelled-content {
+                padding: 30px 20px;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .help-options {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="cancelled-container">
+        <div class="cancelled-header">
+            <div class="cancelled-icon">⏸️</div>
+            <h1 class="cancelled-title">Payment Cancelled</h1>
+            <p class="cancelled-subtitle">No charges were made to your account</p>
+        </div>
+        
+        <div class="cancelled-content">
+            <p>Your payment was cancelled and no charges were processed. Your POSPal license purchase is still available if you'd like to complete it.</p>
+            
+            <div class="try-again-section">
+                <h3>Ready to try again?</h3>
+                <p>Your information is saved - you can complete your purchase quickly and securely. POSPal will transform your restaurant operations with professional POS features.</p>
+            </div>
+            
+            <div class="action-buttons">
+                <a href="buy-license.html" class="action-button primary-button">🛒 Try Payment Again</a>
+                <a href="https://pospal.gr" class="action-button secondary-button">🏠 Back to Website</a>
+            </div>
+            
+            <div class="help-section">
+                <h3>Need assistance?</h3>
+                <p>If you experienced any issues during checkout, we're here to help:</p>
+                
+                <div class="help-options">
+                    <div class="help-option">
+                        <h4>📧 Email Support</h4>
+                        <p>Get help with payment or technical questions</p>
+                        <a href="mailto:support@pospal.gr">support@pospal.gr</a>
+                    </div>
+                    
+                    <div class="help-option">
+                        <h4>💬 Live Chat</h4>
+                        <p>Quick answers to your questions</p>
+                        <a href="https://pospal.gr/contact">Start Chat</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;">
+                <p><strong>Still interested in POSPal?</strong><br>
+                Try our <a href="https://pospal.gr/download" style="color: #16a34a;">30-day free trial</a> with full features - no credit card required!</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Track cancellation for analytics
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'checkout_cancelled', {
+                'event_category': 'ecommerce',
+                'event_label': 'POSPal License'
+            });
+        }
+        
+        // Auto-redirect to try again after showing message briefly
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoRetry = urlParams.get('auto_retry');
+        
+        if (autoRetry === 'true') {
+            setTimeout(() => {
+                window.location.href = 'buy-license.html';
+            }, 5000);
+            
+            // Show countdown
+            let countdown = 5;
+            const countdownEl = document.createElement('p');
+            countdownEl.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: #16a34a; color: white; padding: 10px 15px; border-radius: 6px; font-size: 14px;';
+            document.body.appendChild(countdownEl);
+            
+            const updateCountdown = () => {
+                countdownEl.textContent = `Redirecting to checkout in ${countdown}s...`;
+                countdown--;
+                if (countdown >= 0) {
+                    setTimeout(updateCountdown, 1000);
+                }
+            };
+            updateCountdown();
+        }
+    </script>
+</body>
+</html>

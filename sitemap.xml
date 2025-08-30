@@ -1,31 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
-<loc>https://radot1.github.io/POSPal/</loc>
+<loc>https://pospal.gr/</loc>
 <lastmod>2025-01-27</lastmod>
 <changefreq>weekly</changefreq>
 <priority>1.0</priority>
 </url>
 <url>
-<loc>https://radot1.github.io/POSPal/POSPal_Demo_Index.html</loc>
+<loc>https://pospal.gr/POSPal_Demo_Index.html</loc>
 <lastmod>2025-01-27</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.8</priority>
 </url>
 <url>
-<loc>https://radot1.github.io/POSPal/POSPal_Demo.html</loc>
+<loc>https://pospal.gr/POSPal_Demo.html</loc>
 <lastmod>2025-01-27</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.7</priority>
 </url>
 <url>
-<loc>https://radot1.github.io/POSPal/POSPalDesktop.html</loc>
+<loc>https://pospal.gr/POSPalDesktop.html</loc>
 <lastmod>2025-01-27</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.6</priority>
 </url>
 <url>
-<loc>https://radot1.github.io/POSPal/managementComponent.html</loc>
+<loc>https://pospal.gr/managementComponent.html</loc>
 <lastmod>2025-01-27</lastmod>
 <changefreq>monthly</changefreq>
 <priority>0.5</priority>

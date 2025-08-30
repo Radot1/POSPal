@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buy POSPal License - Professional Restaurant POS System</title>
+    <link rel="icon" href="https://pospal.gr/favicon.ico">
+    <script src="https://js.stripe.com/v3/"></script>
+    
+    <style>
+        :root {
+            --brand-green: #16a34a;
+            --text: #111827;
+            --muted: #6b7280;
+            --rule: #e5e7eb;
+            --bg: #ffffff;
+            --card: #ffffff;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --radius: 8px;
+        }
+        
+        * { box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+            color: var(--text);
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--card);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: var(--brand-green);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0 0 10px;
+            font-size: 28px;
+            font-weight: 700;
+        }
+        
+        .header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 18px;
+        }
+        
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .pricing-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border: 2px solid var(--brand-green);
+            border-radius: var(--radius);
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .price {
+            font-size: 48px;
+            font-weight: 800;
+            color: var(--brand-green);
+            margin: 0;
+        }
+        
+        .price-currency {
+            font-size: 24px;
+            vertical-align: top;
+            margin-right: 5px;
+        }
+        
+        .price-description {
+            color: var(--muted);
+            font-size: 16px;
+            margin: 10px 0 0;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .feature {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .feature-icon {
+            color: var(--brand-green);
+            font-size: 18px;
+            width: 20px;
+        }
+        
+        .checkout-section {
+            background: #fafafa;
+            border-radius: var(--radius);
+            padding: 30px;
+            margin-top: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--rule);
+            border-radius: var(--radius);
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--brand-green);
+        }
+        
+        .hardware-id-help {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: var(--radius);
+            padding: 15px;
+            margin-top: 10px;
+        }
+        
+        .hardware-id-help h4 {
+            margin: 0 0 10px;
+            color: #92400e;
+        }
+        
+        .hardware-id-help ol {
+            margin: 0;
+            padding-left: 20px;
+            color: #92400e;
+        }
+        
+        .checkout-button {
+            width: 100%;
+            background: var(--brand-green);
+            color: white;
+            border: none;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+        
+        .checkout-button:hover {
+            background: #15803d;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(22, 163, 74, 0.3);
+        }
+        
+        .checkout-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .security-badges {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--rule);
+        }
+        
+        .security-badge {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+        
+        .error-message {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: var(--radius);
+            margin-top: 15px;
+            display: none;
+        }
+        
+        @media (max-width: 768px) {
+            .features {
+                grid-template-columns: 1fr;
+            }
+            
+            .content {
+                padding: 30px 20px;
+            }
+            
+            .price {
+                font-size: 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>POSPal Professional License</h1>
+            <p>Complete Restaurant Point of Sale System</p>
+        </div>
+        
+        <div class="content">
+            <div class="pricing-card">
+                <div class="price">
+                    <span class="price-currency">€</span>290
+                </div>
+                <div class="price-description">One-time purchase • Lifetime license</div>
+            </div>
+            
+            <div class="features">
+                <div class="feature">
+                    <span class="feature-icon">✅</span>
+                    <span>Complete POS System</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">🖨️</span>
+                    <span>Receipt & Kitchen Printing</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">📊</span>
+                    <span>Sales Analytics</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">🍽️</span>
+                    <span>Menu Management</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">💳</span>
+                    <span>Multiple Payment Methods</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">🌐</span>
+                    <span>Online Menu Generation</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">🔧</span>
+                    <span>Free Setup Support</span>
+                </div>
+                <div class="feature">
+                    <span class="feature-icon">🔄</span>
+                    <span>Free Updates</span>
+                </div>
+            </div>
+            
+            <div class="checkout-section">
+                <h3 style="margin-top: 0;">Complete Your Purchase</h3>
+                
+                <form id="license-form">
+                    <div class="form-group">
+                        <label for="customer-name">Your Name *</label>
+                        <input type="text" id="customer-name" name="customerName" required 
+                               placeholder="Enter your full name">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="customer-email">Email Address *</label>
+                        <input type="email" id="customer-email" name="customerEmail" required 
+                               placeholder="your@email.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="hardware-id">Hardware ID *</label>
+                        <textarea id="hardware-id" name="hardwareId" required rows="3"
+                                placeholder="Paste your Hardware ID from POSPal app here"></textarea>
+                        
+                        <div class="hardware-id-help">
+                            <h4>🔍 How to find your Hardware ID:</h4>
+                            <ol>
+                                <li>Download and run POSPal (free 30-day trial)</li>
+                                <li>Go to <strong>Management → License Information</strong></li>
+                                <li>Click <strong>"Copy"</strong> next to Hardware ID</li>
+                                <li>Paste the Hardware ID above</li>
+                            </ol>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="restaurant-name">Restaurant Name (Optional)</label>
+                        <input type="text" id="restaurant-name" name="restaurantName" 
+                               placeholder="Your restaurant name">
+                    </div>
+                    
+                    <div id="error-message" class="error-message"></div>
+                    
+                    <button type="submit" class="checkout-button" id="checkout-button">
+                        🛒 Proceed to Secure Payment - €290
+                    </button>
+                </form>
+                
+                <div class="security-badges">
+                    <div class="security-badge">
+                        <span>🔒</span>
+                        <span>256-bit SSL</span>
+                    </div>
+                    <div class="security-badge">
+                        <span>💳</span>
+                        <span>Stripe Secure</span>
+                    </div>
+                    <div class="security-badge">
+                        <span>✅</span>
+                        <span>Instant Delivery</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize Stripe (replace with your publishable key)
+        const stripe = Stripe('pk_test_YOUR_STRIPE_PUBLISHABLE_KEY_HERE');
+        
+        const form = document.getElementById('license-form');
+        const checkoutButton = document.getElementById('checkout-button');
+        const errorMessage = document.getElementById('error-message');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const customerName = formData.get('customerName').trim();
+            const customerEmail = formData.get('customerEmail').trim();
+            const hardwareId = formData.get('hardwareId').trim();
+            const restaurantName = formData.get('restaurantName').trim();
+            
+            // Validate form
+            if (!customerName || !customerEmail || !hardwareId) {
+                showError('Please fill in all required fields.');
+                return;
+            }
+            
+            // Validate email format
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(customerEmail)) {
+                showError('Please enter a valid email address.');
+                return;
+            }
+            
+            // Basic Hardware ID validation
+            if (hardwareId.length < 10) {
+                showError('Hardware ID seems too short. Please copy the complete Hardware ID from POSPal.');
+                return;
+            }
+            
+            // Disable button and show loading
+            checkoutButton.disabled = true;
+            checkoutButton.textContent = 'Creating checkout session...';
+            hideError();
+            
+            try {
+                // Create Stripe Checkout Session
+                const response = await fetch('/api/create-checkout-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        customerName,
+                        customerEmail,
+                        hardwareId,
+                        restaurantName,
+                        priceAmount: 29000, // €290.00 in cents
+                        currency: 'eur'
+                    }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to create checkout session');
+                }
+                
+                const session = await response.json();
+                
+                // Redirect to Stripe Checkout
+                const { error } = await stripe.redirectToCheckout({
+                    sessionId: session.id
+                });
+                
+                if (error) {
+                    throw new Error(error.message);
+                }
+                
+            } catch (error) {
+                console.error('Checkout error:', error);
+                showError('Failed to start checkout. Please try again or contact support.');
+            } finally {
+                checkoutButton.disabled = false;
+                checkoutButton.textContent = '🛒 Proceed to Secure Payment - €290';
+            }
+        });
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+        
+        // Auto-format Hardware ID textarea
+        document.getElementById('hardware-id').addEventListener('input', function(e) {
+            const value = e.target.value;
+            
+            // Remove extra whitespace but preserve necessary formatting
+            const cleaned = value.replace(/\s+/g, ' ').trim();
+            
+            if (cleaned !== value) {
+                e.target.value = cleaned;
+            }
+        });
+        
+        // Download link for POSPal if they don't have it yet
+        if (!localStorage.getItem('pospal-downloaded')) {
+            const helpSection = document.querySelector('.hardware-id-help ol');
+            const downloadLi = document.createElement('li');
+            downloadLi.innerHTML = '<strong>Don\'t have POSPal yet?</strong> <a href="https://pospal.gr/download" target="_blank" style="color: #16a34a;">Download it here</a>';
+            helpSection.insertBefore(downloadLi, helpSection.firstChild);
+        }
+    </script>
+</body>
+</html>

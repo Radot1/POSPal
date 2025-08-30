@@ -2,7 +2,7 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://radot1.github.io/POSPal/sitemap.xml
+Sitemap: https://pospal.gr/sitemap.xml
 
 # Specific pages for Greek POS market
 Allow: /index.html
