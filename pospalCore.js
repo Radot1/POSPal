@@ -3560,31 +3560,144 @@ async function checkAndDisplayTrialStatus() {
 
         const statusDisplay = elements.licenseStatusDisplay;
         const footerStatusDisplay = elements.footerTrialStatus;
+        
+        // Get new UI elements
+        const statusBadge = document.getElementById('license-status-badge');
+        const subscriptionDetails = document.getElementById('subscription-details');
+        const trialActions = document.getElementById('trial-actions');
+        const activationInstructions = document.getElementById('activation-instructions');
+        const nextBillingDate = document.getElementById('next-billing-date');
 
         if (status.licensed) {
-            const licensedHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>${t('ui.footer.fullyLicensed','Fully Licensed')}`;
-            if (statusDisplay) statusDisplay.innerHTML = licensedHTML;
-            if (footerStatusDisplay) {
-                footerStatusDisplay.innerHTML = licensedHTML;
-                footerStatusDisplay.className = 'font-medium text-green-600';
+            let licensedHTML, badgeHTML, badgeClass;
+            
+            if (status.subscription) {
+                // Subscription license
+                const validUntil = status.valid_until ? new Date(status.valid_until).toLocaleDateString() : '';
+                const daysLeft = status.days_left || 0;
+                licensedHTML = `Your subscription is active and will renew on ${validUntil}.`;
+                badgeHTML = `Active Subscription`;
+                badgeClass = 'bg-green-100 text-green-800';
+                
+                // Show subscription management UI
+                if (subscriptionDetails) subscriptionDetails.classList.remove('hidden');
+                if (trialActions) trialActions.classList.add('hidden');
+                if (activationInstructions) activationInstructions.classList.add('hidden');
+                
+                // Update next billing date
+                if (nextBillingDate) {
+                    nextBillingDate.textContent = validUntil || 'Unknown';
+                }
+                
+                // Footer status
+                const footerHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>Subscription Active (${daysLeft} days)`;
+                if (footerStatusDisplay) {
+                    footerStatusDisplay.innerHTML = footerHTML;
+                    footerStatusDisplay.className = 'font-medium text-green-600';
+                }
+            } else {
+                // Permanent license
+                licensedHTML = `You have a permanent license. No subscription required.`;
+                badgeHTML = `Permanent License`;
+                badgeClass = 'bg-blue-100 text-blue-800';
+                
+                // Hide subscription management UI
+                if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
+                if (trialActions) trialActions.classList.add('hidden');
+                if (activationInstructions) activationInstructions.classList.add('hidden');
+                
+                // Footer status
+                const footerHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>Fully Licensed`;
+                if (footerStatusDisplay) {
+                    footerStatusDisplay.innerHTML = footerHTML;
+                    footerStatusDisplay.className = 'font-medium text-green-600';
+                }
             }
-        } else if (status.expired) {
-            const expiredHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>${t('ui.footer.trialExpired','Trial Expired')}`;
+            
+            // Update main status display
+            if (statusDisplay) statusDisplay.innerHTML = licensedHTML;
+            if (statusBadge) {
+                statusBadge.innerHTML = badgeHTML;
+                statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${badgeClass}`;
+            }
+            
+        } else if (status.subscription_expired) {
+            const expiredHTML = `Your subscription has expired. Renew now to regain access to your data.`;
+            const badgeHTML = `Subscription Expired`;
+            const badgeClass = 'bg-red-100 text-red-800';
+            
+            // Update displays
             if (statusDisplay) statusDisplay.innerHTML = expiredHTML;
+            if (statusBadge) {
+                statusBadge.innerHTML = badgeHTML;
+                statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${badgeClass}`;
+            }
+            
+            // Show trial actions, hide subscription management
+            if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
+            if (trialActions) trialActions.classList.remove('hidden');
+            if (activationInstructions) activationInstructions.classList.add('hidden');
+            
+            // Footer status
+            const footerHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Subscription Expired`;
             if (footerStatusDisplay) {
-                footerStatusDisplay.innerHTML = expiredHTML;
+                footerStatusDisplay.innerHTML = footerHTML;
                 footerStatusDisplay.className = 'font-medium text-red-600';
             }
+            
+            // Redirect to unlock page for subscription expired  
+            showUnlockRedirect('subscription');
+            
+        } else if (status.expired) {
+            const expiredHTML = `Your 30-day trial has ended. Subscribe or buy a permanent license to continue.`;
+            const badgeHTML = `Trial Expired`;
+            const badgeClass = 'bg-red-100 text-red-800';
+            
+            // Update displays
+            if (statusDisplay) statusDisplay.innerHTML = expiredHTML;
+            if (statusBadge) {
+                statusBadge.innerHTML = badgeHTML;
+                statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${badgeClass}`;
+            }
+            
+            // Show trial actions and activation instructions
+            if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
+            if (trialActions) trialActions.classList.remove('hidden');
+            if (activationInstructions) activationInstructions.classList.remove('hidden');
+            
+            // Footer status
+            const footerHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Trial Expired`;
+            if (footerStatusDisplay) {
+                footerStatusDisplay.innerHTML = footerHTML;
+                footerStatusDisplay.className = 'font-medium text-red-600';
+            }
+            
+            // Redirect to unlock page for trial expired
+            showUnlockRedirect('trial');
         } else if (status.active) {
             const days = status.days_left;
-            const dayText = days === 1 ? t('ui.footer.day','day') : t('ui.footer.days','days');
-            const trialText = t('ui.footer.trialVersion','Trial Version: {days} {dayText} remaining')
-                .replace('{days}', days)
-                .replace('{dayText}', dayText);
-            const trialHTML = `<i class="fas fa-info-circle text-yellow-500 mr-2"></i>${trialText}`;
+            const dayText = days === 1 ? 'day' : 'days';
+            const trialHTML = `Your 30-day trial is active. ${days} ${dayText} remaining.`;
+            const badgeHTML = `Trial Active (${days} ${dayText})`;
+            const badgeClass = days <= 5 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800';
+            
+            // Update displays
             if (statusDisplay) statusDisplay.innerHTML = trialHTML;
+            if (statusBadge) {
+                statusBadge.innerHTML = badgeHTML;
+                statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${badgeClass}`;
+            }
+            
+            // Show trial actions and activation instructions
+            if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
+            if (trialActions) trialActions.classList.remove('hidden');
+            if (activationInstructions) activationInstructions.classList.remove('hidden');
+            
+            // Footer status
+            const footerText = `Trial: ${days} ${dayText} remaining`;
+            const footerHTML = `<i class="fas fa-info-circle text-yellow-500 mr-2"></i>${footerText}`;
             if (footerStatusDisplay) {
-                footerStatusDisplay.innerHTML = trialHTML;
+                footerStatusDisplay.innerHTML = footerHTML;
                 footerStatusDisplay.className = 'font-medium text-yellow-500';
             }
         }
@@ -3667,3 +3780,1348 @@ async function maybeAutoPublishMenu() {
         _autoPublishBusy = false;
     }
 }
+
+// --- Trial Lock Screen Functions ---
+let lockScreenShown = false;
+
+async function showTrialLockScreen(type = 'trial') {
+    if (lockScreenShown) return; // Prevent multiple overlays
+    
+    const lockScreen = document.getElementById('trialLockScreen');
+    if (!lockScreen) {
+        console.warn('Trial lock screen element not found');
+        return;
+    }
+    
+    // Load and display usage analytics
+    try {
+        const response = await fetch('/api/usage_analytics');
+        if (response.ok) {
+            const analytics = await response.json();
+            updateLockScreenData(analytics);
+        }
+    } catch (error) {
+        console.error('Failed to load analytics for lock screen:', error);
+        // Show default values
+        updateLockScreenData({
+            total_orders: 0,
+            total_revenue: 0,
+            days_used: 30
+        });
+    }
+    
+    // Update the header based on expiration type
+    if (type === 'subscription') {
+        const header = lockScreen.querySelector('h2');
+        if (header) header.textContent = 'Subscription Expired';
+        
+        const subtitle = lockScreen.querySelector('p');
+        if (subtitle) subtitle.textContent = 'Your monthly subscription has expired, but all your data is safe';
+    }
+    
+    // Show the lock screen
+    lockScreen.classList.remove('hidden');
+    lockScreen.classList.add('flex');
+    lockScreenShown = true;
+    
+    // Disable body scrolling
+    document.body.style.overflow = 'hidden';
+}
+
+function updateLockScreenData(analytics) {
+    // Update orders count
+    const ordersElement = document.getElementById('lockscreen-orders-count');
+    if (ordersElement) {
+        ordersElement.textContent = analytics.total_orders || '0';
+    }
+    
+    // Update revenue amount
+    const revenueElement = document.getElementById('lockscreen-revenue-amount');
+    if (revenueElement) {
+        const revenue = analytics.total_revenue || 0;
+        revenueElement.textContent = `€${revenue.toFixed(2)}`;
+    }
+    
+    // Update days used
+    const daysElement = document.getElementById('lockscreen-days-used');
+    if (daysElement) {
+        daysElement.textContent = analytics.days_used || '30';
+    }
+}
+
+function showUnlockRedirect(type = 'trial') {
+    // Show unlock options instead of lock screen
+    const message = type === 'subscription' ? 
+        'Your subscription has expired. Choose an option to continue:' :
+        'Your 30-day trial has ended. Choose an option to continue:';
+    
+    if (confirm(message + '\n\n✅ Already paid? Click OK to enter unlock code\n❌ Need to pay? Click Cancel to subscribe')) {
+        showUnlockDialog();
+    } else {
+        window.open('unlock-pospal.html', '_blank');
+    }
+}
+
+function redirectToSubscription() {
+    // Redirect to new unlock/payment page
+    window.open('unlock-pospal.html', '_blank');
+}
+
+function hideLockScreen() {
+    const lockScreen = document.getElementById('trialLockScreen');
+    if (lockScreen) {
+        lockScreen.classList.add('hidden');
+        lockScreen.classList.remove('flex');
+    }
+    
+    lockScreenShown = false;
+    document.body.style.overflow = 'auto';
+}
+
+// --- Subscription Management Functions ---
+async function openCustomerPortal() {
+    try {
+        showToast('Opening customer portal...', 'info');
+        
+        const response = await fetch('/api/create-portal-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to create portal session');
+        }
+        
+        const data = await response.json();
+        if (data.url) {
+            window.open(data.url, '_blank');
+        } else {
+            throw new Error('No portal URL received');
+        }
+        
+    } catch (error) {
+        console.error('Customer portal error:', error);
+        showToast('Failed to open customer portal. Please contact support.', 'error');
+    }
+}
+
+async function updatePaymentMethod() {
+    // For now, redirect to customer portal for payment updates
+    openCustomerPortal();
+}
+
+async function loadUsageStatistics() {
+    try {
+        const response = await fetch('/api/usage_analytics');
+        if (response.ok) {
+            const analytics = await response.json();
+            updateUsageStatsDisplay(analytics);
+        }
+    } catch (error) {
+        console.error('Failed to load usage statistics:', error);
+    }
+}
+
+function updateUsageStatsDisplay(analytics) {
+    // Update total orders
+    const ordersElement = document.getElementById('stats-total-orders');
+    if (ordersElement) {
+        ordersElement.textContent = analytics.total_orders || '0';
+    }
+    
+    // Update total revenue
+    const revenueElement = document.getElementById('stats-total-revenue');
+    if (revenueElement) {
+        const revenue = analytics.total_revenue || 0;
+        revenueElement.textContent = `€${revenue.toFixed(2)}`;
+    }
+    
+    // Update days used
+    const daysElement = document.getElementById('stats-days-used');
+    if (daysElement) {
+        daysElement.textContent = analytics.days_used || '0';
+    }
+}
+
+// --- Unlock Dialog Functions ---
+function showUnlockDialog() {
+    const dialog = document.getElementById('unlockTokenDialog');
+    if (dialog) {
+        dialog.classList.remove('hidden');
+        dialog.classList.add('flex');
+        
+        // Focus on email input
+        const emailInput = document.getElementById('unlockEmail');
+        if (emailInput) {
+            setTimeout(() => emailInput.focus(), 100);
+        }
+        
+        // Disable body scrolling
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function hideUnlockDialog() {
+    const dialog = document.getElementById('unlockTokenDialog');
+    if (dialog) {
+        dialog.classList.add('hidden');
+        dialog.classList.remove('flex');
+        
+        // Clear form
+        const form = document.getElementById('unlockTokenForm');
+        if (form) form.reset();
+        
+        // Hide error
+        hideUnlockError();
+        
+        // Re-enable body scrolling
+        document.body.style.overflow = 'auto';
+    }
+}
+
+function showUnlockError(message) {
+    const errorDiv = document.getElementById('unlockError');
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.classList.remove('hidden');
+    }
+}
+
+function hideUnlockError() {
+    const errorDiv = document.getElementById('unlockError');
+    if (errorDiv) {
+        errorDiv.classList.add('hidden');
+    }
+}
+
+function setUnlockLoading(loading) {
+    const btn = document.getElementById('unlockSubmitBtn');
+    const btnText = document.getElementById('unlockBtnText');
+    
+    if (btn && btnText) {
+        btn.disabled = loading;
+        if (loading) {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i><span>Validating...</span>';
+        } else {
+            btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Unlock POSPal</span>';
+        }
+    }
+}
+
+async function generateMachineFingerprint() {
+    // Get enhanced hardware ID (same as existing system)
+    try {
+        const response = await fetch('/api/hardware_id');
+        if (response.ok) {
+            const data = await response.json();
+            return data.hardware_id || 'fallback-fingerprint';
+        }
+    } catch (error) {
+        console.error('Failed to get hardware ID:', error);
+    }
+    
+    // Fallback fingerprint
+    return 'fallback-' + Date.now();
+}
+
+async function validateUnlockToken(email, token, machineFingerprint) {
+    const response = await fetch('https://license.pospal.gr/validate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            email: email,
+            token: token,
+            machineFingerprint: machineFingerprint
+        })
+    });
+    
+    const result = await response.json();
+    return result;
+}
+
+function generateLicenseFile(email, token, machineFingerprint, customerName) {
+    const licenseData = {
+        customer: customerName || email.split('@')[0],
+        email: email,
+        unlock_token: token,
+        machine_fingerprint: machineFingerprint,
+        license_type: 'subscription',
+        activated_at: new Date().toISOString(),
+        version: '2.0.0',
+        // Add signature for compatibility
+        signature: 'token_based_license'
+    };
+    
+    // Save to local file (this will need to be adapted for desktop app)
+    const blob = new Blob([JSON.stringify(licenseData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'license.key';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    return licenseData;
+}
+
+// Handle unlock form submission and page load events
+document.addEventListener('DOMContentLoaded', function() {
+    // Set up unlock form handler
+    const unlockForm = document.getElementById('unlockTokenForm');
+    if (unlockForm) {
+        unlockForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('unlockEmail').value.trim();
+            const token = document.getElementById('unlockToken').value.trim().toUpperCase();
+            
+            if (!email || !token) {
+                showUnlockError('Please fill in all fields.');
+                return;
+            }
+            
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showUnlockError('Please enter a valid email address.');
+                return;
+            }
+            
+            setUnlockLoading(true);
+            hideUnlockError();
+            
+            try {
+                // Generate machine fingerprint
+                const machineFingerprint = await generateMachineFingerprint();
+                
+                // Validate with server
+                const result = await validateUnlockToken(email, token, machineFingerprint);
+                
+                if (result.valid) {
+                    // Generate license file
+                    generateLicenseFile(email, token, machineFingerprint, result.customerName);
+                    
+                    // Show success message
+                    alert('✅ License validated successfully!\n\nThe license.key file has been downloaded.\n\n📁 Place it next to POSPal.exe and restart the application.');
+                    
+                    // Hide dialog
+                    hideUnlockDialog();
+                    
+                    // Refresh trial status
+                    setTimeout(() => {
+                        checkAndDisplayTrialStatus();
+                    }, 1000);
+                    
+                } else {
+                    showUnlockError(result.error || 'Invalid email or unlock token. Please check and try again.');
+                }
+                
+            } catch (error) {
+                console.error('Unlock validation error:', error);
+                showUnlockError('Connection failed. Please check your internet connection and try again.');
+            } finally {
+                setUnlockLoading(false);
+            }
+        });
+    }
+    
+    // Format token input as user types
+    const tokenInput = document.getElementById('unlockToken');
+    if (tokenInput) {
+        tokenInput.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/[^A-Z0-9]/g, '').toUpperCase();
+            
+            // Format as POSPAL-XXXX-XXXX-XXXX
+            if (value.startsWith('POSPAL')) {
+                value = value.substring(6); // Remove POSPAL prefix
+            }
+            
+            // Add dashes every 4 characters
+            const segments = [];
+            for (let i = 0; i < value.length; i += 4) {
+                segments.push(value.substring(i, i + 4));
+            }
+            
+            let formatted = 'POSPAL-' + segments.join('-');
+            
+            // Limit length
+            if (formatted.length > 23) { // POSPAL-XXXX-XXXX-XXXX = 23 chars
+                formatted = formatted.substring(0, 23);
+            }
+            
+            e.target.value = formatted;
+        });
+    }
+    
+    // Load usage statistics
+    loadUsageStatistics();
+    
+    // Start session management and check subscription status on startup
+    setTimeout(async () => {
+        const sessionStarted = await startSession();
+        if (sessionStarted) {
+            await checkSubscriptionStatus();
+        }
+    }, 1000);
+    
+    // Set up periodic subscription checks every 4 hours
+    setInterval(async () => {
+        await checkSubscriptionStatus();
+    }, 4 * 60 * 60 * 1000); // 4 hours
+    
+    // End session when page is closed
+    window.addEventListener('beforeunload', () => {
+        endSession();
+    });
+});
+
+// --- Subscription Validation Functions ---
+
+async function checkSubscriptionStatus() {
+    try {
+        const unlockToken = localStorage.getItem('pospal_unlock_token');
+        const customerEmail = localStorage.getItem('pospal_customer_email');
+        
+        // Check if we have a trial or subscription to validate
+        if (!unlockToken || !customerEmail) {
+            return handleTrialValidation();
+        }
+        
+        // Check if we're in a valid offline grace period first
+        if (isInOfflineGracePeriod()) {
+            console.log('Using offline grace period - skipping server validation');
+            return; // Continue using app offline
+        }
+        
+        // Check cached status (avoid too frequent API calls when online)
+        const lastCheck = localStorage.getItem('pospal_last_validation_check');
+        const cacheValid = lastCheck && (Date.now() - parseInt(lastCheck)) < (1000 * 60 * 60); // 1 hour cache
+        
+        if (cacheValid) {
+            const cachedStatus = localStorage.getItem('pospal_cached_status');
+            if (cachedStatus === 'active') {
+                return; // Still active based on cache
+            }
+        }
+        
+        // Try to validate with server
+        const isOnline = await attemptServerValidation(customerEmail, unlockToken);
+        
+        if (!isOnline) {
+            // Server unreachable - start offline grace period
+            handleOfflineMode();
+        }
+        
+    } catch (error) {
+        console.error('Failed to validate subscription:', error);
+        handleOfflineMode();
+    }
+}
+
+// Handle trial users (local validation only)
+function handleTrialValidation() {
+    const trialStarted = localStorage.getItem('pospal_trial_started');
+    if (trialStarted) {
+        const trialDays = 30;
+        const daysSinceStart = (Date.now() - parseInt(trialStarted)) / (1000 * 60 * 60 * 24);
+        
+        // Trial users get 1 day offline grace
+        const offlineGraceDays = 1;
+        const lastOnlineCheck = localStorage.getItem('pospal_last_online_check');
+        
+        if (lastOnlineCheck) {
+            const daysSinceLastOnline = (Date.now() - parseInt(lastOnlineCheck)) / (1000 * 60 * 60 * 24);
+            if (daysSinceLastOnline > offlineGraceDays && daysSinceStart > trialDays) {
+                showUnlockRedirect('trial');
+                return;
+            }
+        } else if (daysSinceStart > trialDays) {
+            showUnlockRedirect('trial');
+            return;
+        }
+    }
+}
+
+// Check if user is within offline grace period
+function isInOfflineGracePeriod() {
+    const lastSuccessfulCheck = localStorage.getItem('pospal_last_successful_validation');
+    const customerType = localStorage.getItem('pospal_cached_status');
+    
+    if (!lastSuccessfulCheck) {
+        return false; // No previous successful validation
+    }
+    
+    const daysSinceLastValidation = (Date.now() - parseInt(lastSuccessfulCheck)) / (1000 * 60 * 60 * 24);
+    
+    // Simple time-based grace period
+    const gracePeriodDays = customerType === 'active' ? 7 : 1;
+    const inGracePeriod = daysSinceLastValidation <= gracePeriodDays;
+    
+    if (inGracePeriod) {
+        console.log(`Offline grace: ${daysSinceLastValidation.toFixed(1)}/${gracePeriodDays} days`);
+        showOfflineIndicator(daysSinceLastValidation, gracePeriodDays);
+    } else {
+        console.log('Offline grace period expired');
+    }
+    
+    return inGracePeriod;
+}
+
+// Attempt server validation with timeout
+async function attemptServerValidation(customerEmail, unlockToken, timeout = 10000) {
+    try {
+        console.log('Attempting server validation...');
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        const machineFingerprint = generateMachineFingerprint();
+        
+        const response = await fetch('https://pospal-licensing-development.bzoumboulis.workers.dev/validate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: customerEmail,
+                token: unlockToken,
+                machineFingerprint: machineFingerprint
+            }),
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        const result = await response.json();
+        
+        // Update successful validation timestamp
+        localStorage.setItem('pospal_last_validation_check', Date.now().toString());
+        localStorage.setItem('pospal_last_online_check', Date.now().toString());
+        
+        if (result.valid && result.subscriptionStatus === 'active') {
+            // Validation successful
+            localStorage.setItem('pospal_cached_status', 'active');
+            localStorage.setItem('pospal_last_successful_validation', Date.now().toString());
+            console.log('Server validation: ACTIVE');
+            hideOfflineIndicator();
+            return true;
+        } else {
+            // License issues detected online
+            localStorage.setItem('pospal_cached_status', 'inactive');
+            console.log('Server validation failed:', result.error || 'Unknown error');
+            
+            if (result.error && result.error.includes('Subscription is not active')) {
+                showUnlockRedirect('subscription');
+            } else if (result.error && result.error.includes('Invalid email or unlock token')) {
+                showUnlockDialog();
+            }
+            
+            return true; // We connected to server (validation failed but connection succeeded)
+        }
+        
+    } catch (error) {
+        console.log('Server validation failed (likely offline):', error.name);
+        return false; // Assume offline
+    }
+}
+
+// Handle offline mode gracefully
+function handleOfflineMode() {
+    const lastOnlineCheck = localStorage.getItem('pospal_last_online_check');
+    if (!lastOnlineCheck) {
+        // First time offline - start grace period
+        localStorage.setItem('pospal_last_online_check', Date.now().toString());
+    }
+    
+    if (!isInOfflineGracePeriod()) {
+        // Grace period expired
+        const customerType = localStorage.getItem('pospal_cached_status');
+        
+        if (customerType === 'active') {
+            showOfflineExpiredDialog();
+        } else {
+            showUnlockRedirect('trial');
+        }
+    }
+}
+
+// Generate machine fingerprint (same as in payment modal)
+function generateMachineFingerprint() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillText('Machine fingerprint', 2, 2);
+    
+    const fingerprint = {
+        screen: `${screen.width}x${screen.height}`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        language: navigator.language,
+        platform: navigator.platform,
+        canvas: canvas.toDataURL(),
+        userAgent: navigator.userAgent.substring(0, 100)
+    };
+    
+    return btoa(JSON.stringify(fingerprint)).substring(0, 32);
+}
+
+// --- Session Management Functions ---
+
+let currentSessionId = null;
+let heartbeatInterval = null;
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const WORKER_URL = 'https://pospal-licensing-development.bzoumboulis.workers.dev';
+
+// Generate unique session ID
+function generateSessionId() {
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Get device information for session tracking
+function getDeviceInfo() {
+    return {
+        screen: `${screen.width}x${screen.height}`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        language: navigator.language,
+        platform: navigator.platform,
+        userAgent: navigator.userAgent.substring(0, 200),
+        browser: getBrowserInfo()
+    };
+}
+
+function getBrowserInfo() {
+    const userAgent = navigator.userAgent;
+    if (userAgent.includes('Chrome')) return 'Chrome';
+    if (userAgent.includes('Firefox')) return 'Firefox';
+    if (userAgent.includes('Safari')) return 'Safari';
+    if (userAgent.includes('Edge')) return 'Edge';
+    return 'Unknown';
+}
+
+// Start session with server
+async function startSession() {
+    try {
+        const unlockToken = localStorage.getItem('pospal_unlock_token');
+        const customerEmail = localStorage.getItem('pospal_customer_email');
+        
+        if (!unlockToken || !customerEmail) {
+            console.log('No license info found, skipping session management');
+            return true; // Don't block app for trial users
+        }
+        
+        // Check if we're in offline grace period first
+        if (isInOfflineGracePeriod()) {
+            console.log('Starting session in offline mode (using grace period)');
+            startOfflineSession();
+            return true;
+        }
+        
+        currentSessionId = generateSessionId();
+        const machineFingerprint = generateMachineFingerprint();
+        const deviceInfo = getDeviceInfo();
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            const response = await fetch(`${WORKER_URL}/session/start`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email: customerEmail,
+                    token: unlockToken,
+                    machineFingerprint: machineFingerprint,
+                    sessionId: currentSessionId,
+                    deviceInfo: deviceInfo
+                }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log('Session started successfully:', currentSessionId);
+                startHeartbeat();
+                localStorage.setItem('pospal_last_online_check', Date.now().toString());
+                return true;
+            } else if (result.conflict) {
+                // Another device is using this license
+                console.log('Session conflict detected:', result.error);
+                const shouldTakeover = await showSessionConflictDialog(result.conflictInfo);
+                
+                if (shouldTakeover) {
+                    return await takeoverSession();
+                } else {
+                    // User chose not to takeover, check if they can use offline mode
+                    if (isInOfflineGracePeriod()) {
+                        console.log('Starting in offline mode instead');
+                        startOfflineSession();
+                        return true;
+                    } else {
+                        showSessionConflictLock(result.conflictInfo);
+                        return false;
+                    }
+                }
+            } else {
+                console.error('Failed to start session:', result.error);
+                // Try offline mode if available
+                if (isInOfflineGracePeriod()) {
+                    startOfflineSession();
+                    return true;
+                }
+                return true; // Don't block app for other server errors
+            }
+            
+        } catch (error) {
+            console.log('Session start failed (likely offline):', error.name);
+            
+            // Try offline mode
+            if (isInOfflineGracePeriod()) {
+                startOfflineSession();
+                return true;
+            } else {
+                // No offline grace - handle as network error
+                handleOfflineMode();
+                return false;
+            }
+        }
+        
+    } catch (error) {
+        console.error('Session start error:', error);
+        return true; // Don't block app for unexpected errors
+    }
+}
+
+// Start offline session (no server communication)
+function startOfflineSession() {
+    currentSessionId = generateSessionId();
+    console.log('Started offline session:', currentSessionId);
+    
+    // Start modified heartbeat that doesn't communicate with server
+    startOfflineHeartbeat();
+    
+    // Show offline indicator
+    const daysSinceLastValidation = (Date.now() - parseInt(localStorage.getItem('pospal_last_successful_validation') || '0')) / (1000 * 60 * 60 * 24);
+    const gracePeriodDays = localStorage.getItem('pospal_cached_status') === 'active' ? 7 : 1;
+    showOfflineIndicator(daysSinceLastValidation, gracePeriodDays);
+}
+
+// Modified heartbeat for offline mode
+function startOfflineHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+    }
+    
+    // Daily reconnection check with persistence
+    const DAILY_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+    const RETRY_INTERVAL = 10 * 60 * 1000; // 10 minutes for retries
+    const MAX_RETRIES_PER_DAY = 6; // Max 6 retries (1 hour of attempts)
+    
+    let dailyRetryCount = 0;
+    let lastDailyCheck = localStorage.getItem('pospal_last_daily_check') || '0';
+    
+    const attemptReconnection = async (isRetry = false) => {
+        try {
+            console.log(isRetry ? 'Retrying connection...' : 'Daily connection check...');
+            const unlockToken = localStorage.getItem('pospal_unlock_token');
+            const customerEmail = localStorage.getItem('pospal_customer_email');
+            
+            if (unlockToken && customerEmail) {
+                const isOnline = await attemptServerValidation(customerEmail, unlockToken, 8000); // 8 second timeout
+                
+                if (isOnline) {
+                    console.log('Connection successful! Switching to online session management...');
+                    localStorage.setItem('pospal_last_daily_check', Date.now().toString());
+                    dailyRetryCount = 0;
+                    // Restart full session management
+                    await startSession();
+                    return;
+                } else {
+                    // Server not responding - retry if we haven't exceeded retry limit
+                    if (!isRetry) {
+                        dailyRetryCount = 0; // Reset counter for new daily check
+                    }
+                    
+                    if (dailyRetryCount < MAX_RETRIES_PER_DAY) {
+                        dailyRetryCount++;
+                        console.log(`Server not responding, retry ${dailyRetryCount}/${MAX_RETRIES_PER_DAY} in 10 minutes`);
+                        heartbeatInterval = setTimeout(() => attemptReconnection(true), RETRY_INTERVAL);
+                        return;
+                    } else {
+                        console.log('Max retries reached, will try again in 24 hours');
+                    }
+                }
+            }
+            
+        } catch (error) {
+            console.log('Connection failed:', error.name);
+            
+            // Retry logic for network errors too
+            if (dailyRetryCount < MAX_RETRIES_PER_DAY) {
+                dailyRetryCount++;
+                console.log(`Connection error, retry ${dailyRetryCount}/${MAX_RETRIES_PER_DAY} in 10 minutes`);
+                heartbeatInterval = setTimeout(() => attemptReconnection(true), RETRY_INTERVAL);
+                return;
+            }
+        }
+        
+        // Check if offline grace period has expired
+        if (!isInOfflineGracePeriod()) {
+            console.log('Offline grace period expired');
+            handleOfflineMode();
+            return;
+        }
+        
+        // Schedule next daily check
+        const nextCheck = DAILY_CHECK_INTERVAL;
+        console.log(`Next connection check in 24 hours`);
+        heartbeatInterval = setTimeout(() => attemptReconnection(false), nextCheck);
+    };
+    
+    // Determine when to start first check
+    const timeSinceLastCheck = Date.now() - parseInt(lastDailyCheck);
+    let initialDelay;
+    
+    if (timeSinceLastCheck >= DAILY_CHECK_INTERVAL) {
+        // It's been over 24 hours, check now
+        initialDelay = 5000; // 5 seconds to let app settle
+    } else {
+        // Schedule next check based on when last check was
+        initialDelay = DAILY_CHECK_INTERVAL - timeSinceLastCheck;
+        console.log(`Next connection check in ${Math.round(initialDelay / (1000 * 60 * 60))} hours`);
+    }
+    
+    heartbeatInterval = setTimeout(() => attemptReconnection(false), initialDelay);
+}
+
+// Start heartbeat to keep session alive
+function startHeartbeat() {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+    }
+    
+    heartbeatInterval = setInterval(async () => {
+        try {
+            if (!currentSessionId) return;
+            
+            const response = await fetch(`${WORKER_URL}/session/heartbeat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: currentSessionId
+                }),
+            });
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                console.warn('Heartbeat failed:', result.error);
+                if (result.error.includes('Session not found')) {
+                    // Session was terminated, try to restart
+                    console.log('Session was terminated, attempting to restart...');
+                    await startSession();
+                }
+            }
+            
+        } catch (error) {
+            console.error('Heartbeat error:', error);
+        }
+    }, HEARTBEAT_INTERVAL);
+}
+
+// End session when app closes
+async function endSession() {
+    try {
+        if (currentSessionId) {
+            await fetch(`${WORKER_URL}/session/end`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: currentSessionId
+                }),
+            });
+            
+            console.log('Session ended:', currentSessionId);
+        }
+        
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+        
+        currentSessionId = null;
+        
+    } catch (error) {
+        console.error('End session error:', error);
+    }
+}
+
+// Takeover session from another device
+async function takeoverSession() {
+    try {
+        const unlockToken = localStorage.getItem('pospal_unlock_token');
+        const customerEmail = localStorage.getItem('pospal_customer_email');
+        
+        if (!unlockToken || !customerEmail) {
+            return false;
+        }
+        
+        currentSessionId = generateSessionId();
+        const machineFingerprint = generateMachineFingerprint();
+        const deviceInfo = getDeviceInfo();
+        
+        const response = await fetch(`${WORKER_URL}/session/takeover`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: customerEmail,
+                token: unlockToken,
+                machineFingerprint: machineFingerprint,
+                sessionId: currentSessionId,
+                deviceInfo: deviceInfo
+            }),
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            console.log('Session takeover successful:', currentSessionId);
+            startHeartbeat();
+            return true;
+        } else {
+            console.error('Session takeover failed:', result.error);
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('Session takeover error:', error);
+        return false;
+    }
+}
+
+// Show session conflict dialog
+async function showSessionConflictDialog(conflictInfo) {
+    return new Promise((resolve) => {
+        const deviceInfo = conflictInfo?.deviceInfo || {};
+        const lastSeen = conflictInfo?.lastSeen || 'Unknown';
+        const deviceDesc = `${deviceInfo.browser || 'Unknown Browser'} on ${deviceInfo.platform || 'Unknown OS'}`;
+        
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-90 z-[120] flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div class="p-6 text-center border-b border-gray-200">
+                    <div class="text-4xl text-orange-500 mb-3">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Device Conflict</h2>
+                    <p class="text-gray-600">Another device is currently using your POSPal license</p>
+                </div>
+                
+                <div class="p-6">
+                    <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                        <h3 class="font-semibold text-gray-800 mb-2">Currently Active Device:</h3>
+                        <div class="text-sm text-gray-600">
+                            <p><i class="fas fa-desktop mr-2"></i>${deviceDesc}</p>
+                            <p><i class="fas fa-clock mr-2"></i>Last seen: ${new Date(lastSeen).toLocaleString()}</p>
+                            <p><i class="fas fa-screen mr-2"></i>Screen: ${deviceInfo.screen || 'Unknown'}</p>
+                        </div>
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 mb-6">
+                        Your POSPal license allows only one active device at a time. You can take over this license, which will immediately disconnect the other device.
+                    </p>
+                    
+                    <div class="space-y-3">
+                        <button id="takeoverBtn" class="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-orange-700 transition-colors">
+                            <i class="fas fa-laptop mr-2"></i>
+                            Use POSPal on This Device
+                        </button>
+                        
+                        <button id="cancelBtn" class="w-full bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+                            Cancel
+                        </button>
+                    </div>
+                    
+                    <div class="mt-4 text-center">
+                        <p class="text-xs text-gray-500">
+                            The other device will be disconnected immediately and can reconnect later when this device is closed.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        document.body.style.overflow = 'hidden';
+        
+        const takeoverBtn = modal.querySelector('#takeoverBtn');
+        const cancelBtn = modal.querySelector('#cancelBtn');
+        
+        const cleanup = () => {
+            document.body.removeChild(modal);
+            document.body.style.overflow = 'auto';
+        };
+        
+        takeoverBtn.onclick = () => {
+            cleanup();
+            resolve(true);
+        };
+        
+        cancelBtn.onclick = () => {
+            cleanup();
+            resolve(false);
+        };
+    });
+}
+
+// Show session conflict lock screen
+function showSessionConflictLock(conflictInfo) {
+    const deviceInfo = conflictInfo?.deviceInfo || {};
+    const deviceDesc = `${deviceInfo.browser || 'Unknown Browser'} on ${deviceInfo.platform || 'Unknown OS'}`;
+    
+    const lockScreen = document.createElement('div');
+    lockScreen.id = 'sessionConflictLock';
+    lockScreen.className = 'fixed inset-0 bg-gray-900 z-[100] flex items-center justify-center p-4';
+    lockScreen.innerHTML = `
+        <div class="text-center text-white max-w-md">
+            <div class="text-6xl text-orange-500 mb-6">
+                <i class="fas fa-ban"></i>
+            </div>
+            <h2 class="text-3xl font-bold mb-4">License In Use</h2>
+            <p class="text-gray-300 mb-6">
+                Your POSPal license is currently being used on another device (${deviceDesc}).
+            </p>
+            <p class="text-sm text-gray-400 mb-8">
+                Only one device can use POSPal at a time. Close POSPal on the other device or refresh this page to try again.
+            </p>
+            <button onclick="window.location.reload()" 
+                    class="bg-orange-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-orange-700 transition-colors">
+                <i class="fas fa-refresh mr-2"></i>
+                Try Again
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(lockScreen);
+}
+
+// --- Offline Mode UI Functions ---
+
+let offlineIndicatorElement = null;
+
+// Show offline mode indicator
+function showOfflineIndicator(daysSinceLastValidation, gracePeriodDays) {
+    if (offlineIndicatorElement) {
+        hideOfflineIndicator();
+    }
+    
+    const remainingDays = Math.max(0, gracePeriodDays - daysSinceLastValidation);
+    const percentRemaining = (remainingDays / gracePeriodDays) * 100;
+    
+    // Create offline indicator
+    offlineIndicatorElement = document.createElement('div');
+    offlineIndicatorElement.id = 'offlineIndicator';
+    offlineIndicatorElement.className = 'fixed top-4 right-4 bg-orange-100 border border-orange-300 text-orange-800 px-4 py-2 rounded-lg shadow-lg z-50 max-w-sm';
+        
+    offlineIndicatorElement.innerHTML = `
+        <div class="flex items-center space-x-2">
+            <div class="flex-shrink-0">
+                <i class="fas fa-wifi-slash text-orange-500"></i>
+            </div>
+            <div class="flex-1 text-sm">
+                <div class="font-medium">Offline Mode</div>
+                <div class="text-orange-600">
+                    ${remainingDays.toFixed(1)} days remaining
+                </div>
+                <div class="w-full bg-orange-200 rounded-full h-1.5 mt-1">
+                    <div class="bg-orange-500 h-1.5 rounded-full transition-all duration-300" 
+                         style="width: ${percentRemaining}%"></div>
+                </div>
+            </div>
+            <button onclick="attemptReconnect()" class="text-orange-600 hover:text-orange-800 text-xs">
+                <i class="fas fa-refresh"></i>
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(offlineIndicatorElement);
+    
+    // Update indicator every minute
+    const updateInterval = setInterval(() => {
+        if (!isInOfflineGracePeriod()) {
+            clearInterval(updateInterval);
+            hideOfflineIndicator();
+            return;
+        }
+        
+        const newDaysSince = (Date.now() - parseInt(localStorage.getItem('pospal_last_successful_validation') || '0')) / (1000 * 60 * 60 * 24);
+        const newRemainingDays = Math.max(0, gracePeriodDays - newDaysSince);
+        const newPercentRemaining = (newRemainingDays / gracePeriodDays) * 100;
+        
+        // Update DOM elements
+        const limitElement = offlineIndicatorElement.querySelector('.text-orange-600');
+        const progressElement = offlineIndicatorElement.querySelector('.bg-orange-500');
+        
+        if (limitElement) limitElement.textContent = `${newRemainingDays.toFixed(1)} days remaining`;
+        if (progressElement) progressElement.style.width = `${newPercentRemaining}%`;
+        
+        // Change color as grace period runs out
+        if (newPercentRemaining < 20) {
+            offlineIndicatorElement.className = offlineIndicatorElement.className.replace('bg-orange-100 border-orange-300 text-orange-800', 'bg-red-100 border-red-300 text-red-800');
+        }
+        
+    }, 60000); // Update every minute
+}
+
+// Hide offline indicator
+function hideOfflineIndicator() {
+    if (offlineIndicatorElement) {
+        document.body.removeChild(offlineIndicatorElement);
+        offlineIndicatorElement = null;
+    }
+}
+
+// Manual reconnection attempt (user-triggered)
+async function attemptReconnect() {
+    const unlockToken = localStorage.getItem('pospal_unlock_token');
+    const customerEmail = localStorage.getItem('pospal_customer_email');
+    
+    if (unlockToken && customerEmail) {
+        showToast('Checking connection...', 'info', 2000);
+        
+        const isOnline = await attemptServerValidation(customerEmail, unlockToken, 10000); // 10 second timeout for manual attempts
+        
+        if (isOnline) {
+            showToast('✅ Reconnected successfully!', 'success', 3000);
+            hideOfflineIndicator();
+            // Update last daily check timestamp to reset daily schedule
+            localStorage.setItem('pospal_last_daily_check', Date.now().toString());
+            // Restart session management
+            setTimeout(() => {
+                startSession();
+            }, 1000);
+        } else {
+            showToast('❌ Still offline - automatic check once per day', 'error', 4000);
+        }
+    }
+}
+
+// Show offline expired dialog for paid customers
+function showOfflineExpiredDialog() {
+    const customerType = localStorage.getItem('pospal_cached_status');
+    const gracePeriodDays = customerType === 'active' ? 7 : 1;
+    
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-90 z-[120] flex items-center justify-center p-4';
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="p-6 text-center border-b border-gray-200">
+                <div class="text-4xl text-red-500 mb-3">
+                    <i class="fas fa-exclamation-circle"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Connection Required</h2>
+                <p class="text-gray-600">Your offline grace period has expired</p>
+            </div>
+            
+            <div class="p-6">
+                <div class="bg-red-50 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-red-700 mb-2">
+                        <i class="fas fa-clock mr-2"></i>
+                        You've been offline for more than ${gracePeriodDays} days
+                    </p>
+                    <p class="text-sm text-red-600">
+                        POSPal needs to verify your subscription status with our servers to continue.
+                    </p>
+                </div>
+                
+                <p class="text-sm text-gray-600 mb-6">
+                    Please check your internet connection and try again. Your subscription and data are safe.
+                </p>
+                
+                <div class="space-y-3">
+                    <button onclick="attemptReconnect()" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-wifi mr-2"></i>
+                        Check Connection
+                    </button>
+                    
+                    <button onclick="window.location.reload()" class="w-full bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+                        <i class="fas fa-refresh mr-2"></i>
+                        Refresh Page
+                    </button>
+                </div>
+                
+                <div class="mt-4 text-center">
+                    <p class="text-xs text-gray-500">
+                        If you continue having connection issues, please contact support.
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    document.body.style.overflow = 'hidden';
+}
+
+// Expose global functions
+window.attemptReconnect = attemptReconnect;
+
+// Handle manual unlock token form submission
+document.addEventListener('DOMContentLoaded', function() {
+    const unlockForm = document.getElementById('unlockTokenForm');
+    if (unlockForm) {
+        unlockForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('unlockEmail').value;
+            const token = document.getElementById('unlockToken').value;
+            const submitBtn = document.getElementById('unlockSubmitBtn');
+            const btnText = document.getElementById('unlockBtnText');
+            const errorDiv = document.getElementById('unlockError');
+            
+            // Clear previous error
+            errorDiv.classList.add('hidden');
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            btnText.textContent = 'Validating...';
+            
+            try {
+                const machineFingerprint = generateMachineFingerprint();
+                
+                const response = await fetch('https://pospal-licensing-development.bzoumboulis.workers.dev/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        token: token,
+                        machineFingerprint: machineFingerprint
+                    }),
+                });
+                
+                const result = await response.json();
+                
+                if (result.valid && result.subscriptionStatus === 'active') {
+                    // Success! Unlock POSPal
+                    unlockPOSPal(token, email, result.customerName);
+                    // Start session management for this newly unlocked license
+                    setTimeout(() => {
+                        startSession();
+                    }, 1000);
+                } else {
+                    // Show error
+                    errorDiv.textContent = result.error || 'Invalid unlock code or email';
+                    errorDiv.classList.remove('hidden');
+                }
+                
+            } catch (error) {
+                console.error('Unlock validation error:', error);
+                errorDiv.textContent = 'Failed to validate unlock code. Please check your internet connection.';
+                errorDiv.classList.remove('hidden');
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                btnText.textContent = 'Unlock POSPal';
+            }
+        });
+    }
+});
+
+// --- Embedded Payment Functions ---
+
+function showEmbeddedPayment() {
+    const paymentFrame = document.getElementById('paymentModalFrame');
+    if (paymentFrame) {
+        paymentFrame.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        
+        // Post message to the iframe to show the modal
+        setTimeout(() => {
+            paymentFrame.contentWindow.postMessage({ action: 'showModal' }, '*');
+        }, 100);
+    }
+}
+
+function closeEmbeddedPayment() {
+    const paymentFrame = document.getElementById('paymentModalFrame');
+    if (paymentFrame) {
+        paymentFrame.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+}
+
+// Function to unlock POSPal after successful payment
+function unlockPOSPal(unlockToken, customerEmail = null, customerName = null) {
+    console.log('POSPal unlocked with token:', unlockToken);
+    
+    // Hide the trial/expired UI elements
+    const trialActions = document.getElementById('trial-actions');
+    if (trialActions) {
+        trialActions.classList.add('hidden');
+    }
+    
+    const expiredOverlay = document.getElementById('expired-overlay');
+    if (expiredOverlay) {
+        expiredOverlay.classList.add('hidden');
+    }
+    
+    // Close payment modal
+    closeEmbeddedPayment();
+    
+    // Store the unlock token and customer info locally for future validation
+    localStorage.setItem('pospal_unlock_token', unlockToken);
+    localStorage.setItem('pospal_license_status', 'active');
+    localStorage.setItem('pospal_license_validated', new Date().getTime());
+    localStorage.setItem('pospal_cached_status', 'active');
+    localStorage.setItem('pospal_last_validation_check', Date.now().toString());
+    
+    // Store customer info if provided (for future validation calls)
+    if (customerEmail) {
+        localStorage.setItem('pospal_customer_email', customerEmail);
+    }
+    if (customerName) {
+        localStorage.setItem('pospal_customer_name', customerName);
+    }
+    
+    // Show success message
+    showToast('🎉 Welcome to POSPal Pro! Your app is now unlocked.', 'success', 5000);
+    
+    // Refresh the page to ensure all locked features are enabled
+    setTimeout(() => {
+        window.location.reload();
+    }, 2000);
+}
+
+// Listen for messages from the payment modal iframe
+window.addEventListener('message', function(event) {
+    if (event.data && event.data.action) {
+        switch (event.data.action) {
+            case 'closeModal':
+                closeEmbeddedPayment();
+                break;
+            case 'paymentSuccess':
+                if (event.data.unlockToken) {
+                    unlockPOSPal(event.data.unlockToken, event.data.customerEmail, event.data.customerName);
+                }
+                break;
+            default:
+                console.log('Unknown message from payment modal:', event.data);
+        }
+    }
+});

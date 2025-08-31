@@ -1,12 +1,12 @@
 # POSPal Distributor Agreement (Draft)
 
 Version: 0.1 (Draft for review)
-Owner: Robert Zoumboulis-Airey (Greece)
+Owner: Anastasia Palamoutsi & Robert Zoumboulis-Airey (Greece)
 
 This non-binding draft outlines key terms for a distributor relationship for POSPal. It is not legal advice; consult a qualified attorney to finalize.
 
 ## 1. Parties
-- Licensor/Owner: Robert Zoumboulis-Airey ("Owner").
+- Licensor/Owner: Anastasia Palamoutsi & Robert Zoumboulis-Airey ("Owner").
 - Distributor: [Legal Name], [Registered Address] ("Distributor").
 
 ## 2. Appointment and Territory
@@ -69,7 +69,7 @@ This non-binding draft outlines key terms for a distributor relationship for POS
 
 Accepted and agreed (subject to final legal review):
 
-Owner: Robert Zoumboulis-Airey  
+Owner: Anastasia Palamoutsi & Robert Zoumboulis-Airey  
 Signature: _______________________  Date: ___________
 
 Distributor: _______________________  

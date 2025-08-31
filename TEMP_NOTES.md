@@ -17,10 +17,10 @@ Last updated: 2025-08-19
   - Hero tour text updated for stations 2–4 accordingly.
  - Added EULA link in footer and updated copyright:
    - Footer now links to `EULA.md`.
-   - Footer copyright: © 2025 Robert Zoumboulis-Airey. All rights reserved.
+   - Footer copyright: © 2025 Anastasia Palamoutsi & Robert Zoumboulis-Airey. All rights reserved.
 
 ### New files
-- `EULA.md` created (English; governed by the laws of Greece; licensor: Robert Zoumboulis-Airey).
+- `EULA.md` created (English; governed by the laws of Greece; licensor: Anastasia Palamoutsi & Robert Zoumboulis-Airey).
 
 References:
 - Download URL: `https://github.com/Radot1/POSPal/releases/latest` ([GitHub Repo](https://github.com/Radot1/POSPal))

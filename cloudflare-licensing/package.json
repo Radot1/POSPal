@@ -1,0 +1,28 @@
+{
+  "name": "pospal-licensing-system",
+  "version": "1.0.0",
+  "description": "POSPal Email + Token Licensing System",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev --env development",
+    "deploy": "wrangler publish --env production",
+    "deploy-dev": "wrangler publish --env development",
+    "db:create": "wrangler d1 create pospal-subscriptions",
+    "db:execute": "wrangler d1 execute pospal-subscriptions --env production --file=schema.sql",
+    "db:execute-dev": "wrangler d1 execute pospal-subscriptions-dev --env development --file=schema.sql",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "stripe",
+    "subscription",
+    "licensing"
+  ],
+  "author": "POSPal",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

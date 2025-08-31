@@ -1,7 +1,7 @@
 # POSPal Privacy Notice (Summary)
 
 Effective Date: 2025-08-19
-Owner: Robert Zoumboulis-Airey (Greece)
+Owner: Anastasia Palamoutsi & Robert Zoumboulis-Airey (Greece)
 
 This document explains what POSPal does with data. POSPal is a local-first application that runs on your own Windows machine. It does not send your business data to any external server by default.
 

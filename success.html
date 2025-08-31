@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful - POSPal</title>
+    <link rel="icon" href="app_icon.ico">
+    
+    <style>
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .success-icon {
+            font-size: 64px;
+            color: #059669;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #059669;
+            font-size: 32px;
+            font-weight: bold;
+            margin: 0 0 10px 0;
+        }
+        
+        .subtitle {
+            color: #6b7280;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+        
+        .steps {
+            background: #f0fdf4;
+            border: 2px solid #059669;
+            border-radius: 12px;
+            padding: 30px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        
+        .steps h3 {
+            color: #059669;
+            font-size: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .steps ol {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #374151;
+            padding-left: 20px;
+        }
+        
+        .steps li {
+            margin-bottom: 10px;
+        }
+        
+        .steps strong {
+            color: #059669;
+        }
+        
+        .email-info {
+            background: #eff6ff;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .email-info h4 {
+            color: #1d4ed8;
+            margin: 0 0 10px 0;
+        }
+        
+        .email-info p {
+            color: #1e40af;
+            margin: 0;
+        }
+        
+        .email-display {
+            font-family: monospace;
+            background: #1f2937;
+            color: #10b981;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0;
+            word-break: break-all;
+        }
+        
+        .support {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .support h4 {
+            color: #92400e;
+            margin: 0 0 10px 0;
+        }
+        
+        .support p {
+            color: #92400e;
+            margin: 0;
+        }
+        
+        .cta-button {
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            margin: 20px 10px;
+            transition: transform 0.2s;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .secondary-button {
+            background: #6b7280;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px;
+        }
+        
+        .loading {
+            color: #6b7280;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1>Payment Successful!</h1>
+        <div class="subtitle">Your POSPal subscription is now active</div>
+        
+        <div class="email-info">
+            <h4>📧 Check Your Email</h4>
+            <p>We've sent your unlock code to:</p>
+            <div class="email-display" id="customer-email">Loading...</div>
+        </div>
+        
+        <div class="steps">
+            <h3>🚀 Next Steps</h3>
+            <ol>
+                <li><strong>Check your email</strong> for the unlock code (it should arrive within 2-3 minutes)</li>
+                <li><strong>Open POSPal</strong> on your computer</li>
+                <li>When prompted, click <strong>"Already paid? Enter unlock code"</strong></li>
+                <li><strong>Enter your email and unlock code</strong> from the email</li>
+                <li><strong>POSPal will unlock</strong> and you're ready to go!</li>
+            </ol>
+        </div>
+        
+        <div class="support">
+            <h4>⚠️ Don't see the email?</h4>
+            <p>Check your spam/junk folder. If you still don't see it after 5 minutes, contact support and we'll resend it immediately.</p>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <a href="mailto:support@pospal.gr" class="cta-button">
+                📧 Contact Support
+            </a>
+            <a href="unlock-pospal.html" class="secondary-button">
+                🔓 Enter Unlock Code Now
+            </a>
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+            <p style="color: #9ca3af; font-size: 14px; margin: 0;">
+                Thank you for choosing POSPal!<br>
+                <a href="https://pospal.gr" style="color: #059669;">pospal.gr</a> • Professional Point of Sale System
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Extract email from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const email = urlParams.get('email');
+        
+        if (email) {
+            document.getElementById('customer-email').textContent = email;
+        } else {
+            document.getElementById('customer-email').textContent = 'your@email.com';
+        }
+        
+        // Optional: Auto-redirect to unlock page after delay
+        setTimeout(() => {
+            if (confirm('Ready to enter your unlock code? (Check your email first!)')) {
+                window.location.href = 'unlock-pospal.html';
+            }
+        }, 30000); // 30 second delay
+    </script>
+</body>
+</html>

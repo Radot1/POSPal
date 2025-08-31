@@ -299,23 +299,112 @@
                     <div id="todaysOrdersList" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1 border border-gray-200 rounded-md p-2 bg-gray-50"><p class="text-xs text-gray-500 italic" data-i18n="ui.orderHistory.loadingToday">Loading today's orders...</p></div>
                 </div>
                 <div id="licenseManagement" class="hidden">
-                    <h3 class="text-xl font-semibold text-gray-800 mb-2" data-i18n="ui.license.infoTitle">License Information</h3>
-                    <div class="bg-gray-100 p-4 rounded-lg space-y-4">
-                        <div><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.currentStatus">Current Status</h4><p id="license-status-display" class="text-base font-semibold text-gray-900 mt-1">Loading...</p></div>
-                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.yourHardwareId">Your Hardware ID</h4><p class="text-sm text-gray-600 mt-1" data-i18n="ui.license.hwidHelp">To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.</p><div class="mt-2 bg-white p-3 rounded-md flex items-center justify-between border border-gray-300"><code id="hardware-id-display" class="text-sm font-mono text-gray-800">Loading...</code><button id="copy-hwid-btn" class="copy-btn" onclick="copyHardwareId()"><i class="far fa-copy mr-1"></i> <span data-i18n="ui.license.copy">Copy</span></button></div></div>
-                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.howToActivate">How to Activate</h4><ol class="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-2"><li data-i18n="ui.license.steps.s1">Copy your unique Hardware ID from above.</li><li data-i18n="ui.license.steps.s2">Visit our website and purchase a license using your Hardware ID.</li><li data-i18n="ui.license.steps.s3">You will receive a `license.key` file via email.</li><li data-i18n="ui.license.steps.s4">Place the `license.key` file in the same folder as the `POSPal.exe` application.</li><li data-i18n="ui.license.steps.s5">Restart the POSPal application to activate the full version.</li></ol></div>
-                        <div class="pt-2 flex gap-2 flex-wrap">
-                            <button type="button" class="btn-primary px-4 py-2 rounded" onclick="window.open('https://pospal.gr/buy-license.html','_blank')"><i class="fas fa-shopping-cart mr-2"></i><span data-i18n="ui.license.buyLicense">Buy License</span></button>
-                            <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="window.open('https://github.com/Radot1/POSPal/blob/main/EULA.md','_blank')"><i class="fas fa-file-contract mr-2"></i><span data-i18n="ui.license.viewEula">View EULA</span></button>
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4" data-i18n="ui.license.infoTitle">License & Subscription</h3>
+                    
+                    <!-- Current Status Card -->
+                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-lg font-semibold text-gray-800" data-i18n="ui.license.currentStatus">Current Status</h4>
+                            <div id="license-status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">Loading...</div>
                         </div>
-                        <div class="border-t border-gray-300 pt-4">
-                            <h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.about">About POSPal</h4>
-                            <p class="text-sm text-gray-600 mt-2">© 2025 Robert Zoumboulis-Airey. All rights reserved.</p>
-                            <p class="text-sm text-gray-600 mt-1">
-                                <a href="https://github.com/Radot1/POSPal/blob/main/EULA.md" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.viewEula">EULA</a>
-                                · <a href="https://github.com/Radot1/POSPal/blob/main/PRIVACY.md" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.privacyPolicy">Privacy Policy</a>
-                                · <a href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.releases">Releases</a>
-                            </p>
+                        <p id="license-status-display" class="text-gray-700 mb-4">Loading...</p>
+                        
+                        <!-- Subscription Details (shown only for active subscriptions) -->
+                        <div id="subscription-details" class="hidden">
+                            <div class="grid md:grid-cols-2 gap-4 mb-4">
+                                <div class="bg-gray-50 p-4 rounded-lg">
+                                    <div class="text-sm text-gray-600">Next Billing</div>
+                                    <div id="next-billing-date" class="text-lg font-semibold text-gray-800">--</div>
+                                </div>
+                                <div class="bg-gray-50 p-4 rounded-lg">
+                                    <div class="text-sm text-gray-600">Monthly Cost</div>
+                                    <div class="text-lg font-semibold text-gray-800">€20.00</div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex gap-2 flex-wrap">
+                                <button id="manage-subscription-btn" onclick="openCustomerPortal()" class="btn-primary px-4 py-2 rounded">
+                                    <i class="fas fa-cog mr-2"></i>
+                                    <span data-i18n="ui.license.manageSubscription">Manage Subscription</span>
+                                </button>
+                                <button id="update-payment-btn" onclick="updatePaymentMethod()" class="btn-secondary px-4 py-2 rounded">
+                                    <i class="fas fa-credit-card mr-2"></i>
+                                    <span data-i18n="ui.license.updatePayment">Update Payment</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Trial/Expired Actions (shown for trial/expired users) -->
+                        <div id="trial-actions" class="hidden">
+                            <div class="flex gap-2 flex-wrap mb-4">
+                                <button type="button" class="btn-primary px-4 py-2 rounded" onclick="showEmbeddedPayment()">
+                                    <i class="fas fa-credit-card mr-2"></i>
+                                    <span data-i18n="ui.license.subscribe">Subscribe - €25/month</span>
+                                </button>
+                                <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="showUnlockDialog()">
+                                    <i class="fas fa-key mr-2"></i>
+                                    <span data-i18n="ui.license.enterUnlockCode">Already paid? Enter unlock code</span>
+                                </button>
+                            </div>
+                            <div class="text-center text-sm text-gray-600">
+                                <p>New customers: Subscribe for €25/month • Existing customers: Enter your unlock code</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Usage Statistics Card -->
+                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-4">Usage Statistics</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div class="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+                                <div id="stats-total-orders" class="text-2xl font-bold text-green-700">0</div>
+                                <div class="text-sm text-green-600">Orders Processed</div>
+                            </div>
+                            <div class="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                <div id="stats-total-revenue" class="text-2xl font-bold text-blue-700">€0.00</div>
+                                <div class="text-sm text-blue-600">Revenue Tracked</div>
+                            </div>
+                            <div class="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
+                                <div id="stats-days-used" class="text-2xl font-bold text-purple-700">0</div>
+                                <div class="text-sm text-purple-600">Days Used</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Hardware ID Card -->
+                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-2" data-i18n="ui.license.yourHardwareId">Hardware ID</h4>
+                        <p class="text-sm text-gray-600 mb-3" data-i18n="ui.license.hwidHelp">This unique identifier locks your license to this specific computer.</p>
+                        <div class="bg-gray-50 p-4 rounded-lg flex items-center justify-between border">
+                            <code id="hardware-id-display" class="text-sm font-mono text-gray-800 mr-4">Loading...</code>
+                            <button id="copy-hwid-btn" class="copy-btn flex-shrink-0" onclick="copyHardwareId()">
+                                <i class="far fa-copy mr-1"></i> 
+                                <span data-i18n="ui.license.copy">Copy</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- How to Activate Card (shown for non-licensed users) -->
+                    <div id="activation-instructions" class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm hidden">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-3" data-i18n="ui.license.howToActivate">How to Activate</h4>
+                        <ol class="list-decimal list-inside text-sm text-gray-700 space-y-2">
+                            <li data-i18n="ui.license.steps.s1">Copy your unique Hardware ID from above.</li>
+                            <li data-i18n="ui.license.steps.s2">Visit our website and purchase a license using your Hardware ID.</li>
+                            <li data-i18n="ui.license.steps.s3">You will receive a `license.key` file via email.</li>
+                            <li data-i18n="ui.license.steps.s4">Place the `license.key` file in the same folder as the `POSPal.exe` application.</li>
+                            <li data-i18n="ui.license.steps.s5">Restart the POSPal application to activate the full version.</li>
+                        </ol>
+                    </div>
+                    
+                    <!-- About Section -->
+                    <div class="bg-gray-50 rounded-xl p-6 border border-gray-200">
+                        <h4 class="text-lg font-semibold text-gray-800 mb-3" data-i18n="ui.license.about">About POSPal</h4>
+                        <p class="text-sm text-gray-600 mb-3">© 2025 Anastasia Palamoutsi & Robert Zoumboulis-Airey. All rights reserved.</p>
+                        <div class="flex flex-wrap gap-4 text-sm">
+                            <a href="https://github.com/Radot1/POSPal/blob/main/EULA.md" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.viewEula">EULA</a>
+                            <a href="https://github.com/Radot1/POSPal/blob/main/PRIVACY.md" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.privacyPolicy">Privacy Policy</a>
+                            <a href="https://github.com/Radot1/POSPal/releases/latest" target="_blank" class="text-blue-600 hover:underline" data-i18n="ui.license.releases">Releases</a>
+                            <button onclick="window.open('https://github.com/Radot1/POSPal/blob/main/EULA.md','_blank')" class="text-blue-600 hover:underline" data-i18n="ui.license.viewEula">View EULA</button>
                         </div>
                     </div>
                 </div>
@@ -400,6 +489,200 @@
         </div>
     </div>
 
+    <!-- Trial Lock Screen Overlay -->
+    <div id="trialLockScreen" class="fixed inset-0 bg-black bg-opacity-95 z-[100] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <!-- Lock Screen Header -->
+            <div class="p-8 text-center border-b border-gray-200">
+                <div class="text-6xl text-red-600 mb-4">
+                    <i class="fas fa-lock"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-gray-900 mb-2">Trial Expired</h2>
+                <p class="text-xl text-gray-600">Your 30-day trial has ended, but all your data is safe</p>
+            </div>
+            
+            <!-- Data Preview Section -->
+            <div class="flex-grow overflow-y-auto p-8">
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <!-- Usage Statistics -->
+                    <div class="space-y-6">
+                        <h3 class="text-2xl font-semibold text-gray-800 mb-4">What You've Accomplished</h3>
+                        
+                        <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-xl border border-green-200">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-3xl font-bold text-green-700" id="lockscreen-orders-count">--</div>
+                                    <div class="text-green-600 font-medium">Orders Processed</div>
+                                </div>
+                                <i class="fas fa-receipt text-4xl text-green-600 opacity-50"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-r from-blue-50 to-sky-50 p-6 rounded-xl border border-blue-200">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-3xl font-bold text-blue-700" id="lockscreen-revenue-amount">--</div>
+                                    <div class="text-blue-600 font-medium">Total Revenue Tracked</div>
+                                </div>
+                                <i class="fas fa-euro-sign text-4xl text-blue-600 opacity-50"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-r from-purple-50 to-violet-50 p-6 rounded-xl border border-purple-200">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-3xl font-bold text-purple-700" id="lockscreen-days-used">30</div>
+                                    <div class="text-purple-600 font-medium">Days of Free Trial Used</div>
+                                </div>
+                                <i class="fas fa-calendar-alt text-4xl text-purple-600 opacity-50"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Data Preview -->
+                    <div class="space-y-6">
+                        <h3 class="text-2xl font-semibold text-gray-800 mb-4">Your Data is Locked</h3>
+                        
+                        <!-- Grayed out data preview -->
+                        <div class="bg-gray-100 rounded-xl p-6 relative overflow-hidden">
+                            <div class="absolute inset-0 bg-gray-200 opacity-60 z-10 flex items-center justify-center">
+                                <div class="text-center">
+                                    <i class="fas fa-lock text-4xl text-gray-600 mb-2"></i>
+                                    <p class="text-gray-700 font-semibold">Locked</p>
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-4 blur-sm">
+                                <h4 class="font-semibold text-gray-700">Recent Orders</h4>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between p-2 bg-white rounded">
+                                        <span>Order #1234</span>
+                                        <span>€25.50</span>
+                                    </div>
+                                    <div class="flex justify-between p-2 bg-white rounded">
+                                        <span>Order #1235</span>
+                                        <span>€18.75</span>
+                                    </div>
+                                    <div class="flex justify-between p-2 bg-white rounded">
+                                        <span>Order #1236</span>
+                                        <span>€32.20</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-6">
+                            <div class="flex items-start">
+                                <i class="fas fa-shield-alt text-amber-600 text-2xl mr-4 mt-1"></i>
+                                <div>
+                                    <h4 class="font-semibold text-amber-800 mb-2">Your Data is Safe</h4>
+                                    <p class="text-amber-700 text-sm">
+                                        All your orders, menu items, and settings are securely stored. 
+                                        Subscribe now to regain instant access to everything.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="p-8 border-t border-gray-200 bg-gray-50 rounded-b-2xl">
+                <div class="text-center space-y-4">
+                    <button 
+                        id="unlock-subscription-btn"
+                        onclick="redirectToSubscription()"
+                        class="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-8 rounded-xl text-xl font-bold hover:from-green-700 hover:to-emerald-700 transition-all duration-200 transform hover:scale-105 shadow-lg"
+                    >
+                        <i class="fas fa-unlock mr-3"></i>
+                        Unlock Everything - Just €20/month
+                    </button>
+                    
+                    <div class="flex items-center justify-center space-x-8 text-sm text-gray-600">
+                        <div class="flex items-center">
+                            <i class="fas fa-times mr-2 text-red-500"></i>
+                            Cancel anytime
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-lock mr-2 text-green-500"></i>
+                            Secure payment
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-zap mr-2 text-blue-500"></i>
+                            Instant access
+                        </div>
+                    </div>
+                    
+                    <p class="text-sm text-gray-500 max-w-2xl mx-auto">
+                        Your subscription starts immediately and renews monthly. 
+                        You can cancel anytime from your account settings with no questions asked.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unlock Token Dialog -->
+    <div id="unlockTokenDialog" class="fixed inset-0 bg-black bg-opacity-90 z-[110] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <!-- Dialog Header -->
+            <div class="p-6 text-center border-b border-gray-200">
+                <div class="text-4xl text-green-600 mb-3">
+                    <i class="fas fa-key"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Enter Unlock Code</h2>
+                <p class="text-gray-600">Enter the email and unlock code from your payment confirmation</p>
+            </div>
+            
+            <!-- Dialog Content -->
+            <div class="p-6">
+                <form id="unlockTokenForm">
+                    <div class="space-y-4">
+                        <div>
+                            <label for="unlockEmail" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                            <input type="email" id="unlockEmail" required 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-green-600 transition-colors"
+                                   placeholder="your@email.com">
+                        </div>
+                        
+                        <div>
+                            <label for="unlockToken" class="block text-sm font-medium text-gray-700 mb-2">Unlock Token</label>
+                            <input type="text" id="unlockToken" required 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-center uppercase tracking-wider focus:ring-2 focus:ring-green-600 focus:border-green-600 transition-colors"
+                                   placeholder="POSPAL-XXXX-XXXX-XXXX"
+                                   style="letter-spacing: 2px;">
+                        </div>
+                    </div>
+                    
+                    <div id="unlockError" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mt-4 text-sm"></div>
+                    
+                    <div class="mt-6 space-y-3">
+                        <button type="submit" id="unlockSubmitBtn" 
+                                class="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center">
+                            <i class="fas fa-unlock mr-2"></i>
+                            <span id="unlockBtnText">Unlock POSPal</span>
+                        </button>
+                        
+                        <button type="button" onclick="hideUnlockDialog()" 
+                                class="w-full bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-6 pt-4 border-t border-gray-200 text-center">
+                    <p class="text-sm text-gray-600 mb-3">Don't have an unlock code yet?</p>
+                    <button onclick="showEmbeddedPayment()" 
+                            class="text-green-600 hover:text-green-700 font-medium text-sm">
+                        <i class="fas fa-credit-card mr-1"></i>
+                        Subscribe for €25/month
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Item Form Modal -->
     <div id="itemFormModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -444,6 +727,13 @@
     <div id="toast" class="fixed top-5 right-5 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] hidden opacity-0 transition-opacity duration-300">
         <span id="toast-message">Toast message here</span>
     </div>
+
+    <!-- Embedded Payment Modal -->
+    <iframe 
+        id="paymentModalFrame" 
+        src="payment-modal.html" 
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 10000;">
+    </iframe>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="i18n.js"></script>

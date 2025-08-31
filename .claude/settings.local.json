@@ -11,7 +11,19 @@
       "Read(/C:\\PROJECTS\\POSPal\\SushakiDebug\\POSPal\\POSPal/**)",
       "Bash(python:*)",
       "Bash(copy:*)",
-      "Bash(del test_greek_encoding.py)"
+      "Bash(del test_greek_encoding.py)",
+      "Bash(wrangler d1 create:*)",
+      "Bash(wrangler d1 execute:*)",
+      "Bash(npm install)",
+      "Bash(wrangler deploy:*)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(del test-stripe.js)",
+      "Bash(npm install:*)",
+      "Bash(wrangler auth:*)",
+      "Bash(wrangler whoami:*)",
+      "Bash(wrangler d1 list:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

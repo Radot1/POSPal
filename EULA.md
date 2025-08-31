@@ -6,7 +6,7 @@ Effective Date: 2025-08-19
 IMPORTANT: PLEASE READ THIS AGREEMENT CAREFULLY BEFORE INSTALLING OR USING THE SOFTWARE. BY INSTALLING, COPYING, OR USING POSPAL (THE "SOFTWARE"), YOU AGREE TO BE BOUND BY THE TERMS OF THIS END USER LICENSE AGREEMENT ("EULA"). IF YOU DO NOT AGREE, DO NOT INSTALL OR USE THE SOFTWARE.
 
 1. Parties and Definitions
-- "Licensor": Robert Zoumboulis-Airey.
+- "Licensor": Anastasia Palamoutsi & Robert Zoumboulis-Airey.
 - "Licensee" or "you": The person or legal entity installing or using the Software.
 - "Software": POSPal, including any updates, documentation, and materials provided by Licensor.
 - "Distributor": An authorized reseller permitted by Licensor to sell licenses for the Software. Distributors are not licensors and have no authority to modify this EULA or grant rights beyond this EULA.

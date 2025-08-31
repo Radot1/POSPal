@@ -1,0 +1,41 @@
+name = "pospal-licensing"
+main = "src/index.js"
+compatibility_date = "2024-08-31"
+
+# Production environment
+[env.production]
+
+# D1 Database binding
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "pospal-subscriptions"
+database_id = "2f0fd6ad-4886-4348-ab6b-9f98087e76f9"
+
+# Environment variables for production
+[env.production.vars]
+ENVIRONMENT = "production"
+STRIPE_SECRET_KEY = "sk_live_YOUR_LIVE_KEY_HERE"
+STRIPE_WEBHOOK_SECRET = "whsec_YOUR_WEBHOOK_SECRET_HERE"
+RESEND_API_KEY = "re_8E5HhfwM_5Za4spJwwoEoeCAf1uYnwQ2M"
+
+# Development environment
+[env.development]
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "pospal-subscriptions-dev"
+database_id = "62f81f71-2c41-4c60-bd74-649aa619f2fc"
+
+[env.development.vars]
+ENVIRONMENT = "development"
+STRIPE_SECRET_KEY = "sk_test_YOUR_TEST_KEY_HERE"
+STRIPE_WEBHOOK_SECRET = "whsec_YOUR_WEBHOOK_SECRET_HERE"
+STRIPE_PRICE_ID = "price_YOUR_PRICE_ID_HERE"
+RESEND_API_KEY = "re_YOUR_RESEND_API_KEY_HERE"
+
+# Workers routes (configure these later)
+# [[env.production.routes]]
+# pattern = "license.pospal.gr/*"
+
+# [[env.development.routes]]  
+# pattern = "license-dev.pospal.gr/*"

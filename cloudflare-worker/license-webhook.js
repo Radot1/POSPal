@@ -68,19 +68,26 @@ async function handleStripeWebhook(request) {
     const event = JSON.parse(payload);
     console.log('Received Stripe event:', event.type);
     
-    // Handle successful payment
+    // Handle subscription creation (first payment)
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
+      
+      // Only handle subscription checkouts, skip one-time payments
+      if (session.mode !== 'subscription') {
+        console.log('Skipping non-subscription checkout:', session.mode);
+        return new Response('Non-subscription checkout ignored', { status: 200 });
+      }
       
       // Extract customer data
       const customerEmail = session.customer_details?.email;
       const hardwareId = session.metadata?.hardware_id;
       const customerName = session.customer_details?.name || 'Customer';
+      const subscriptionId = session.subscription;
       
-      console.log('Processing license for:', { customerEmail, hardwareId, customerName });
+      console.log('Processing subscription license for:', { customerEmail, hardwareId, customerName, subscriptionId });
       
-      if (!customerEmail || !hardwareId) {
-        console.error('Missing required data:', { customerEmail, hardwareId });
+      if (!customerEmail || !hardwareId || !subscriptionId) {
+        console.error('Missing required data:', { customerEmail, hardwareId, subscriptionId });
         return new Response('Missing customer data', { status: 400 });
       }
       
@@ -91,14 +98,52 @@ async function handleStripeWebhook(request) {
         return new Response('Invalid Hardware ID', { status: 400 });
       }
       
-      // Generate license
-      const license = generateLicense(customerName, hardwareId);
+      // Generate time-limited license (1 month)
+      const license = generateSubscriptionLicense(customerName, hardwareId, subscriptionId);
       
       // Send license via email
       await sendLicenseEmail(customerEmail, customerName, license, hardwareId);
       
-      console.log('License sent successfully to:', customerEmail);
-      return new Response('License generated and sent', { status: 200 });
+      console.log('Subscription license sent successfully to:', customerEmail);
+      return new Response('Subscription license generated and sent', { status: 200 });
+    }
+    
+    // Handle successful subscription renewal
+    if (event.type === 'invoice.payment_succeeded') {
+      const invoice = event.data.object;
+      
+      // Only handle subscription invoices
+      if (!invoice.subscription) {
+        console.log('Skipping non-subscription invoice');
+        return new Response('Non-subscription invoice ignored', { status: 200 });
+      }
+      
+      const subscriptionId = invoice.subscription;
+      const customerEmail = invoice.customer_email;
+      
+      console.log('Processing subscription renewal for:', { customerEmail, subscriptionId });
+      
+      // For renewals, we need to fetch customer metadata from our storage
+      // For now, we'll handle this in a future update
+      // TODO: Implement customer data storage and retrieval
+      
+      return new Response('Subscription renewal processed', { status: 200 });
+    }
+    
+    // Handle failed payments
+    if (event.type === 'invoice.payment_failed') {
+      const invoice = event.data.object;
+      
+      if (!invoice.subscription) {
+        return new Response('Non-subscription invoice ignored', { status: 200 });
+      }
+      
+      const customerEmail = invoice.customer_email;
+      console.log('Payment failed for:', { customerEmail, subscription: invoice.subscription });
+      
+      // TODO: Send payment failure email and handle grace period
+      
+      return new Response('Payment failure processed', { status: 200 });
     }
     
     // Other webhook events
@@ -110,13 +155,38 @@ async function handleStripeWebhook(request) {
   }
 }
 
-function generateLicense(customerName, hardwareId) {
+function generateSubscriptionLicense(customerName, hardwareId, subscriptionId) {
   // Generate signature using same method as POSPal app
   const data = `${hardwareId}${POSPAL_SECRET_KEY}`;
   const encoder = new TextEncoder();
   const dataBuffer = encoder.encode(data);
   
   // Generate SHA256 hash (sync version for CF Worker)
+  const signature = sha256(dataBuffer);
+  
+  // Calculate expiration date (1 month from now)
+  const now = new Date();
+  const validUntil = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  
+  return {
+    customer: customerName,
+    hardware_id: hardwareId,
+    subscription_id: subscriptionId,
+    signature: signature,
+    generated_at: now.toISOString(),
+    valid_until: validUntil.toISOString().split('T')[0], // YYYY-MM-DD format
+    license_type: "subscription",
+    version: "1.2.0"
+  };
+}
+
+// Legacy function for backward compatibility
+function generateLicense(customerName, hardwareId) {
+  // For one-time purchases, generate permanent license
+  const data = `${hardwareId}${POSPAL_SECRET_KEY}`;
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(data);
+  
   const signature = sha256(dataBuffer);
   
   return {
@@ -253,16 +323,18 @@ function generateEmailHTML(customerName, hardwareId) {
       </div>
       
       <div style="background: #f0fdf4; border: 1px solid #16a34a; border-radius: 8px; padding: 20px; margin: 20px 0;">
-        <h2 style="color: #15803d; margin: 0 0 10px 0;">✅ Payment Successful</h2>
-        <p style="margin: 0; color: #374151;">Dear ${customerName}, your POSPal license has been generated and is attached to this email.</p>
+        <h2 style="color: #15803d; margin: 0 0 10px 0;">✅ ${license.license_type === 'subscription' ? 'Subscription Active' : 'Payment Successful'}</h2>
+        <p style="margin: 0; color: #374151;">Dear ${customerName}, your POSPal ${license.license_type === 'subscription' ? 'subscription' : 'license'} has been activated and is attached to this email.</p>
+        ${license.valid_until ? `<p style="margin: 10px 0 0 0; color: #374151; font-weight: 500;">Your subscription is active until ${new Date(license.valid_until).toLocaleDateString()}. It will automatically renew monthly.</p>` : ''}
       </div>
       
       <h3 style="color: #374151;">📦 License Details</h3>
       <ul style="color: #6b7280;">
         <li><strong>Customer:</strong> ${customerName}</li>
         <li><strong>Hardware ID:</strong> <code style="background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">${hardwareId}</code></li>
-        <li><strong>License Type:</strong> Full Version</li>
+        <li><strong>License Type:</strong> ${license.license_type === 'subscription' ? 'Monthly Subscription' : 'Full Version'}</li>
         <li><strong>Generated:</strong> ${new Date().toLocaleDateString()}</li>
+        ${license.valid_until ? `<li><strong>Valid Until:</strong> ${new Date(license.valid_until).toLocaleDateString()}</li>` : ''}
       </ul>
       
       <h3 style="color: #374151;">🚀 How to Activate</h3>

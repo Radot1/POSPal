@@ -126,6 +126,7 @@ ORDER_LINE_COUNTER_FILE = os.path.join(DATA_DIR, 'order_line_counter.json')
 UNIVERSAL_COMMENT_FILE = os.path.join(DATA_DIR, 'universal_comment.json')
 SELECTED_TABLE_FILE = os.path.join(DATA_DIR, 'selected_table.json')
 DEVICE_SESSIONS_FILE = os.path.join(DATA_DIR, 'device_sessions.json')
+USAGE_ANALYTICS_FILE = os.path.join(DATA_DIR, 'usage_analytics.json')
 
 # --- Single-instance guard (Windows mutex with lock-file fallback) ---
 SINGLE_INSTANCE_MUTEX_NAME = r"Global\\POSPalServerSingleton"
@@ -2269,6 +2270,12 @@ def handle_order():
         message = f"Order #{authoritative_order_number} processed: Some copies PRINTED & LOGGED. Some FAILED. Please check printer."
         final_status_code = "warning_print_partial_failed" 
 
+    # Track order analytics (regardless of print/log status)
+    try:
+        track_order_analytics(order_data_internal)
+    except Exception as e:
+        app.logger.warning(f"Failed to track order analytics: {e}")
+    
     app.logger.info(f"Order #{authoritative_order_number} processing complete. Final Status: {final_status_code}, Printed: {print_status_summary}, Logged: {csv_log_succeeded}")
     return jsonify({
         "status": final_status_code,
@@ -2366,8 +2373,42 @@ def check_trial_status():
                 if (current_hw_id == license['hardware_id'] or 
                     mac_hex == license['hardware_id'] or 
                     current_hw_id.replace(':', '') == license['hardware_id']):
-                    app.logger.info(f"LICENSE SUCCESS: Validated for customer: {license.get('customer', 'unknown')}")
-                    return {"licensed": True, "active": True}
+                    
+                    # Check if license is time-limited (subscription)
+                    valid_until = license.get('valid_until')
+                    if valid_until:
+                        # Parse expiration date
+                        try:
+                            expiration_date = datetime.strptime(valid_until, '%Y-%m-%d')
+                            current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                            
+                            if current_date <= expiration_date:
+                                app.logger.info(f"SUBSCRIPTION LICENSE SUCCESS: Valid until {valid_until} for customer: {license.get('customer', 'unknown')}")
+                                return {
+                                    "licensed": True, 
+                                    "active": True,
+                                    "subscription": True,
+                                    "valid_until": valid_until,
+                                    "subscription_id": license.get('subscription_id'),
+                                    "days_left": (expiration_date - current_date).days
+                                }
+                            else:
+                                app.logger.error(f"SUBSCRIPTION LICENSE EXPIRED: Expired on {valid_until}")
+                                return {
+                                    "licensed": False,
+                                    "active": False, 
+                                    "expired": True,
+                                    "subscription_expired": True,
+                                    "expired_date": valid_until
+                                }
+                        except ValueError as e:
+                            app.logger.error(f"LICENSE FAILED: Invalid date format in valid_until: {e}")
+                            return {"licensed": False, "active": False, "expired": True}
+                    else:
+                        # Permanent license (backward compatibility)
+                        app.logger.info(f"PERMANENT LICENSE SUCCESS: Validated for customer: {license.get('customer', 'unknown')}")
+                        return {"licensed": True, "active": True, "subscription": False}
+                        
                 else:
                     app.logger.error(f"LICENSE FAILED: Hardware ID mismatch")
                     app.logger.error(f"  License expects: {license['hardware_id']}")
@@ -2426,10 +2467,153 @@ def check_trial_status():
     except Exception:
         return {"licensed": False, "active": False, "expired": True}
 
+# --- Usage Analytics Functions ---
+def track_order_analytics(order_data):
+    """Track order for usage analytics"""
+    try:
+        # Calculate order total
+        total = 0
+        for item in order_data.get('items', []):
+            quantity = int(item.get('quantity', 1))
+            price = float(item.get('price', 0))
+            total += quantity * price
+        
+        # Load current analytics
+        analytics = get_usage_analytics()
+        
+        # Update totals
+        analytics['total_orders'] += 1
+        analytics['total_revenue'] += total
+        
+        # Update dates
+        today = datetime.now().strftime('%Y-%m-%d')
+        if not analytics['first_order_date']:
+            analytics['first_order_date'] = today
+        analytics['last_order_date'] = today
+        
+        # Update daily stats
+        if today not in analytics['orders_by_day']:
+            analytics['orders_by_day'][today] = 0
+            analytics['revenue_by_day'][today] = 0
+        
+        analytics['orders_by_day'][today] += 1
+        analytics['revenue_by_day'][today] += total
+        
+        # Save analytics
+        with open(USAGE_ANALYTICS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(analytics, f, indent=2, ensure_ascii=False)
+            
+        app.logger.info(f"Analytics updated: Order #{order_data.get('number')} worth €{total:.2f}")
+        
+    except Exception as e:
+        app.logger.warning(f"Failed to update analytics: {e}")
+
+def get_usage_analytics():
+    """Get current usage analytics"""
+    try:
+        if os.path.exists(USAGE_ANALYTICS_FILE):
+            with open(USAGE_ANALYTICS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        app.logger.warning(f"Failed to load analytics: {e}")
+    
+    # Return default analytics if file doesn't exist or can't be read
+    return {
+        "total_orders": 0,
+        "total_revenue": 0,
+        "first_order_date": None,
+        "last_order_date": None,
+        "orders_by_day": {},
+        "revenue_by_day": {}
+    }
+
+def get_trial_usage_summary():
+    """Get formatted usage summary for trial lock screen"""
+    analytics = get_usage_analytics()
+    trial_info = check_trial_status()
+    
+    # Calculate days used
+    days_used = 30
+    if not trial_info.get('active', False) and not trial_info.get('licensed', False):
+        # Trial expired, calculate actual days used
+        try:
+            if os.path.exists(TRIAL_INFO_FILE):
+                with open(TRIAL_INFO_FILE, 'r') as f:
+                    trial_data = json.load(f)
+                    first_run_date = datetime.strptime(trial_data['first_run_date'], '%Y-%m-%d')
+                    days_used = (datetime.now() - first_run_date).days
+        except Exception:
+            pass
+    else:
+        # Active trial, calculate days since first run
+        days_used = 30 - trial_info.get('days_left', 0)
+    
+    return {
+        "total_orders": analytics['total_orders'],
+        "total_revenue": analytics['total_revenue'],
+        "days_used": max(days_used, 1),  # At least 1 day
+        "avg_orders_per_day": analytics['total_orders'] / max(days_used, 1),
+        "avg_revenue_per_day": analytics['total_revenue'] / max(days_used, 1)
+    }
+
 # Add API endpoint
 @app.route('/api/trial_status')
 def get_trial_status():
     return jsonify(check_trial_status())
+
+@app.route('/api/usage_analytics')
+def get_usage_analytics_endpoint():
+    """Get usage analytics for lock screen display"""
+    return jsonify(get_trial_usage_summary())
+
+@app.route('/api/create-portal-session', methods=['POST'])
+def create_customer_portal_session():
+    """Create Stripe customer portal session for subscription management"""
+    try:
+        # Check if user has an active subscription
+        trial_status = check_trial_status()
+        if not trial_status.get('licensed') or not trial_status.get('subscription'):
+            return jsonify({"error": "No active subscription found"}), 400
+        
+        # For now, return a placeholder URL
+        # In production, this would:
+        # 1. Get customer ID from license file
+        # 2. Create Stripe portal session
+        # 3. Return the portal URL
+        
+        return jsonify({
+            "url": "https://billing.stripe.com/session/portal_session_placeholder",
+            "message": "Customer portal integration pending - contact support for subscription changes"
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Failed to create portal session: {e}")
+        return jsonify({"error": "Failed to create portal session"}), 500
+
+@app.route('/api/create-subscription-session', methods=['POST'])
+def create_subscription_session():
+    """Create Stripe checkout session for subscription"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['customerName', 'customerEmail', 'hardwareId']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"Missing {field}"}), 400
+        
+        # For now, return a placeholder session
+        # In production, this would create a real Stripe subscription checkout
+        
+        return jsonify({
+            "id": "cs_subscription_placeholder",
+            "url": "https://checkout.stripe.com/subscription_placeholder",
+            "message": "Stripe integration pending - use test checkout for now"
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Failed to create subscription session: {e}")
+        return jsonify({"error": "Failed to create subscription session"}), 500
 
 @app.route('/api/system_status')
 def get_system_status():
