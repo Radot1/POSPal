@@ -254,13 +254,13 @@
 
     <!-- Settings Gear -->
     <div id="settings-gear-container" class="fixed bottom-4 right-4 z-[1001]">
-        <button onclick="openLoginModal()" class="settings-gear text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition" title="Settings">
+        <button onclick="handleSettingsGearClick()" class="settings-gear text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition" title="Settings">
             <i class="fas fa-cog text-2xl"></i>
         </button>
     </div>
 
     <!-- MODALS -->
-    <!-- Management modals are loaded dynamically from managementComponent.html -->
+    <!-- Management modals are embedded below -->
     
     <!-- Login Modal -->
     <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
@@ -411,12 +411,58 @@
                 <div id="licenseManagement" class="hidden">
                     <h3 class="text-xl font-semibold text-gray-800 mb-2" data-i18n="ui.license.infoTitle">License Information</h3>
                     <div class="bg-gray-100 p-4 rounded-lg space-y-4">
-                        <div><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.currentStatus">Current Status</h4><p id="license-status-display" class="text-base font-semibold text-gray-900 mt-1">Loading...</p></div>
-                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.yourHardwareId">Your Hardware ID</h4><p class="text-sm text-gray-600 mt-1" data-i18n="ui.license.hwidHelp">To purchase a full license, you must provide the following Hardware ID. This locks the license to this specific computer.</p><div class="mt-2 bg-white p-3 rounded-md flex items-center justify-between border border-gray-300"><code id="hardware-id-display" class="text-sm font-mono text-gray-800">Loading...</code><button id="copy-hwid-btn" class="copy-btn" onclick="copyHardwareId()"><i class="far fa-copy mr-1"></i> <span data-i18n="ui.license.copy">Copy</span></button></div></div>
-                        <div class="border-t border-gray-300 pt-4"><h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.howToActivate">How to Activate</h4><ol class="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-2"><li data-i18n="ui.license.steps.s1">Copy your unique Hardware ID from above.</li><li data-i18n="ui.license.steps.s2">Visit our website and purchase a license using your Hardware ID.</li><li data-i18n="ui.license.steps.s3">You will receive a `license.key` file via email.</li><li data-i18n="ui.license.steps.s4">Place the `license.key` file in the same folder as the `POSPal.exe` application.</li><li data-i18n="ui.license.steps.s5">Restart the POSPal application to activate the full version.</li></ol></div>
-                        <div class="pt-2 flex gap-2 flex-wrap">
-                            <button type="button" class="btn-primary px-4 py-2 rounded" onclick="window.open('https://pospal.gr/buy-license.html','_blank')"><i class="fas fa-shopping-cart mr-2"></i><span data-i18n="ui.license.buyLicense">Buy License</span></button>
-                            <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="window.open('https://github.com/Radot1/POSPal/blob/main/EULA.md','_blank')"><i class="fas fa-file-contract mr-2"></i><span data-i18n="ui.license.viewEula">View EULA</span></button>
+                        <div>
+                            <div class="flex items-center justify-between mb-4">
+                                <h4 class="text-lg font-medium text-gray-700">Current Status</h4>
+                                <span id="license-status-badge" class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
+                                    Loading...
+                                </span>
+                            </div>
+                            <p id="license-status-display" class="text-base text-gray-900 mt-1">Loading...</p>
+                        </div>
+
+                        <!-- Subscription Details (shown when active subscription) -->
+                        <div id="subscription-details" class="hidden border-t border-gray-300 pt-4">
+                            <h4 class="text-lg font-medium text-gray-700">Subscription Details</h4>
+                            <div class="grid grid-cols-2 gap-4 mb-4 mt-4">
+                                <div class="bg-gray-50 p-4 rounded-lg">
+                                    <div class="text-sm text-gray-600">Next Billing</div>
+                                    <div id="next-billing-date" class="text-lg font-semibold text-gray-800">--</div>
+                                </div>
+                                <div class="bg-gray-50 p-4 rounded-lg">
+                                    <div class="text-sm text-gray-600">Monthly Cost</div>
+                                    <div class="text-lg font-semibold text-gray-800">€20.00</div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex gap-2 flex-wrap">
+                                <button id="manage-subscription-btn" onclick="openCustomerPortal()" class="btn-primary px-4 py-2 rounded">
+                                    <i class="fas fa-cog mr-2"></i>
+                                    Manage Subscription
+                                </button>
+                                <button id="update-payment-btn" onclick="updatePaymentMethod()" class="btn-secondary px-4 py-2 rounded">
+                                    <i class="fas fa-credit-card mr-2"></i>
+                                    Update Payment
+                                </button>
+                            </div>
+                        </div>
+
+
+                        <!-- Trial/Expired Actions (shown for trial/expired users) -->
+                        <div id="trial-actions" class="hidden border-t border-gray-300 pt-4">
+                            <div class="flex gap-2 flex-wrap mb-4">
+                                <button type="button" class="btn-primary px-4 py-2 rounded" onclick="showEmbeddedPayment()">
+                                    <i class="fas fa-credit-card mr-2"></i>
+                                    Subscribe - €20/month
+                                </button>
+                                <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="showUnlockDialog()">
+                                    <i class="fas fa-key mr-2"></i>
+                                    Already paid? Enter unlock code
+                                </button>
+                            </div>
+                            <div class="text-center text-sm text-gray-600">
+                                <p>New customers: Subscribe for €20/month • Existing customers: Enter your unlock code</p>
+                            </div>
                         </div>
                         <div class="border-t border-gray-300 pt-4">
                             <h4 class="text-lg font-medium text-gray-700" data-i18n="ui.license.about">About POSPal</h4>
@@ -635,6 +681,84 @@
         <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col text-gray-800">
             <div class="p-4 border-b border-gray-300 flex justify-between items-center"><h2 class="text-xl font-semibold" data-i18n="ui.daySummary.title">Day Summary</h2><button onclick="closeDaySummaryModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button></div>
             <div id="daySummaryContent" class="p-6 space-y-4"><p class="text-center italic" data-i18n="ui.daySummary.loading">Loading summary...</p></div>
+        </div>
+    </div>
+
+    <!-- Subscription Modal -->
+    <div id="subscriptionModal" class="fixed inset-0 bg-black bg-opacity-90 z-[110] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <!-- Modal Header -->
+            <div class="p-6 text-center border-b border-gray-200">
+                <div class="text-4xl text-green-600 mb-3">
+                    <i class="fas fa-credit-card"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">POSPal Professional</h2>
+                <p class="text-gray-600">Subscribe to unlock all features</p>
+            </div>
+            
+            <!-- Modal Content -->
+            <div class="p-6">
+                <div class="text-center">
+                    <div class="text-3xl font-bold text-green-600 mb-2">€20</div>
+                    <div class="text-gray-600">per month</div>
+                    <div class="text-sm text-gray-500 mt-1">Professional restaurant management</div>
+                </div>
+                
+                <div class="space-y-2 text-sm">
+                    <div class="flex items-center"><i class="fas fa-check text-green-500 mr-2"></i>Unlimited tables & orders</div>
+                    <div class="flex items-center"><i class="fas fa-check text-green-500 mr-2"></i>Kitchen printing</div>
+                    <div class="flex items-center"><i class="fas fa-check text-green-500 mr-2"></i>Offline operation</div>
+                    <div class="flex items-center"><i class="fas fa-check text-green-500 mr-2"></i>Email support</div>
+                    <div class="flex items-center"><i class="fas fa-check text-green-500 mr-2"></i>Cancel anytime</div>
+                </div>
+
+                <form id="subscriptionForm">
+                    <div class="space-y-4">
+                        <div>
+                            <label for="sub-restaurant-name" class="block text-sm font-medium text-gray-700 mb-2">Restaurant Name</label>
+                            <input type="text" id="sub-restaurant-name" required 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-green-600 transition-colors"
+                                   placeholder="Your restaurant name">
+                        </div>
+                        <div>
+                            <label for="sub-customer-name" class="block text-sm font-medium text-gray-700 mb-2">Your Name</label>
+                            <input type="text" id="sub-customer-name" required 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-green-600 transition-colors"
+                                   placeholder="Your full name">
+                        </div>
+                        <div>
+                            <label for="sub-customer-email" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                            <input type="email" id="sub-customer-email" required 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-green-600 transition-colors"
+                                   placeholder="your@email.com">
+                        </div>
+                        <div>
+                            <label for="sub-customer-phone" class="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                            <input type="tel" id="sub-customer-phone" 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-green-600 transition-colors"
+                                   placeholder="+30 123 456 7890">
+                        </div>
+                    </div>
+                    
+                    <div id="subscription-error" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mt-4 text-sm"></div>
+                    <div id="subscription-loading" class="hidden text-center text-gray-600 mt-4 text-sm">
+                        Creating secure checkout session...
+                    </div>
+                    
+                    <div class="mt-6">
+                        <button type="submit" class="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors">
+                            🔒 Continue to Secure Payment
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-6 pt-4 border-t border-gray-200 text-center">
+                    <p class="text-sm text-gray-600 mb-3">Secure payment powered by Stripe</p>
+                    <div class="text-xs text-gray-500 space-y-1">
+                        <div>🔒 All major cards accepted • Cancel anytime</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

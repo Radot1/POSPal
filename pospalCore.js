@@ -9,6 +9,7 @@ let printerVerificationStatus = 'unknown'; // 'unknown', 'verified', 'failed'
 // --- Constants ---
 const SELECTED_TABLE_KEY = 'pospal_selected_table';
 const UNIVERSAL_COMMENT_KEY = 'pospal_universal_comment';
+const WORKER_URL = 'https://pospal-licensing-v2-development.bzoumboulis.workers.dev';
 
 // --- NEW: Centralized State Management ---
 // Generate unique device ID for this session
@@ -1580,6 +1581,29 @@ async function loadAppVersion() {
         console.error("Error fetching app version:", error);
         elements.appVersion.textContent = 'N/A';
     }
+}
+
+// Function to handle settings gear click - provides direct access to management modal
+function handleSettingsGearClick() {
+    console.log('Settings gear clicked - opening management modal directly');
+    
+    // Add debugging
+    console.log('Elements object:', elements);
+    console.log('Management modal element:', elements.managementModal);
+    
+    // Try to find the modal directly if not cached
+    const modalElement = document.getElementById('managementModal');
+    console.log('Direct getElementById result:', modalElement);
+    
+    if (!modalElement) {
+        console.error('Management modal element not found!');
+        alert('Error: Management modal not found. Please refresh the page.');
+        return;
+    }
+    
+    // For business use, provide direct access to management features
+    // This bypasses the login modal for better user experience
+    openManagementModal();
 }
 
 function openManagementModal() {
@@ -3552,8 +3576,96 @@ async function shutdownApplication() {
     }
 }
 
+// Show active Stripe subscription status
+function showActiveLicenseStatus() {
+    const statusDisplay = elements.licenseStatusDisplay;
+    const footerStatusDisplay = elements.footerTrialStatus;
+    const statusBadge = document.getElementById('license-status-badge');
+    const subscriptionDetails = document.getElementById('subscription-details');
+    const trialActions = document.getElementById('trial-actions');
+    
+    const customerName = localStorage.getItem('pospal_customer_name') || 'Customer';
+    const customerEmail = localStorage.getItem('pospal_customer_email') || '';
+    
+    // Set status displays
+    const licensedHTML = `Your POSPal Pro subscription is active and ready to use.`;
+    const badgeHTML = `Active Subscription`;
+    const badgeClass = 'bg-green-100 text-green-800';
+    
+    if (statusDisplay) statusDisplay.innerHTML = licensedHTML;
+    if (footerStatusDisplay) footerStatusDisplay.innerHTML = `Licensed to: ${customerName}`;
+    if (statusBadge) {
+        statusBadge.innerHTML = badgeHTML;
+        statusBadge.className = `px-2 py-1 text-xs font-semibold rounded-full ${badgeClass}`;
+    }
+    
+    // Hide trial actions and show subscription details
+    if (trialActions) trialActions.classList.add('hidden');
+    if (subscriptionDetails) {
+        subscriptionDetails.classList.remove('hidden');
+        
+        // Update next billing date if element exists
+        const nextBillingDate = document.getElementById('next-billing-date');
+        if (nextBillingDate) {
+            nextBillingDate.textContent = 'Next month'; // Could be enhanced with real date
+        }
+        
+        // Don't overwrite innerHTML - let the existing HTML with buttons remain
+    }
+}
+
 async function checkAndDisplayTrialStatus() {
     try {
+        // First check if user has cached Stripe subscription data
+        const unlockToken = localStorage.getItem('pospal_unlock_token');
+        const customerEmail = localStorage.getItem('pospal_customer_email');
+        const licenseStatus = localStorage.getItem('pospal_license_status');
+        
+        if (unlockToken && customerEmail && licenseStatus === 'active') {
+            console.log('Cached Stripe subscription found - validating with server');
+            
+            // Validate the cached subscription with the server
+            try {
+                const validationResponse = await fetch(`${WORKER_URL}/customer-portal`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: customerEmail,
+                        unlockToken: unlockToken
+                    })
+                });
+                
+                if (validationResponse.ok) {
+                    const data = await validationResponse.json();
+                    if (data.subscription && data.subscription.status === 'active') {
+                        console.log('Subscription validated - showing active license status');
+                        showActiveLicenseStatus();
+                        return; // Skip trial check
+                    } else {
+                        console.log('Subscription validation failed - clearing cached data');
+                        // Clear invalid cached data
+                        localStorage.removeItem('pospal_unlock_token');
+                        localStorage.removeItem('pospal_customer_email');
+                        localStorage.removeItem('pospal_customer_name');
+                        localStorage.removeItem('pospal_license_status');
+                    }
+                } else {
+                    console.log('Subscription validation request failed - clearing cached data');
+                    // Clear invalid cached data
+                    localStorage.removeItem('pospal_unlock_token');
+                    localStorage.removeItem('pospal_customer_email');
+                    localStorage.removeItem('pospal_customer_name');
+                    localStorage.removeItem('pospal_license_status');
+                }
+            } catch (validationError) {
+                console.log('Subscription validation error - will try again later:', validationError.message);
+                // Don't clear cache on network errors, just proceed to show trial status
+            }
+        }
+        
+        // No Stripe subscription, check Flask trial status
         const response = await fetch('/api/trial_status');
         if (!response.ok) throw new Error('Could not fetch trial status');
         const status = await response.json();
@@ -3565,7 +3677,6 @@ async function checkAndDisplayTrialStatus() {
         const statusBadge = document.getElementById('license-status-badge');
         const subscriptionDetails = document.getElementById('subscription-details');
         const trialActions = document.getElementById('trial-actions');
-        const activationInstructions = document.getElementById('activation-instructions');
         const nextBillingDate = document.getElementById('next-billing-date');
 
         if (status.licensed) {
@@ -3582,7 +3693,6 @@ async function checkAndDisplayTrialStatus() {
                 // Show subscription management UI
                 if (subscriptionDetails) subscriptionDetails.classList.remove('hidden');
                 if (trialActions) trialActions.classList.add('hidden');
-                if (activationInstructions) activationInstructions.classList.add('hidden');
                 
                 // Update next billing date
                 if (nextBillingDate) {
@@ -3591,23 +3701,6 @@ async function checkAndDisplayTrialStatus() {
                 
                 // Footer status
                 const footerHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>Subscription Active (${daysLeft} days)`;
-                if (footerStatusDisplay) {
-                    footerStatusDisplay.innerHTML = footerHTML;
-                    footerStatusDisplay.className = 'font-medium text-green-600';
-                }
-            } else {
-                // Permanent license
-                licensedHTML = `You have a permanent license. No subscription required.`;
-                badgeHTML = `Permanent License`;
-                badgeClass = 'bg-blue-100 text-blue-800';
-                
-                // Hide subscription management UI
-                if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
-                if (trialActions) trialActions.classList.add('hidden');
-                if (activationInstructions) activationInstructions.classList.add('hidden');
-                
-                // Footer status
-                const footerHTML = `<i class="fas fa-check-circle text-green-600 mr-2"></i>Fully Licensed`;
                 if (footerStatusDisplay) {
                     footerStatusDisplay.innerHTML = footerHTML;
                     footerStatusDisplay.className = 'font-medium text-green-600';
@@ -3636,7 +3729,6 @@ async function checkAndDisplayTrialStatus() {
             // Show trial actions, hide subscription management
             if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
             if (trialActions) trialActions.classList.remove('hidden');
-            if (activationInstructions) activationInstructions.classList.add('hidden');
             
             // Footer status
             const footerHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Subscription Expired`;
@@ -3649,7 +3741,7 @@ async function checkAndDisplayTrialStatus() {
             showUnlockRedirect('subscription');
             
         } else if (status.expired) {
-            const expiredHTML = `Your 30-day trial has ended. Subscribe or buy a permanent license to continue.`;
+            const expiredHTML = `Your 30-day trial has ended. Subscribe to continue using POSPal.`;
             const badgeHTML = `Trial Expired`;
             const badgeClass = 'bg-red-100 text-red-800';
             
@@ -3663,7 +3755,6 @@ async function checkAndDisplayTrialStatus() {
             // Show trial actions and activation instructions
             if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
             if (trialActions) trialActions.classList.remove('hidden');
-            if (activationInstructions) activationInstructions.classList.remove('hidden');
             
             // Footer status
             const footerHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Trial Expired`;
@@ -3691,7 +3782,6 @@ async function checkAndDisplayTrialStatus() {
             // Show trial actions and activation instructions
             if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
             if (trialActions) trialActions.classList.remove('hidden');
-            if (activationInstructions) activationInstructions.classList.remove('hidden');
             
             // Footer status
             const footerText = `Trial: ${days} ${dayText} remaining`;
@@ -3858,13 +3948,13 @@ function showUnlockRedirect(type = 'trial') {
     if (confirm(message + '\n\n✅ Already paid? Click OK to enter unlock code\n❌ Need to pay? Click Cancel to subscribe')) {
         showUnlockDialog();
     } else {
-        window.open('unlock-pospal.html', '_blank');
+        showEmbeddedPayment();
     }
 }
 
 function redirectToSubscription() {
-    // Redirect to new unlock/payment page
-    window.open('unlock-pospal.html', '_blank');
+    // Show embedded payment modal instead of external page
+    showEmbeddedPayment();
 }
 
 function hideLockScreen() {
@@ -3878,32 +3968,97 @@ function hideLockScreen() {
     document.body.style.overflow = 'auto';
 }
 
+// --- License Management Functions ---
+function clearLicenseCache() {
+    localStorage.removeItem('pospal_unlock_token');
+    localStorage.removeItem('pospal_customer_email');
+    localStorage.removeItem('pospal_customer_name');
+    localStorage.removeItem('pospal_license_status');
+    console.log('License cache cleared');
+    location.reload(); // Reload to refresh UI
+}
+
+// Debug function to test customer validation
+async function debugCustomerValidation(email) {
+    try {
+        console.log('Testing customer validation for:', email);
+        
+        const response = await fetch(`${WORKER_URL}/customer-portal`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: email,
+                unlockToken: 'test' // We'll get the actual token from response
+            })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Customer data:', data);
+            if (data.customer && data.customer.unlock_token) {
+                console.log('Found customer! Unlock token:', data.customer.unlock_token);
+                console.log('Subscription status:', data.subscription?.status);
+                
+                // Auto-unlock if subscription is active
+                if (data.subscription?.status === 'active') {
+                    unlockPOSPal(data.customer.unlock_token, email, data.customer.name);
+                }
+            } else {
+                console.log('No valid customer found');
+            }
+        } else {
+            const error = await response.text();
+            console.error('Validation failed:', error);
+        }
+    } catch (error) {
+        console.error('Debug validation error:', error);
+    }
+}
+
 // --- Subscription Management Functions ---
 async function openCustomerPortal() {
     try {
-        showToast('Opening customer portal...', 'info');
+        const customerEmail = localStorage.getItem('pospal_customer_email');
+        const unlockToken = localStorage.getItem('pospal_unlock_token');
         
-        const response = await fetch('/api/create-portal-session', {
+        if (!customerEmail || !unlockToken) {
+            showToast('No active subscription found. Please subscribe first.', 'warning');
+            return;
+        }
+        
+        showToast('Opening Stripe Customer Portal...', 'info');
+        
+        const response = await fetch(`${WORKER_URL}/create-portal-session`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({
+                email: customerEmail,
+                unlockToken: unlockToken
+            })
         });
         
         if (!response.ok) {
-            throw new Error('Failed to create portal session');
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create portal session');
         }
         
         const data = await response.json();
+        
         if (data.url) {
+            // Open Stripe Customer Portal in new tab
             window.open(data.url, '_blank');
+            showToast('Stripe Customer Portal opened successfully', 'success');
         } else {
             throw new Error('No portal URL received');
         }
         
     } catch (error) {
         console.error('Customer portal error:', error);
-        showToast('Failed to open customer portal. Please contact support.', 'error');
+        showToast('Failed to open customer portal: ' + error.message, 'error');
     }
 }
 
@@ -4027,7 +4182,7 @@ async function generateMachineFingerprint() {
 }
 
 async function validateUnlockToken(email, token, machineFingerprint) {
-    const response = await fetch('https://license.pospal.gr/validate', {
+    const response = await fetch(`${WORKER_URL}/validate`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -4043,32 +4198,6 @@ async function validateUnlockToken(email, token, machineFingerprint) {
     return result;
 }
 
-function generateLicenseFile(email, token, machineFingerprint, customerName) {
-    const licenseData = {
-        customer: customerName || email.split('@')[0],
-        email: email,
-        unlock_token: token,
-        machine_fingerprint: machineFingerprint,
-        license_type: 'subscription',
-        activated_at: new Date().toISOString(),
-        version: '2.0.0',
-        // Add signature for compatibility
-        signature: 'token_based_license'
-    };
-    
-    // Save to local file (this will need to be adapted for desktop app)
-    const blob = new Blob([JSON.stringify(licenseData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'license.key';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    return licenseData;
-}
 
 // Handle unlock form submission and page load events
 document.addEventListener('DOMContentLoaded', function() {
@@ -4102,11 +4231,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 const result = await validateUnlockToken(email, token, machineFingerprint);
                 
                 if (result.valid) {
-                    // Generate license file
-                    generateLicenseFile(email, token, machineFingerprint, result.customerName);
+                    // Store token locally for validation
+                    localStorage.setItem('pospal_unlock_token', token);
+                    localStorage.setItem('pospal_customer_email', email);
+                    localStorage.setItem('pospal_customer_name', result.customerName);
+                    localStorage.setItem('pospal_license_status', 'active');
                     
                     // Show success message
-                    alert('✅ License validated successfully!\n\nThe license.key file has been downloaded.\n\n📁 Place it next to POSPal.exe and restart the application.');
+                    alert('✅ License validated successfully!\n\nYour subscription is now active.');
                     
                     // Hide dialog
                     hideUnlockDialog();
@@ -4281,7 +4413,7 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
         
         const machineFingerprint = generateMachineFingerprint();
         
-        const response = await fetch('https://pospal-licensing-development.bzoumboulis.workers.dev/validate', {
+        const response = await fetch(`${WORKER_URL}/validate`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -4373,7 +4505,6 @@ function generateMachineFingerprint() {
 let currentSessionId = null;
 let heartbeatInterval = null;
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-const WORKER_URL = 'https://pospal-licensing-development.bzoumboulis.workers.dev';
 
 // Generate unique session ID
 function generateSessionId() {
@@ -5003,7 +5134,7 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const machineFingerprint = generateMachineFingerprint();
                 
-                const response = await fetch('https://pospal-licensing-development.bzoumboulis.workers.dev/validate', {
+                const response = await fetch(`${WORKER_URL}/validate`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -5046,25 +5177,65 @@ document.addEventListener('DOMContentLoaded', function() {
 // --- Embedded Payment Functions ---
 
 function showEmbeddedPayment() {
-    const paymentFrame = document.getElementById('paymentModalFrame');
-    if (paymentFrame) {
-        paymentFrame.style.display = 'block';
-        document.body.style.overflow = 'hidden';
-        
-        // Post message to the iframe to show the modal
-        setTimeout(() => {
-            paymentFrame.contentWindow.postMessage({ action: 'showModal' }, '*');
-        }, 100);
-    }
+    // Show the subscription modal
+    document.getElementById('subscriptionModal').style.display = 'flex';
 }
 
-function closeEmbeddedPayment() {
-    const paymentFrame = document.getElementById('paymentModalFrame');
-    if (paymentFrame) {
-        paymentFrame.style.display = 'none';
-        document.body.style.overflow = 'auto';
-    }
+function closeSubscriptionModal() {
+    document.getElementById('subscriptionModal').style.display = 'none';
 }
+
+// Handle subscription form submission
+document.addEventListener('DOMContentLoaded', function() {
+    const subscriptionForm = document.getElementById('subscriptionForm');
+    if (subscriptionForm) {
+        subscriptionForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const errorDiv = document.getElementById('subscription-error');
+            const loadingDiv = document.getElementById('subscription-loading');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            loadingDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+            
+            try {
+                const customerData = {
+                    restaurantName: document.getElementById('sub-restaurant-name').value,
+                    name: document.getElementById('sub-customer-name').value,
+                    email: document.getElementById('sub-customer-email').value,
+                    phone: document.getElementById('sub-customer-phone').value
+                };
+                
+                const response = await fetch(`${WORKER_URL}/create-checkout-session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(customerData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to create checkout session');
+                }
+                
+                const session = await response.json();
+                
+                // Redirect to Stripe Checkout
+                window.location.href = session.checkoutUrl;
+                
+            } catch (error) {
+                console.error('Subscription error:', error);
+                errorDiv.textContent = `Error: ${error.message}. Please try again.`;
+                errorDiv.style.display = 'block';
+                
+                // Reset button state
+                submitBtn.disabled = false;
+                loadingDiv.style.display = 'none';
+            }
+        });
+    }
+});
 
 // Function to unlock POSPal after successful payment
 function unlockPOSPal(unlockToken, customerEmail = null, customerName = null) {

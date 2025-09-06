@@ -23,7 +23,22 @@
       "Bash(wrangler auth:*)",
       "Bash(wrangler whoami:*)",
       "Bash(wrangler d1 list:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(grep:*)",
+      "Bash(wrangler secret delete:*)",
+      "Bash(wrangler secret put:*)",
+      "Bash(wrangler secret list:*)",
+      "Bash(wrangler:*)",
+      "Bash(ren:*)",
+      "Bash(move index.html github-website.html)",
+      "Bash(build.bat)",
+      "Bash(cmd /c build.bat)",
+      "Bash(cmd /c \"rmdir /s /q POSPal_v1.2.1\")",
+      "Bash(cmd /c:*)",
+      "Bash(rm:*)",
+      "Bash(git restore:*)",
+      "Bash(pip install:*)",
+      "Bash(pyinstaller:*)"
     ],
     "deny": [],
     "ask": []

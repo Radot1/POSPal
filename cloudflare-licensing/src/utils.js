@@ -73,19 +73,17 @@ export async function verifyStripeSignature(payload, signature, secret) {
 /**
  * Log audit event to database
  */
-export async function logAuditEvent(db, customerId, action, metadata = {}) {
+export async function logAuditEvent(db, customerId, eventType, eventData = {}) {
   try {
     const stmt = db.prepare(`
-      INSERT INTO audit_log (customer_id, action, old_machine_fingerprint, new_machine_fingerprint, metadata, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      INSERT INTO audit_log (customer_id, event_type, event_data, created_at)
+      VALUES (?, ?, ?, datetime('now'))
     `);
     
     await stmt.bind(
       customerId,
-      action,
-      metadata.oldMachine || null,
-      metadata.newMachine || null,
-      JSON.stringify(metadata)
+      eventType,
+      JSON.stringify(eventData)
     ).run();
     
   } catch (error) {
@@ -126,7 +124,7 @@ export async function updateEmailStatus(db, emailLogId, status, errorMessage = n
   try {
     const stmt = db.prepare(`
       UPDATE email_log 
-      SET delivery_status = ?, error_message = ?, delivered_at = datetime('now')
+      SET status = ?, error_message = ?, delivered_at = datetime('now')
       WHERE id = ?
     `);
     

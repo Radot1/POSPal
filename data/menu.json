@@ -10,36 +10,48 @@
     {
       "id": 111,
       "name": "WAKAME CRAB SALAD",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 58,
       "name": "NOODLE SALAD",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "10.DESSERTS": [
     {
       "id": 92,
       "name": "SWEET BAO BUN",
-      "price": 3
+      "price": 3,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 93,
       "name": "SWEET SANDO",
-      "price": 6
+      "price": 6,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 94,
       "name": "MOCHI ICE-CREAM",
-      "price": 2.4
+      "price": 2.4,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "2.ASIAN BITES": [
     {
       "id": 59,
       "name": "POP CORN SHRIMPS",
-      "price": 6.7
+      "price": 6.7,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 60,
@@ -54,27 +66,46 @@
           "price": 0
         }
       ],
-      "price": 4.2
+      "price": 4.2,
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "NORMAL",
+          "price": 0
+        },
+        {
+          "name": "SPICY",
+          "price": 0
+        }
+      ]
     },
     {
       "id": 61,
       "name": "PRAWN CRACKERS",
-      "price": 3.5
+      "price": 3.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 62,
       "name": "SPRING ROLLS",
-      "price": 6
+      "price": 6,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 63,
       "name": "WON-TON CRAB CHEESE",
-      "price": 6.5
+      "price": 6.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 64,
       "name": "GYOZA CHICKEN",
-      "price": 7.2
+      "price": 7.2,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "3.NOODLE BAR": [
@@ -107,7 +138,34 @@
           "price": 2
         }
       ],
-      "price": 3.2
+      "price": 3.2,
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "BASE 1 (HOISIN)",
+          "price": 3.5
+        },
+        {
+          "name": "BASE 2 ( SWEET CHILLY )",
+          "price": 3.5
+        },
+        {
+          "name": "BEEF",
+          "price": 3
+        },
+        {
+          "name": "SHRIMP",
+          "price": 2.5
+        },
+        {
+          "name": "CHICKEN",
+          "price": 2
+        },
+        {
+          "name": "TOFU",
+          "price": 2
+        }
+      ]
     },
     {
       "id": 66,
@@ -138,7 +196,34 @@
           "price": 2
         }
       ],
-      "price": 3.2
+      "price": 3.2,
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "BASE 1 (HOISIN SAUCE)",
+          "price": 3.5
+        },
+        {
+          "name": "BASE 2 (SWEET CHILLY)",
+          "price": 3.5
+        },
+        {
+          "name": "SHRIMP",
+          "price": 2.5
+        },
+        {
+          "name": "BEEF",
+          "price": 3
+        },
+        {
+          "name": "CHICKEN",
+          "price": 2
+        },
+        {
+          "name": "TOFU",
+          "price": 2
+        }
+      ]
     }
   ],
   "4.BAO BUNS": [
@@ -155,7 +240,18 @@
           "price": 3.7
         }
       ],
-      "price": 7.5
+      "price": 7.5,
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "2pcs",
+          "price": 0
+        },
+        {
+          "name": "3pcs",
+          "price": 3.7
+        }
+      ]
     },
     {
       "id": 68,
@@ -170,7 +266,18 @@
           "price": 3.7
         }
       ],
-      "price": 7.5
+      "price": 7.5,
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "2pcs",
+          "price": 0
+        },
+        {
+          "name": "3pcs",
+          "price": 3.7
+        }
+      ]
     },
     {
       "id": 69,
@@ -185,306 +292,431 @@
           "price": 3.9
         }
       ],
-      "price": 7.8
+      "price": 7.8,
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "2pcs",
+          "price": 0
+        },
+        {
+          "name": "3pcs",
+          "price": 3.9
+        }
+      ]
     },
     {
       "id": 70,
       "name": "BAO BUN VEGGIE",
-      "price": 6.5
+      "price": 6.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 114,
       "name": "BAO BUN PULLED BEEF",
-      "price": 8.8
+      "price": 8.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "5.SANDO": [
     {
       "id": 71,
       "name": "SANDO KATSU CHICKEN",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 72,
       "name": "SANDO TONKATSU PORK",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 73,
       "name": "SANDO CRISPY SHRIMP",
-      "price": 8.3
+      "price": 8.3,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 74,
       "name": "SANDO VEGGIE",
-      "price": 7
+      "price": 7,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 124,
       "name": "SANDO PULLLED BEEF",
-      "price": 9
+      "price": 9,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "6.MAKI ROLLS": [
     {
       "id": 75,
       "name": "SALMON MAKI",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 76,
       "name": "SEABASS MAKI",
-      "price": 7.5
+      "price": 7.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 77,
       "name": "TSIPURA MAKI",
-      "price": 7.5
+      "price": 7.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 78,
       "name": "TUNA MAKI",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 79,
       "name": "VEGAN MAKI",
-      "price": 6
+      "price": 6,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 120,
       "name": "SPICY OCTOPUS MAKI",
-      "price": 10
+      "price": 10,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "7.INSIDE OUT ROLLS": [
     {
       "id": 80,
       "name": "URAMAKI CHICKEN KATSU",
-      "price": 8.5
+      "price": 8.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 81,
       "name": "CALIFORNIA ROLL",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 82,
       "name": "SMOKED SALMON URAMAKI",
-      "price": 8
+      "price": 8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 83,
       "name": "TOFU URAMAKI",
-      "price": 7.8
+      "price": 7.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 84,
       "name": "PHILADELPHIA ROLL",
-      "price": 8.8
+      "price": 8.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 121,
       "name": "SARDINE URAMAKI",
-      "price": 9
+      "price": 9,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "8.NIGIRI": [
     {
       "id": 85,
       "name": "NIGIRI SALMON",
-      "price": 8.5
+      "price": 8.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 86,
       "name": "NIGIRI TUNA",
-      "price": 7.8
+      "price": 7.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 87,
       "name": "NIGIRI SHRIMP",
-      "price": 7.8
+      "price": 7.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 88,
       "name": "NIGIRI TOFU",
-      "price": 7.5
+      "price": 7.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "9.ONIGIRI": [
     {
       "id": 90,
       "name": "ONIGIRI SMOKED TUNA",
-      "price": 3.6
+      "price": 3.6,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 89,
       "name": "ONIGIRI SMOKED SALMON",
-      "price": 4
+      "price": 4,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 91,
       "name": "ONIGIRI CRAB SURIMI",
-      "price": 3.5
+      "price": 3.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "Handmade Dips": [
     {
       "id": 46,
       "name": "Sweet Chilly Dip",
-      "price": 0.6
+      "price": 0.6,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 47,
       "name": "Teriyaki Sauce Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 48,
       "name": "Hoisin Sauce Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 49,
       "name": "Tobiko Mayo Dip",
-      "price": 1.2
+      "price": 1.2,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 50,
       "name": "Pepper Mayo Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 51,
       "name": "Sweet Chilly Mayo Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 52,
       "name": "Soya Mayo Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 53,
       "name": "Avocado Mayo Dip",
-      "price": 1.2
+      "price": 1.2,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 54,
       "name": "Vegan Mayo Dip",
-      "price": 1
+      "price": 1,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 55,
       "name": "Orange Sauce Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 56,
       "name": "Hickory Sauce Dip",
-      "price": 0.8
+      "price": 0.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ],
   "SOFT DRINKS-DRINKS": [
     {
       "id": 99,
       "name": "Fuze Tea Lemon",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 100,
       "name": "Lipton Green Tea",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 101,
       "name": "Coca Cola",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 102,
       "name": "Sprite",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 103,
       "name": "Soda Tuborg",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 104,
       "name": "Fanta Orange",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 105,
       "name": "Alfa Beer",
-      "price": 2.5
+      "price": 2.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 106,
       "name": "Tsingtao Beer",
-      "price": 3.5
+      "price": 3.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 107,
       "name": "Asahi Beer",
-      "price": 4.2
+      "price": 4.2,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 108,
       "name": "Julia Rose (187ml)",
-      "price": 3.2
+      "price": 3.2,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 109,
       "name": "Oreinos Hlios (187ml)",
-      "price": 3.4
+      "price": 3.4,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 110,
       "name": "Water (500ml)",
-      "price": 0.5
+      "price": 0.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 112,
       "name": "Soda Schweppes",
-      "price": 1.8
+      "price": 1.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 113,
       "name": "SAKE",
-      "price": 20
+      "price": 20,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 116,
       "name": "BOBA CAT",
-      "price": 2.6
+      "price": 2.6,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 115,
       "name": "PSYXI TOY PARTY",
-      "price": 4.3
+      "price": 4.3,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 118,
       "name": "COCA COLA (500ml)",
-      "price": 2.5
+      "price": 2.5,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 119,
       "name": "JASMINE BEER",
-      "price": 4.3
+      "price": 4.3,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 122,
       "name": "NW WHITE",
-      "price": 3.8
+      "price": 3.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     },
     {
       "id": 123,
       "name": "NW ROSE",
-      "price": 3.8
+      "price": 3.8,
+      "hasGeneralOptions": false,
+      "generalOptions": []
     }
   ]
 }

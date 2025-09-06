@@ -1,229 +1,176 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="el">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Successful - POSPal</title>
+    <title>Καλώς ήρθες στο POSPal! - Επιτυχής Εγγραφή</title>
     <link rel="icon" href="app_icon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        body { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #059669 0%, #047857 100%);
-            margin: 0;
-            padding: 20px;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        body {
+            font-family: 'Inter', sans-serif;
         }
-        
-        .container {
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            max-width: 600px;
-            width: 100%;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
+        .gradient-bg {
+            background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
         }
-        
-        .success-icon {
-            font-size: 64px;
-            color: #059669;
-            margin-bottom: 20px;
+        .animate-bounce-slow {
+            animation: bounce 2s infinite;
         }
-        
-        h1 {
-            color: #059669;
-            font-size: 32px;
-            font-weight: bold;
-            margin: 0 0 10px 0;
+        .fade-in {
+            animation: fadeIn 0.8s ease-out;
         }
-        
-        .subtitle {
-            color: #6b7280;
-            font-size: 18px;
-            margin-bottom: 30px;
-        }
-        
-        .steps {
-            background: #f0fdf4;
-            border: 2px solid #059669;
-            border-radius: 12px;
-            padding: 30px;
-            margin: 30px 0;
-            text-align: left;
-        }
-        
-        .steps h3 {
-            color: #059669;
-            font-size: 20px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        
-        .steps ol {
-            font-size: 16px;
-            line-height: 1.6;
-            color: #374151;
-            padding-left: 20px;
-        }
-        
-        .steps li {
-            margin-bottom: 10px;
-        }
-        
-        .steps strong {
-            color: #059669;
-        }
-        
-        .email-info {
-            background: #eff6ff;
-            border: 1px solid #3b82f6;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-        
-        .email-info h4 {
-            color: #1d4ed8;
-            margin: 0 0 10px 0;
-        }
-        
-        .email-info p {
-            color: #1e40af;
-            margin: 0;
-        }
-        
-        .email-display {
-            font-family: monospace;
-            background: #1f2937;
-            color: #10b981;
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: bold;
-            margin: 20px 0;
-            word-break: break-all;
-        }
-        
-        .support {
-            background: #fef3c7;
-            border: 1px solid #f59e0b;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-        
-        .support h4 {
-            color: #92400e;
-            margin: 0 0 10px 0;
-        }
-        
-        .support p {
-            color: #92400e;
-            margin: 0;
-        }
-        
-        .cta-button {
-            background: linear-gradient(135deg, #059669, #047857);
-            color: white;
-            border: none;
-            padding: 16px 32px;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: bold;
-            text-decoration: none;
-            display: inline-block;
-            margin: 20px 10px;
-            transition: transform 0.2s;
-        }
-        
-        .cta-button:hover {
-            transform: translateY(-2px);
-        }
-        
-        .secondary-button {
-            background: #6b7280;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 16px;
-            text-decoration: none;
-            display: inline-block;
-            margin: 10px;
-        }
-        
-        .loading {
-            color: #6b7280;
-            font-style: italic;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="success-icon">✅</div>
-        <h1>Payment Successful!</h1>
-        <div class="subtitle">Your POSPal subscription is now active</div>
-        
-        <div class="email-info">
-            <h4>📧 Check Your Email</h4>
-            <p>We've sent your unlock code to:</p>
-            <div class="email-display" id="customer-email">Loading...</div>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <img src="app_icon.ico" alt="POSPal Logo" class="w-8 h-8 rounded-lg">
+                    <h1 class="text-2xl font-bold text-gray-900 tracking-wider">POS<span class="text-green-600">Pal</span></h1>
+                </div>
+                <div class="text-sm text-gray-500">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    Συνδρομή Ενεργή
+                </div>
+            </div>
         </div>
-        
-        <div class="steps">
-            <h3>🚀 Next Steps</h3>
-            <ol>
-                <li><strong>Check your email</strong> for the unlock code (it should arrive within 2-3 minutes)</li>
-                <li><strong>Open POSPal</strong> on your computer</li>
-                <li>When prompted, click <strong>"Already paid? Enter unlock code"</strong></li>
-                <li><strong>Enter your email and unlock code</strong> from the email</li>
-                <li><strong>POSPal will unlock</strong> and you're ready to go!</li>
-            </ol>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <!-- Success Card -->
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden fade-in">
+            <!-- Success Header -->
+            <div class="gradient-bg text-white p-8 text-center">
+                <div class="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce-slow">
+                    <i class="fas fa-check text-white text-2xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold mb-2">Επιτυχής Εγγραφή!</h1>
+                <p class="text-gray-200">Καλώς ήρθες στην οικογένεια POSPal</p>
+            </div>
+
+            <!-- Content -->
+            <div class="p-8 space-y-6">
+                <!-- Subscription Info -->
+                <div class="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
+                    <div class="text-green-800 font-semibold text-lg mb-2">
+                        <i class="fas fa-crown text-green-600 mr-2"></i>
+                        POSPal Professional
+                    </div>
+                    <div class="text-3xl font-bold text-green-700 mb-1">€20<span class="text-lg text-green-600">/μήνα</span></div>
+                    <div class="text-sm text-green-600">Ενεργή από σήμερα</div>
+                </div>
+
+                <!-- Next Steps -->
+                <div class="space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-800 text-center">Τι συμβαίνει τώρα;</h3>
+                    
+                    <div class="space-y-3">
+                        <div class="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <span class="text-xs font-bold text-blue-600">1</span>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900">Έλεγξε το email σου</p>
+                                <p class="text-sm text-gray-600">Θα λάβεις επιβεβαίωση με όλες τις λεπτομέρειες</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <span class="text-xs font-bold text-blue-600">2</span>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900">Το POSPal είναι έτοιμο</p>
+                                <p class="text-sm text-gray-600">Η συνδρομή σου ενεργοποιήθηκε αυτόματα</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <span class="text-xs font-bold text-blue-600">3</span>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900">Ξεκίνα να χρησιμοποιείς όλες τις δυνατότητες</p>
+                                <p class="text-sm text-gray-600">Απεριόριστες παραγγελίες, εκτυπώσεις και περισσότερα</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <div class="text-center pt-4">
+                    <button onclick="returnToPOSPal()" class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 hover:transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Επιστροφή στο POSPal
+                    </button>
+                </div>
+
+                <!-- Support -->
+                <div class="text-center pt-4 border-t border-gray-100">
+                    <p class="text-sm text-gray-600 mb-3">Χρειάζεσαι βοήθεια;</p>
+                    <a href="mailto:support@pospal.gr" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                        <i class="fas fa-envelope mr-1"></i>
+                        Επικοινώνησε μαζί μας
+                    </a>
+                </div>
+            </div>
         </div>
-        
-        <div class="support">
-            <h4>⚠️ Don't see the email?</h4>
-            <p>Check your spam/junk folder. If you still don't see it after 5 minutes, contact support and we'll resend it immediately.</p>
-        </div>
-        
-        <div style="margin-top: 30px;">
-            <a href="mailto:support@pospal.gr" class="cta-button">
-                📧 Contact Support
-            </a>
-            <a href="unlock-pospal.html" class="secondary-button">
-                🔓 Enter Unlock Code Now
-            </a>
-        </div>
-        
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-            <p style="color: #9ca3af; font-size: 14px; margin: 0;">
-                Thank you for choosing POSPal!<br>
-                <a href="https://pospal.gr" style="color: #059669;">pospal.gr</a> • Professional Point of Sale System
+
+        <!-- Footer -->
+        <div class="text-center mt-8">
+            <p class="text-sm text-gray-500">
+                Σε ευχαριστούμε που επέλεξες το POSPal!
             </p>
         </div>
-    </div>
+    </main>
     
     <script>
-        // Extract email from URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const email = urlParams.get('email');
-        
-        if (email) {
-            document.getElementById('customer-email').textContent = email;
-        } else {
-            document.getElementById('customer-email').textContent = 'your@email.com';
+        // Function to return to POSPal with correct port
+        function returnToPOSPal() {
+            // Try different common ports used by POSPal
+            const commonPorts = [5000, 8080, 3000, 8000];
+            
+            // Try to detect the current POSPal port from referrer or localStorage
+            let targetPort = 5000; // Default to 5000 as specified
+            
+            // Check if we have the port stored from when they came to this page
+            const storedPort = localStorage.getItem('pospal_port');
+            if (storedPort) {
+                targetPort = storedPort;
+            } else {
+                // Try to detect from referrer URL
+                try {
+                    const referrer = document.referrer;
+                    if (referrer) {
+                        const url = new URL(referrer);
+                        const port = url.port || (url.protocol === 'https:' ? 443 : 80);
+                        if (commonPorts.includes(parseInt(port))) {
+                            targetPort = port;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not parse referrer URL');
+                }
+            }
+            
+            // Redirect to POSPal
+            window.location.href = `http://localhost:${targetPort}`;
         }
         
-        // Optional: Auto-redirect to unlock page after delay
-        setTimeout(() => {
-            if (confirm('Ready to enter your unlock code? (Check your email first!)')) {
-                window.location.href = 'unlock-pospal.html';
-            }
-        }, 30000); // 30 second delay
+        
+        // Store the success in localStorage so POSPal knows payment was successful
+        localStorage.setItem('pospal_payment_success', 'true');
+        localStorage.setItem('pospal_payment_timestamp', Date.now().toString());
     </script>
 </body>
 </html>

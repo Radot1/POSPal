@@ -4,11 +4,11 @@ REM Build script for POSPal
 REM Description: This script creates a new 'build_output' directory and performs
 REM              the entire build process within it, keeping the root
 REM              directory clean.
-REM Version: 1.2.0 (Containerized Build Process)
+REM Version: 1.2.1 (Containerized Build Process)
 REM ============================================================================
 setlocal
 
-set VERSION=1.2.0
+set VERSION=1.2.1
 set BUILD_DIR=build_output
 set RELEASE_DIR=POSPal_v%VERSION%
 set RELEASE_DIR_ONEDIR=POSPal_onedir_v%VERSION%
@@ -121,9 +121,12 @@ pyinstaller ^
     --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
     --add-data "..\POSPalDesktop.html;." ^
-    --add-data "..\index.html;." ^
     --add-data "..\POSPal_Demo.html;." ^
     --add-data "..\demo_generator.html;." ^
+    --add-data "..\customer-portal.html;." ^
+    --add-data "..\success.html;." ^
+    --add-data "..\payment-failed.html;." ^
+    --add-data "..\account.html;." ^
     --add-data "..\managementComponent.html;." ^
     --add-data "..\managementComponent.js;." ^
     --add-data "..\i18n.js;." ^
@@ -153,9 +156,12 @@ if defined BUILD_ONEDIR (
         --add-data "..\UISelect.html;." ^
         --add-data "..\POSPal.html;." ^
         --add-data "..\POSPalDesktop.html;." ^
-        --add-data "..\index.html;." ^
         --add-data "..\POSPal_Demo.html;." ^
         --add-data "..\demo_generator.html;." ^
+            --add-data "..\customer-portal.html;." ^
+        --add-data "..\success.html;." ^
+        --add-data "..\payment-failed.html;." ^
+        --add-data "..\account.html;." ^
         --add-data "..\managementComponent.html;." ^
         --add-data "..\managementComponent.js;." ^
         --add-data "..\i18n.js;." ^

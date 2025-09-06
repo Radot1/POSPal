@@ -79,13 +79,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch {}
         });
     } catch {}
-    // Poll fallback every 10s in case SSE is blocked by network/proxy
+    // Poll fallback every 30s in case SSE is blocked by network/proxy
     try {
         let last = lang;
+        let isPolling = false; // Prevent concurrent polling
         setInterval(async () => {
+            if (isPolling) return; // Skip if already polling
+            isPolling = true;
             try {
                 const r = await fetch('/api/settings/general', { cache: 'no-store' });
-                if (!r.ok) return;
+                if (!r.ok) {
+                    console.warn('Settings fetch failed:', r.status);
+                    return;
+                }
                 const d = await r.json();
                 const newLang = (d && (d.language === 'en' || d.language === 'el')) ? d.language : 'en';
                 if (newLang !== last) {
@@ -93,8 +99,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     await loadLanguage(newLang);
                     showI18nToast(newLang);
                 }
-            } catch {}
-        }, 10000);
+            } catch (e) {
+                console.warn('Settings polling error:', e.message);
+            } finally {
+                isPolling = false;
+            }
+        }, 30000); // Increased to 30 seconds to reduce API calls
     } catch {}
 });
 

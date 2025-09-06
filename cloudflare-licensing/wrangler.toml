@@ -1,4 +1,4 @@
-name = "pospal-licensing"
+name = "pospal-licensing-v2"
 main = "src/index.js"
 compatibility_date = "2024-08-31"
 
@@ -28,10 +28,9 @@ database_id = "62f81f71-2c41-4c60-bd74-649aa619f2fc"
 
 [env.development.vars]
 ENVIRONMENT = "development"
-STRIPE_SECRET_KEY = "sk_test_YOUR_TEST_KEY_HERE"
 STRIPE_WEBHOOK_SECRET = "whsec_YOUR_WEBHOOK_SECRET_HERE"
-STRIPE_PRICE_ID = "price_YOUR_PRICE_ID_HERE"
-RESEND_API_KEY = "re_YOUR_RESEND_API_KEY_HERE"
+STRIPE_PRICE_ID = "price_1S26QQ1HM7SuDGcMAqFI7r9C"
+RESEND_API_KEY = "re_8E5HhfwM_5Za4spJwwoEoeCAf1uYnwQ2M"
 
 # Workers routes (configure these later)
 # [[env.production.routes]]

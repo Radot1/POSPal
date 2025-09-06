@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POSPal v2.0 - Test Payment</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 500px; 
+            margin: 50px auto; 
+            padding: 20px;
+            background: linear-gradient(135deg, #059669, #047857);
+            color: white;
+        }
+        .container {
+            background: white;
+            color: #333;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 { color: #059669; text-align: center; }
+        .form-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 6px; 
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input:focus { border-color: #059669; outline: none; }
+        .btn { 
+            background: #059669; 
+            color: white; 
+            border: none; 
+            padding: 15px 30px; 
+            border-radius: 6px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            width: 100%;
+            margin-top: 20px;
+        }
+        .btn:hover { background: #047857; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        .error { 
+            background: #fee; 
+            color: #c33; 
+            padding: 10px; 
+            border-radius: 6px; 
+            margin: 10px 0;
+            display: none;
+        }
+        .success { 
+            background: #efe; 
+            color: #373; 
+            padding: 10px; 
+            border-radius: 6px; 
+            margin: 10px 0;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #059669;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 POSPal v2.0 Test</h1>
+        <p style="text-align: center; color: #666;">New Secure Payment System</p>
+        
+        <form id="payment-form">
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" required placeholder="test@restaurant.com">
+            </div>
+            
+            <div class="form-group">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" required placeholder="John Smith">
+            </div>
+            
+            <div class="form-group">
+                <label for="restaurant">Restaurant Name (Optional)</label>
+                <input type="text" id="restaurant" placeholder="Mario's Pizza">
+            </div>
+            
+            <div class="error" id="error-message"></div>
+            
+            <button type="submit" class="btn" id="checkout-btn">
+                Subscribe Now - €20/month
+            </button>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Creating secure checkout...</p>
+            </div>
+        </form>
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; text-align: center;">
+            <p style="color: #999; font-size: 14px;">
+                🔒 Test Mode - No real charges<br>
+                Secure payment powered by Stripe
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize Stripe with new secure keys
+        const stripe = Stripe('pk_test_51S2bGO0ee6hGru1PcQXsgn6AvCPqDGqVwZ9AuON37wN3EQpsLNCSCMlpLC4U3xVAda7zgL2D4ifbT1TSXn0PJtbL00b1W7wxZT');
+        
+        const form = document.getElementById('payment-form');
+        const checkoutBtn = document.getElementById('checkout-btn');
+        const errorMessage = document.getElementById('error-message');
+        const loading = document.getElementById('loading');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value.trim();
+            const name = document.getElementById('name').value.trim();
+            const restaurant = document.getElementById('restaurant').value.trim();
+            
+            if (!email || !name) {
+                showError('Please fill in email and name');
+                return;
+            }
+            
+            setLoading(true);
+            hideError();
+            
+            try {
+                // Call our new Cloudflare Worker
+                const response = await fetch('/subscription/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        name: name,
+                        restaurantName: restaurant
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Redirect to Stripe Checkout
+                    window.location.href = data.checkoutUrl;
+                } else {
+                    throw new Error(data.error || 'Failed to create checkout session');
+                }
+                
+            } catch (error) {
+                console.error('Payment error:', error);
+                showError(error.message || 'Payment setup failed. Please try again.');
+                setLoading(false);
+            }
+        });
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+        
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+        
+        function setLoading(isLoading) {
+            if (isLoading) {
+                checkoutBtn.style.display = 'none';
+                loading.style.display = 'block';
+            } else {
+                checkoutBtn.style.display = 'block';
+                loading.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>

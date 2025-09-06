@@ -1,0 +1,16 @@
+name = "pospal-licensing-v2"
+main = "src/index.js"
+compatibility_date = "2024-08-31"
+
+# Default database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "pospal-licensing-dev"
+database_id = "98f28c7e-6cf7-43a3-afa2-47994ffb7411"
+
+# Secrets (set via wrangler secret put)
+# STRIPE_SECRET_KEY - New rotated secret key
+# STRIPE_WEBHOOK_SECRET - New webhook secret 
+# RESEND_API_KEY - Email service API key
+# JWT_SECRET - For token signing
+# APP_SECRET_KEY - For license signatures (matches POSPal)

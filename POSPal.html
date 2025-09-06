@@ -41,6 +41,7 @@
         .date-range-btn.active { background-color: #111827; color: white; font-weight: 600; }
         .copy-btn { background-color: #d1d5db; color: #1f2937; border: 1px solid #9ca3af; padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; transition: background-color 0.2s; }
         .copy-btn:hover { background-color: #9ca3af; }
+        .gradient-bg { background: linear-gradient(135deg, #111827 0%, #1f2937 100%); }
     </style>
 </head>
 <body class="bg-white text-gray-800">
@@ -144,13 +145,13 @@
         </div>
     </aside>
 
-    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40"> <button onclick="openLoginModal()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
+    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40"> <button onclick="handleSettingsGearClick()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
             <i class="fas fa-cog text-xl"></i>
         </button>
     </div>
 
     <!-- MODALS -->
-    <!-- Management modals are loaded dynamically from managementComponent.html -->
+    <!-- Management modals are embedded below -->
     
     <!-- Login Modal -->
     <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
@@ -325,11 +326,11 @@
                             <div class="flex gap-2 flex-wrap">
                                 <button id="manage-subscription-btn" onclick="openCustomerPortal()" class="btn-primary px-4 py-2 rounded">
                                     <i class="fas fa-cog mr-2"></i>
-                                    <span data-i18n="ui.license.manageSubscription">Manage Subscription</span>
+                                    Manage Subscription
                                 </button>
                                 <button id="update-payment-btn" onclick="updatePaymentMethod()" class="btn-secondary px-4 py-2 rounded">
                                     <i class="fas fa-credit-card mr-2"></i>
-                                    <span data-i18n="ui.license.updatePayment">Update Payment</span>
+                                    Update Payment
                                 </button>
                             </div>
                         </div>
@@ -339,15 +340,15 @@
                             <div class="flex gap-2 flex-wrap mb-4">
                                 <button type="button" class="btn-primary px-4 py-2 rounded" onclick="showEmbeddedPayment()">
                                     <i class="fas fa-credit-card mr-2"></i>
-                                    <span data-i18n="ui.license.subscribe">Subscribe - €25/month</span>
+                                    Subscribe - €20/month
                                 </button>
                                 <button type="button" class="btn-secondary px-4 py-2 rounded" onclick="showUnlockDialog()">
                                     <i class="fas fa-key mr-2"></i>
-                                    <span data-i18n="ui.license.enterUnlockCode">Already paid? Enter unlock code</span>
+                                    Already paid? Enter unlock code
                                 </button>
                             </div>
                             <div class="text-center text-sm text-gray-600">
-                                <p>New customers: Subscribe for €25/month • Existing customers: Enter your unlock code</p>
+                                <p>New customers: Subscribe for €20/month • Existing customers: Enter your unlock code</p>
                             </div>
                         </div>
                     </div>
@@ -384,17 +385,6 @@
                         </div>
                     </div>
                     
-                    <!-- How to Activate Card (shown for non-licensed users) -->
-                    <div id="activation-instructions" class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm hidden">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-3" data-i18n="ui.license.howToActivate">How to Activate</h4>
-                        <ol class="list-decimal list-inside text-sm text-gray-700 space-y-2">
-                            <li data-i18n="ui.license.steps.s1">Copy your unique Hardware ID from above.</li>
-                            <li data-i18n="ui.license.steps.s2">Visit our website and purchase a license using your Hardware ID.</li>
-                            <li data-i18n="ui.license.steps.s3">You will receive a `license.key` file via email.</li>
-                            <li data-i18n="ui.license.steps.s4">Place the `license.key` file in the same folder as the `POSPal.exe` application.</li>
-                            <li data-i18n="ui.license.steps.s5">Restart the POSPal application to activate the full version.</li>
-                        </ol>
-                    </div>
                     
                     <!-- About Section -->
                     <div class="bg-gray-50 rounded-xl p-6 border border-gray-200">
@@ -676,7 +666,7 @@
                     <button onclick="showEmbeddedPayment()" 
                             class="text-green-600 hover:text-green-700 font-medium text-sm">
                         <i class="fas fa-credit-card mr-1"></i>
-                        Subscribe for €25/month
+                        Subscribe for €20/month
                     </button>
                 </div>
             </div>
@@ -728,12 +718,124 @@
         <span id="toast-message">Toast message here</span>
     </div>
 
-    <!-- Embedded Payment Modal -->
-    <iframe 
-        id="paymentModalFrame" 
-        src="payment-modal.html" 
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 10000;">
-    </iframe>
+    <!-- Subscription Modal -->
+    <div id="subscriptionModal" class="fixed inset-0 bg-black bg-opacity-70 z-[110] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto relative">
+            <!-- Header -->
+            <div class="gradient-bg text-white p-6 rounded-t-xl relative">
+                <!-- Close Button - Inside Header -->
+                <button onclick="closeSubscriptionModal()" class="absolute top-4 right-4 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full w-8 h-8 flex items-center justify-center transition-all duration-200 hover:scale-110">
+                    <i class="fas fa-times text-white text-sm"></i>
+                </button>
+                
+                <div class="text-center pr-8">
+                    <div class="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-unlock text-white text-xl"></i>
+                    </div>
+                    <h2 class="text-xl font-bold mb-1">Unlock POSPal Pro</h2>
+                    <p class="text-gray-200 text-sm">Continue using your restaurant system</p>
+                </div>
+            </div>
+            
+            <!-- Content -->
+            <div class="p-6 space-y-6">
+                <!-- Pricing -->
+                <div class="text-center bg-gray-50 rounded-lg p-4">
+                    <div class="text-3xl font-bold text-gray-900 mb-1">€20<span class="text-lg text-gray-500 font-normal">/month</span></div>
+                    <div class="text-sm text-gray-600">Cancel anytime • No setup fees</div>
+                </div>
+
+                <!-- Features - Compact -->
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="flex items-center text-gray-700">
+                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
+                        Unlimited orders
+                    </div>
+                    <div class="flex items-center text-gray-700">
+                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
+                        Kitchen printing
+                    </div>
+                    <div class="flex items-center text-gray-700">
+                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
+                        Works offline
+                    </div>
+                    <div class="flex items-center text-gray-700">
+                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
+                        Email support
+                    </div>
+                </div>
+
+                <!-- Form -->
+                <form id="subscriptionForm" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <input type="text" id="sub-restaurant-name" required 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
+                                   placeholder="Restaurant name *">
+                        </div>
+                        <div>
+                            <input type="text" id="sub-customer-name" required 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
+                                   placeholder="Your name *">
+                        </div>
+                    </div>
+                    <div>
+                        <input type="email" id="sub-customer-email" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
+                               placeholder="Email address *">
+                    </div>
+                    <div>
+                        <input type="tel" id="sub-customer-phone" 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
+                               placeholder="Phone (optional)">
+                    </div>
+                    
+                    <!-- Error/Loading Messages -->
+                    <div id="subscription-error" class="hidden bg-red-50 border-l-4 border-red-400 p-3 text-red-700 text-sm rounded">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        <span>Something went wrong. Please try again.</span>
+                    </div>
+                    <div id="subscription-loading" class="hidden text-center text-gray-600 py-2 text-sm">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        Creating secure checkout...
+                    </div>
+                    
+                    <!-- Submit Button -->
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-md font-semibold transition-all duration-200 hover:transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-lock mr-2"></i>
+                        Continue to Stripe Checkout
+                    </button>
+                </form>
+
+                <!-- Security Footer with Stripe Branding -->
+                <div class="text-center pt-4 border-t border-gray-100 space-y-3">
+                    <!-- Stripe Badge -->
+                    <div class="flex items-center justify-center space-x-2">
+                        <span class="text-xs text-gray-500">Powered by</span>
+                        <div class="bg-gray-900 text-white px-3 py-1 rounded text-xs font-semibold tracking-wider">
+                            <i class="fab fa-stripe mr-1"></i>STRIPE
+                        </div>
+                    </div>
+                    
+                    <!-- Security Indicators -->
+                    <div class="flex items-center justify-center text-xs text-gray-500 space-x-4">
+                        <span class="flex items-center">
+                            <i class="fas fa-shield-alt mr-1 text-blue-500"></i>
+                            256-bit SSL
+                        </span>
+                        <span class="flex items-center">
+                            <i class="fas fa-credit-card mr-1 text-green-500"></i>
+                            All cards
+                        </span>
+                        <span class="flex items-center">
+                            <i class="fas fa-times mr-1 text-red-500"></i>
+                            Cancel anytime
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="i18n.js"></script>

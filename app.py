@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.2.0"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
+CURRENT_VERSION = "1.2.1"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
@@ -1233,6 +1233,24 @@ def serve_pospal():
 @app.route('/POSPalDesktop.html')
 def serve_pospal_desktop():
     return send_from_directory('.', 'POSPalDesktop.html')
+
+
+@app.route('/customer-portal.html')
+def serve_customer_portal():
+    return send_from_directory('.', 'customer-portal.html')
+
+
+@app.route('/success.html')
+def serve_success():
+    return send_from_directory('.', 'success.html')
+
+@app.route('/payment-failed.html')
+def serve_payment_failed():
+    return send_from_directory('.', 'payment-failed.html')
+
+@app.route('/account.html')
+def serve_account():
+    return send_from_directory('.', 'account.html')
 
 @app.route('/pospalCore.js')
 def serve_pospal_core():

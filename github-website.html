@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POSPal - Σύστημα POS με QR Menu για Εστιατόρια, Καφετέριες & Street Food | Ελλάδα</title>
+    
+    <!-- Essential Meta Tags for Greek Market -->
+    <meta name="description" content="Το POSPal είναι ένα σύστημα POS για εστιατόρια, καφετέριες, ταβέρνες, beach bars, food vans και street food στην Ελλάδα. QR μενού, διαχείριση παραγγελιών, χωρίς συνδρομές. Δωρεάν δοκιμή 30 ημερών.">
+         <meta name="keywords" content="σύστημα pos ελλάδα, pos εστιατόριο, qr menu ελλάδα, σύστημα παραγγελιών, pos καφετέρια, pos ταμείο, pos λογισμικό, διαχείριση εστιατορίου, ψηφιακό μενού, λογισμικό παραγγελιοληψίας, σύστημα παραγγελιών εστιατορίου, beach bar ελλάδα, food van ελλάδα, street food ελλάδα, ταβέρνα ελλάδα, καφετέρια παραλία, λογισμικό για καφετέρια, λογισμικό για ταβέρνα, pos system ελλάδα, pos software ελλάδα">
+    <meta name="author" content="POSPal Software">
+    <meta name="robots" content="index, follow">
+    <meta name="language" content="Greek">
+    <meta name="geo.region" content="GR">
+    <meta name="geo.country" content="Greece">
+    <meta name="geo.placename" content="Greece">
+    
+    <!-- Google Site Verification -->
+    <meta name="google-site-verification" content="768162376caa4dfd" />
+    
+         <!-- Open Graph Tags for Social Media -->
+     <meta property="og:title" content="POSPal - Σύστημα POS με QR Menu για Εστιατόρια, Καφετέριες & Street Food | Ελλάδα">
+     <meta property="og:description" content="Το καλύτερο σύστημα POS για εστιατόρια, καφετέριες, beach bars και street food στην Ελλάδα. QR μενού, διαχείριση παραγγελιών, χωρίς συνδρομές. Δωρεάν δοκιμή 30 ημερών.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://pospal.gr/">
+    <meta property="og:image" content="https://pospal.gr/app_icon.ico">
+    <meta property="og:site_name" content="POSPal">
+    <meta property="og:locale" content="el_GR">
+    
+         <!-- Twitter Card Tags -->
+     <meta name="twitter:card" content="summary_large_image">
+     <meta name="twitter:title" content="POSPal - Σύστημα POS με QR Menu για Εστιατόρια, Καφετέριες & Street Food">
+     <meta name="twitter:description" content="Το καλύτερο σύστημα POS για εστιατόρια, καφετέριες, beach bars και street food στην Ελλάδα. QR μενού, διαχείριση παραγγελιών, χωρίς συνδρομές.">
+    <meta name="twitter:image" content="https://pospal.gr/app_icon.ico">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://pospal.gr/">
+    
+    <!-- Favicon and Icons -->
+    <link rel="icon" type="image/x-icon" href="app_icon.ico">
+    <link rel="apple-touch-icon" href="app_icon.ico">
+    
+    <!-- JSON-LD Structured Data for Greek Business -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "POSPal",
+             "description": "Σύστημα POS για εστιατόρια, καφετέριες, ταβέρνες, beach bars, food vans και street food με QR μενού και διαχείριση παραγγελιών",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Windows",
+      "offers": {
+        "@type": "Offer",
+        "price": "290",
+        "priceCurrency": "EUR",
+        "availability": "https://schema.org/InStock",
+        "validFrom": "2025-01-01"
+      },
+      "creator": {
+        "@type": "Organization",
+        "name": "POSPal Software",
+        "url": "https://pospal.gr/"
+      },
+      "downloadUrl": "https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe",
+      "screenshot": "https://pospal.gr/app_icon.ico",
+      "softwareVersion": "1.0",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "5",
+        "reviewCount": "1"
+      },
+             "featureList": [
+         "QR μενού για εστιατόρια, καφετέριες & street food",
+         "Διαχείριση παραγγελιών POS",
+         "Ψηφιακό μενού",
+         "Συστήματα πληρωμής",
+         "Αναφορές πωλήσεων",
+         "Χωρίς μηνιαίες συνδρομές"
+       ],
+      "audience": {
+        "@type": "Audience",
+        "geographicArea": {
+          "@type": "Country",
+          "name": "Greece"
+        }
+      }
+    }
+    </script>
+    
+    <!-- Hreflang for Greek language -->
+    <link rel="alternate" hreflang="el" href="https://pospal.gr/">
+    <link rel="alternate" hreflang="x-default" href="https://pospal.gr/">
+    
+    <!-- Additional Local Greek Business Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      "name": "POSPal Software",
+             "description": "Παρέχει σύστημα POS για εστιατόρια, καφετέριες, ταβέρνες, beach bars, food vans και street food στην Ελλάδα",
+      "url": "https://pospal.gr/",
+      "areaServed": {
+        "@type": "Country",
+        "name": "Ελλάδα"
+      },
+             "serviceType": "POS Software για Εστιατόρια, Καφετέριες & Street Food",
+      "priceRange": "€290",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer service",
+        "availableLanguage": ["Greek", "English"]
+      },
+      "sameAs": [
+        "https://www.instagram.com/pospalsoftware/",
+        "https://github.com/Radot1/POSPal"
+      ]
+    }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'inter': ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'brand': {
+                            50: '#f0fdf4',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        },
+                        'accent': {
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 40px rgba(0,0,0,0.1); }
+        .bounce-in { animation: bounceIn 0.6s ease-out; }
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .fade-in-up { animation: fadeInUp 0.8s ease-out forwards; opacity: 0; }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
+        .stagger-4 { animation-delay: 0.4s; }
+    </style>
+</head>
+<body class="bg-white">
+
+    <!-- Header -->
+    <header class="bg-white/95 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-3">
+                                         <img src="app_icon.ico" alt="POSPal - Σύστημα POS για Εστιατόρια Ελλάδα Logo" class="w-10 h-10 rounded-xl">
+                    <span class="text-2xl font-bold text-gray-900">POSPal</span>
+                </div>
+                <div class="hidden md:flex items-center space-x-6">
+                    <a href="POSPal_Demo_Index.html" class="text-gray-600 hover:text-brand-600 font-medium transition-colors">Demo</a>
+                    <a href="#pricing" class="text-gray-600 hover:text-brand-600 font-medium transition-colors">Τιμή</a>
+                    <a href="buy-license.html" class="bg-brand-600 text-white px-6 py-2 rounded-lg hover:bg-brand-700 transition-colors font-medium">🛒 Αγόρασε €290</a>
+                    <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" class="text-gray-600 hover:text-brand-600 font-medium transition-colors">Δοκιμή</a>
+                </div>
+                <button id="mobile-menu" class="md:hidden text-gray-600">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="relative overflow-hidden bg-gradient-to-br from-gray-50 to-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid lg:grid-cols-2 gap-12 items-center py-16 lg:py-24">
+                
+                <!-- Left Content -->
+                <div class="text-center lg:text-left">
+                    <div class="mb-6">
+                        <span class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-accent-50 text-accent-700 border border-accent-200">
+                            <i class="fas fa-star mr-2 text-accent-500"></i>
+                            Χωρίς συνδρομές · Εφάπαξ αγορά
+                        </span>
+        </div>
+                    
+                                                              <h1 class="text-4xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6 fade-in-up">
+                         <span class="text-brand-600">Σύστημα POS με QR Μενού</span><br>
+                         για Εστιατόρια & Street Food
+                     </h1>
+                     
+                     <p class="text-xl text-gray-600 mb-8 fade-in-up stagger-1">
+                         Ψηφιακό μενού με QR code, διαχείριση παραγγελιών, αναφορές πωλήσεων.<br>
+                         Δοκιμή 30 ημερών δωρεάν - χωρίς μηνιαίες συνδρομές.
+                     </p>
+                    
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start fade-in-up stagger-3">
+                        <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" 
+                           onclick="window.open('installation-guide.html', '_blank')"
+                           class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-brand-600 rounded-xl hover:bg-brand-700 transition-all transform hover:scale-105 shadow-lg hover:shadow-xl">
+                            <i class="fas fa-download mr-3"></i>
+                            Ξεκίνα δωρεάν (30 ημέρες)
+                        </a>
+                        <a href="POSPal_Demo_Index.html" 
+                           class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-brand-600 bg-white border-2 border-brand-600 rounded-xl hover:bg-brand-50 transition-all">
+                            <i class="fas fa-play mr-3"></i>
+                            Δες Demo
+            </a>
+        </div>
+    </div>
+
+                <!-- Right Visual -->
+                <div class="relative fade-in-up stagger-4">
+                    <div class="bg-white rounded-2xl shadow-2xl p-4 border border-gray-100">
+                        <div class="relative w-full h-96 rounded-xl overflow-hidden bg-black border border-gray-200">
+                            <!-- Mobile UI iframe -->
+                            <iframe id="mobile-view" src="POSPal_Demo.html" class="absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" style="border:0; transform: scale(0.8); transform-origin: top left; width: 125%; height: 125%;" sandbox="allow-scripts allow-same-origin"></iframe>
+                            
+                            <!-- Analytics overlay (authentic management modal) -->
+                            <div id="analytics-view" class="absolute inset-0 bg-white transition-opacity duration-700 ease-in-out opacity-0 overflow-hidden">
+                                <!-- Exact header from POSPal_Demo.html -->
+                                <div class="flex flex-col justify-between items-start mb-2 gap-2 p-3 border-b border-gray-200">
+                                    <h3 class="text-lg font-semibold text-gray-800">Performance Overview</h3>
+                                    <div class="flex items-center gap-1 bg-gray-100 p-1 rounded-lg flex-wrap w-full">
+                                        <button class="date-range-btn active text-xs px-2 py-1 rounded-md transition-colors font-semibold" style="background-color: #111827; color: white;">Today</button>
+                                        <button class="date-range-btn text-xs px-2 py-1 rounded-md transition-colors text-gray-600">This Week</button>
+                                        <button class="date-range-btn text-xs px-2 py-1 rounded-md transition-colors text-gray-600">This Month</button>
+                                        <button class="date-range-btn text-xs px-2 py-1 rounded-md transition-colors text-gray-600">Custom</button>
+                                    </div>
+                                </div>
+                                
+                                <!-- KPI Cards Grid - exact layout from demo -->
+                                <div class="grid grid-cols-2 gap-2 mb-3 px-3">
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-medium text-gray-500">Gross Revenue</h4>
+                                        <p class="text-xl font-bold text-gray-900 mt-1">€4,892.75</p>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-medium text-gray-500">Total Orders</h4>
+                                        <p class="text-xl font-bold text-gray-900 mt-1">83</p>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-medium text-gray-500">Avg. Order Value</h4>
+                                        <p class="text-xl font-bold text-gray-900 mt-1">€58.95</p>
+                                    </div>
+                                    <div class="bg-gray-50 p-3 rounded-lg shadow">
+                                        <h4 class="text-xs font-semibold text-gray-700 mb-2">Payment Methods</h4>
+                                        <div class="space-y-2 mt-2">
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-xs text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span>
+                                                <span class="font-bold text-gray-800 text-xs">€1,985.50</span>
+                                            </div>
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-xs text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span>
+                                                <span class="font-bold text-gray-800 text-xs">€2,907.25</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Best Sellers Section - exact from demo -->
+                                <div class="px-3">
+                                    <div class="bg-white p-3 rounded-lg border">
+                                        <h4 class="font-semibold text-gray-700 mb-2 text-sm">Best Selling Items (by Qty)</h4>
+                                        <div class="space-y-2 max-h-32 overflow-y-auto">
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">French Fries</span>
+                                                <span class="font-bold text-gray-900">88</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">Coca-Cola</span>
+                                                <span class="font-bold text-gray-900">75</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">Classic Cheeseburger</span>
+                                                <span class="font-bold text-gray-900">45</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-700">Caesar Salad</span>
+                                                <span class="font-bold text-gray-900">32</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-center space-x-2">
+                            <button id="dot-0" class="w-2 h-2 rounded-full bg-brand-600 transition-colors dot-nav" onclick="switchView(0)"></button>
+                            <button id="dot-1" class="w-2 h-2 rounded-full bg-gray-300 transition-colors dot-nav" onclick="switchView(1)"></button>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1 text-center">
+                            <span id="view-indicator">Mobile POS</span>
+                        </div>
+                    </div>
+
+                    <!-- QR Menu Connection -->
+                    <div class="mt-6 bg-white rounded-xl shadow-lg p-4 border border-gray-200">
+                        <div class="flex items-center space-x-4">
+                            <div class="flex-shrink-0">
+                                <div class="w-16 h-16 bg-white rounded-lg border border-gray-200 shadow-sm flex items-center justify-center p-2">
+                                    <svg width="48" height="48" viewBox="0 0 200 200" class="text-gray-900">
+                                        <!-- Elegant QR Code pattern -->
+                                        <rect width="200" height="200" fill="white"/>
+                                        <!-- Corner markers -->
+                                        <rect x="15" y="15" width="45" height="45" fill="currentColor" rx="4"/>
+                                        <rect x="140" y="15" width="45" height="45" fill="currentColor" rx="4"/>
+                                        <rect x="15" y="140" width="45" height="45" fill="currentColor" rx="4"/>
+                                        <rect x="22" y="22" width="31" height="31" fill="white" rx="2"/>
+                                        <rect x="147" y="22" width="31" height="31" fill="white" rx="2"/>
+                                        <rect x="22" y="147" width="31" height="31" fill="white" rx="2"/>
+                                        <rect x="28" y="28" width="19" height="19" fill="currentColor" rx="2"/>
+                                        <rect x="153" y="28" width="19" height="19" fill="currentColor" rx="2"/>
+                                        <rect x="28" y="153" width="19" height="19" fill="currentColor" rx="2"/>
+                                        <!-- Data modules -->
+                                        <rect x="70" y="25" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="85" y="25" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="100" y="25" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="70" y="40" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="100" y="40" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="25" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="40" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="70" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="85" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="100" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="115" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="155" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="170" y="70" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <!-- Additional patterns -->
+                                        <rect x="70" y="85" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="115" y="85" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="40" y="100" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="85" y="100" width="8" height="8" fill="currentColor" rx="1"/>
+                                        <rect x="155" y="100" width="8" height="8" fill="currentColor" rx="1"/>
+                                    </svg>
+                                </div>
+                                <p class="text-xs text-gray-500 text-center mt-1">QR Menu</p>
+                            </div>
+                            <div class="flex-1">
+                                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                    <div class="text-xs text-gray-500 mb-1">Live Demo Menu</div>
+                                    <a href="https://menus-5ar.pages.dev/s/cafetest" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 underline font-medium break-all">menus-5ar.pages.dev/s/cafetest</a>
+                                    <div class="mt-2 space-y-1">
+                                        <div class="flex items-center text-xs text-gray-600">
+                                            <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                                            <span>Καφέ - €2.50</span>
+                                        </div>
+                                        <div class="flex items-center text-xs text-gray-600">
+                                            <div class="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                                            <span>Σάντουιτς - €4.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Sync indicator -->
+                        <div class="mt-4 flex items-center justify-center text-sm text-accent-600">
+                            <i class="fas fa-sync-alt mr-2 animate-spin"></i>
+                            Άμεσος συγχρονισμός
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Value Props -->
+    <section class="py-20 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                                 <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                     Γιατί να Επιλέξεις το POSPal για την Επιχείρησή σου;
+                 </h2>
+                 <p class="text-xl text-gray-600">Όλα όσα χρειάζεσαι για να διαχειριστείς την επιχείρησή σου, με απλό και αποτελεσματικό τρόπο</p>
+            </div>
+            
+            <div class="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                <!-- Card 1 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-accent-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-euro-sign text-accent-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Μία αγορά, ένα setup, χωρίς συνδρομές
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Μία 30ήμερη δωρεάν δοκιμή θα σε πείσει. Όχι κρυφές χρεώσεις, όχι μηνιαίες συνδρομές.
+                    </p>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-brand-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-user-cog text-brand-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Κάν' το μόνος σου: Προσθήκη/αφαίρεση/ανατιμολόγηση
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Το QR μενού ενημερώνεται άμεσα. Χωρίς τηλεφωνήματα, χωρίς αναμονή.
+                    </p>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-chart-line text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Εσύ έχεις τον έλεγχο: Δες τα στατιστικά σου, το ημερήσιο Ζ και τα best sellers σου
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Δες αν «πιάνει»—δοκίμασε νέα προϊόντα, σύγκρινε κατηγορίες και μέτρα την απόδοσή τους σήμερα.
+                    </p>
+        </div>
+
+                <!-- Card 4 -->
+                <div class="bg-white p-8 rounded-2xl shadow-lg card-hover border border-gray-100">
+                    <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-6">
+                        <i class="fas fa-times-circle text-red-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-3">
+                        Όχι άλλο χάος με χαρτάκια που χάνονται ή μηνύματα που παραλείπονται
+                    </h3>
+                    <p class="text-gray-600 leading-relaxed">
+                        Μία τυποποιημένη ροή με εκτυπωμένα δελτία. Όλα οργανωμένα, όλα ελεγχόμενα.
+                    </p>
+            </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How it Works -->
+    <section class="py-20 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                    Πώς να Ξεκινήσεις με το POSPal;
+                </h2>
+                                 <p class="text-xl text-gray-600">Τρία απλά βήματα για να εγκαταστήσεις το σύστημα στην επιχείρησή σου</p>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-2xl font-bold">1</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">Κατέβασε το POSPal</h3>
+                    <p class="text-gray-600">Δωρεάν download και εγκατάσταση σε λίγα λεπτά</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-2xl font-bold">2</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">Δοκίμασε 30 ημέρες</h3>
+                    <p class="text-gray-600">Πλήρης πρόσβαση σε όλες τις δυνατότητες, χωρίς περιορισμούς</p>
+                </div>
+                
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 text-white text-2xl font-bold">3</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-4">Αγόρασε άδεια</h3>
+                    <p class="text-gray-600">Μόνο αν σου αρέσει. Εφάπαξ πληρωμή, δικό σου για πάντα</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="py-20 bg-gray-900 text-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                         <h2 class="text-3xl lg:text-4xl font-bold mb-4">Τιμή POSPal για Όλες τις Επιχειρήσεις</h2>
+            <p class="text-xl text-gray-300 mb-12">Απλή τιμολόγηση - χωρίς κρυφές χρεώσεις, χωρίς εκπλήξεις</p>
+            
+            <div class="bg-white text-gray-900 rounded-2xl shadow-2xl p-8 max-w-md mx-auto">
+                <div class="text-center">
+                    <h3 class="text-2xl font-bold mb-4">POSPal License</h3>
+                    <div class="mb-6">
+                        <span class="text-5xl font-bold text-brand-600">€290</span>
+                        <span class="text-gray-500 text-lg">/ εφάπαξ (launch)</span>
+                        <div class="mt-1 text-xs text-gray-500">Μετά το launch: €490</div>
+    </div>
+
+                    <ul class="text-left space-y-3 mb-8">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            30ήμερη δωρεάν δοκιμή
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            Άδεια ανά server — απεριόριστες συσκευές
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            PDA + QR website μαζί
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            Δωρεάν ενημερώσεις για πάντα
+                        </li>
+
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent-500 mr-3"></i>
+                            Χωρίς μηνιαίες χρεώσεις
+                        </li>
+                    </ul>
+                    
+                    <div class="flex flex-col gap-3">
+                        <a href="buy-license.html" class="w-full bg-brand-600 text-white py-4 rounded-xl font-semibold hover:bg-brand-700 transition-colors inline-block">
+                            🛒 Αγόρασε άδεια - €290
+                        </a>
+                        <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" class="w-full bg-gray-100 text-gray-800 py-3 rounded-xl font-medium hover:bg-gray-200 transition-colors inline-block">
+                            📱 Δωρεάν δοκιμή 30 ημερών
+                        </a>
+                    </div>
+                </div>
+            </div>
+    </div>
+    </section>
+
+    <!-- CTA -->
+    <section id="contact" class="py-20 gradient-bg text-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 class="text-3xl lg:text-4xl font-bold mb-6">
+                Έτοιμος να Ξεκινήσεις με το POSPal;
+            </h2>
+            <p class="text-xl mb-8 opacity-90">
+                                 Κατέβασε το POSPal τώρα και ξεκίνα τη δωρεάν δοκιμή 30 ημερών για την επιχείρησή σου
+            </p>
+            
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="buy-license.html" 
+                   class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold bg-white text-brand-600 rounded-xl hover:bg-gray-100 transition-all transform hover:scale-105">
+                    <i class="fas fa-shopping-cart mr-3"></i>
+                    Αγόρασε άδεια - €290
+                </a>
+                <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" 
+                   onclick="window.open('installation-guide.html', '_blank')"
+                   class="inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white border-2 border-white rounded-xl hover:bg-white hover:text-brand-600 transition-all">
+                    <i class="fas fa-download mr-3"></i>
+                    Δοκιμή 30 ημερών
+                </a>
+    </div>
+
+            <p class="mt-6 text-sm opacity-75">
+                Χωρίς εγγραφή · 30ήμερη δοκιμή
+            </p>
+        </div>
+    </section>
+
+    <!-- SEO-Optimized FAQ Section for Greek Market -->
+    <section class="py-20 bg-gray-50">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                    Συχνές Ερωτήσεις για το POSPal
+                </h2>
+                                 <p class="text-xl text-gray-600">Όλα όσα θέλεις να ξέρεις για το σύστημα POS για εστιατόρια, καφετέριες και street food στην Ελλάδα</p>
+            </div>
+            
+            <div class="space-y-6">
+                <!-- FAQ Item 1 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                        Τι είναι το POSPal και πώς βοηθάει τα εστιατόρια στην Ελλάδα;
+                    </h3>
+                    <p class="text-gray-600">
+                                                 Το POSPal είναι ένα σύστημα POS (Point of Sale) ειδικά σχεδιασμένο για εστιατόρια, καφετέριες, ταβέρνες, beach bars, food vans και street food στην Ελλάδα. Συνδυάζει POS για παραγγελίες με ψηφιακό QR μενού, επιτρέποντας στους πελάτες να βλέπουν το μενού σας μέσω QR code και στο προσωπικό να διαχειρίζεται εύκολα τις παραγγελίες.
+                    </p>
+                </div>
+
+                <!-- FAQ Item 2 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                        Πόσο κοστίζει το σύστημα POS POSPal για το εστιατόριό μου;
+                    </h3>
+                    <p class="text-gray-600">
+                        Το POSPal κοστίζει μόνο €290 (launch τιμή) για εφάπαξ αγορά. Δεν υπάρχουν μηνιαίες συνδρομές ή κρυφές χρεώσεις. Μετά την αγορά, το σύστημα είναι δικό σας για πάντα με δωρεάν ενημερώσεις.
+                    </p>
+                </div>
+
+                <!-- FAQ Item 3 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                        Πώς λειτουργεί το QR μενού για τους πελάτες μου;
+                    </h3>
+                    <p class="text-gray-600">
+                        Οι πελάτες σκανάρουν ένα QR code στο τραπέζι τους και βλέπουν αμέσως το ψηφιακό μενού στο κινητό τους. Το μενού ενημερώνεται αυτόματα όταν αλλάζετε τιμές ή προσθέτετε νέα είδη στο POS σύστημα.
+                    </p>
+                </div>
+
+                <!-- FAQ Item 4 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                        Μπορώ να δοκιμάσω το POSPal πριν το αγοράσω;
+                    </h3>
+                    <p class="text-gray-600">
+                        Ναι! Προσφέρουμε δωρεάν δοκιμή 30 ημερών με πλήρη πρόσβαση σε όλες τις δυνατότητες. Δεν χρειάζεται κάρτα ή εγγραφή - απλά κατεβάστε και εγκαταστήστε το πρόγραμμα.
+                    </p>
+                </div>
+
+                <!-- FAQ Item 5 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                        Σε πόσες συσκευές μπορώ να εγκαταστήσω το POSPal;
+                    </h3>
+                    <p class="text-gray-600">
+                        Η άδεια είναι ανά server/υπολογιστή, οπότε μπορείτε να συνδέσετε απεριόριστες συσκευές (tablets, κινητά) στο ίδιο δίκτυο για να λαμβάνουν παραγγελίες.
+                    </p>
+                </div>
+
+                <!-- FAQ Item 6 -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                        Υποστηρίζει το σύστημα εκτυπωτές για τις παραγγελίες;
+                    </h3>
+                    <p class="text-gray-600">
+                        Ναι, το POSPal υποστηρίζει εκτύπωση παραγγελιών σε θερμικούς εκτυπωτές για την κουζίνα και το ταμείο. Μπορείτε να εκτυπώνετε αυτόματα κάθε παραγγελία για οργανωμένη διαχείριση.
+                    </p>
+                </div>
+
+                <!-- FAQ Item 7 - New PDA Question -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                         <h3 class="text-lg font-semibold text-gray-900 mb-3">
+                         Τι είναι το POS σύστημα και πώς βοηθάει στο λογισμικό παραγγελιοληψίας;
+                     </h3>
+                     <p class="text-gray-600">
+                         Το POS (Point of Sale) σύστημα είναι το λογισμικό που χρησιμοποιεί το προσωπικό για να λαμβάνει παραγγελίες. Το POSPal σύστημα POS επιτρέπει στους σερβιτόρους να παίρνουν παραγγελίες άμεσα από τα τραπέζια, χωρίς χαρτάκια, με άμεση αποστολή στην κουζίνα.
+                     </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-300 py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid md:grid-cols-4 gap-8">
+                <div>
+                    <div class="flex items-center space-x-3 mb-4">
+                                                 <img src="app_icon.ico" alt="POSPal POS System για Εστιατόρια" class="w-8 h-8 rounded-lg">
+                        <span class="text-xl font-bold text-white">POSPal</span>
+                    </div>
+                                         <p class="text-sm mb-4">Σύστημα POS για εστιατόρια, καφετέριες, ταβέρνες, beach bars, food vans και street food στην Ελλάδα. QR μενού και διαχείριση παραγγελιών.</p>
+                    <div class="mt-3">
+                        <a href="https://www.instagram.com/pospalsoftware/" target="_blank" class="text-gray-300 hover:text-white transition-colors">
+                            <i class="fab fa-instagram text-xl mr-2"></i>@pospalsoftware
+                        </a>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="text-white font-semibold mb-4">Προϊόν</h4>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="POSPal_Demo_Index.html" class="hover:text-white">Demo</a></li>
+                        <li><a href="#pricing" class="hover:text-white">Τιμή</a></li>
+                        <li><a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" class="hover:text-white">Download</a></li>
+                    </ul>
+                </div>
+                
+                                <div>
+                    <h4 class="text-white font-semibold mb-4">Υποστήριξη</h4>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="installation-guide.html" class="hover:text-white">Οδηγός εγκατάστασης</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h4 class="text-white font-semibold mb-4">Νομικά</h4>
+                    <ul class="space-y-2 text-sm">
+                        <li><a href="EULA.md" target="_blank" class="hover:text-white">EULA</a></li>
+                        <li><a href="PRIVACY.md" target="_blank" class="hover:text-white">Απόρρητο</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-700 mt-8 pt-8 text-center text-sm">
+                <p>&copy; 2025 Anastasia Palamoutsi & Robert Zoumboulis-Airey. Όλα τα δικαιώματα διατηρούνται.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Mobile menu toggle (placeholder)
+        document.getElementById('mobile-menu').addEventListener('click', function() {
+            const menu = document.getElementById('mobile-menu');
+            // Implement dropdown later
+        });
+
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
+            });
+        });
+
+                // Add animation classes when elements come into view
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                    entry.target.classList.add('bounce-in');
+                }
+            });
+        }, observerOptions);
+
+        // Observe cards for animation
+        document.querySelectorAll('.card-hover').forEach(card => {
+            observer.observe(card);
+        });
+
+        // View switcher with dot navigation
+        const mobileView = document.getElementById('mobile-view');
+        const analyticsView = document.getElementById('analytics-view');
+        const viewIndicator = document.getElementById('view-indicator');
+        const dot0 = document.getElementById('dot-0');
+        const dot1 = document.getElementById('dot-1');
+        let currentView = 0;
+        let autoInterval;
+
+        function switchView(viewIndex) {
+            currentView = viewIndex;
+            
+            // Reset auto interval
+            clearInterval(autoInterval);
+            startAutoProgression();
+            
+            if (viewIndex === 0) {
+                mobileView.style.opacity = '1';
+                analyticsView.style.opacity = '0';
+                viewIndicator.textContent = 'Mobile POS';
+                dot0.classList.add('bg-brand-600');
+                dot0.classList.remove('bg-gray-300');
+                dot1.classList.add('bg-gray-300');
+                dot1.classList.remove('bg-brand-600');
+            } else {
+                mobileView.style.opacity = '0';
+                analyticsView.style.opacity = '1';
+                viewIndicator.textContent = 'Analytics';
+                dot1.classList.add('bg-brand-600');
+                dot1.classList.remove('bg-gray-300');
+                dot0.classList.add('bg-gray-300');
+                dot0.classList.remove('bg-brand-600');
+            }
+        }
+
+        function startAutoProgression() {
+            autoInterval = setInterval(() => {
+                currentView = currentView === 0 ? 1 : 0;
+                switchView(currentView);
+            }, 4000);
+        }
+
+        // Make switchView globally available
+        window.switchView = switchView;
+        
+        // Start auto progression
+        startAutoProgression();
+
+
+
+
+    </script>
+</body>
+</html>

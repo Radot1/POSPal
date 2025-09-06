@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Πληρωμή Ακυρώθηκε - POSPal</title>
+    <link rel="icon" href="app_icon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+        }
+        .animate-pulse-slow {
+            animation: pulse 3s infinite;
+        }
+        .fade-in {
+            animation: fadeIn 0.8s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <img src="app_icon.ico" alt="POSPal Logo" class="w-8 h-8 rounded-lg">
+                    <h1 class="text-2xl font-bold text-gray-900 tracking-wider">POS<span class="text-green-600">Pal</span></h1>
+                </div>
+                <div class="text-sm text-gray-500">
+                    <i class="fas fa-times-circle text-gray-400 mr-2"></i>
+                    Πληρωμή Ακυρώθηκε
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <!-- Failure Card -->
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden fade-in">
+            <!-- Failure Header -->
+            <div class="gradient-bg text-white p-8 text-center">
+                <div class="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse-slow">
+                    <i class="fas fa-times text-white text-2xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold mb-2">Πληρωμή Ακυρώθηκε</h1>
+                <p class="text-gray-200">Δεν ολοκληρώθηκε η συνδρομή</p>
+            </div>
+
+            <!-- Content -->
+            <div class="p-8 space-y-6">
+                <!-- Failure Info -->
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                    <div class="text-gray-800 font-semibold text-lg mb-2">
+                        <i class="fas fa-info-circle text-gray-600 mr-2"></i>
+                        Τι συνέβη;
+                    </div>
+                    <div class="text-sm text-gray-700 space-y-1">
+                        <p>Η πληρωμή δεν ολοκληρώθηκε ή ακυρώθηκε</p>
+                        <p>Δεν έγινε καμία χρέωση στην κάρτα σας</p>
+                    </div>
+                </div>
+
+                <!-- Options -->
+                <div class="space-y-4">
+                    <h3 class="text-lg font-semibold text-gray-800 text-center">Τι μπορείτε να κάνετε τώρα;</h3>
+                    
+                    <div class="space-y-3">
+                        <div class="flex items-start space-x-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <i class="fas fa-redo text-gray-600 text-sm"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900">Δοκιμάστε ξανά την πληρωμή</p>
+                                <p class="text-sm text-gray-600">Μπορείτε να επιστρέψετε και να δοκιμάσετε ξανά</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <i class="fas fa-clock text-gray-600 text-sm"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900">Συνεχίστε με τη δωρεάν δοκιμή</p>
+                                <p class="text-sm text-gray-600">Χρησιμοποιήστε το POSPal δωρεάν για 30 ημέρες</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                <i class="fas fa-envelope text-gray-600 text-sm"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-900">Χρειάζεστε βοήθεια;</p>
+                                <p class="text-sm text-gray-600">Επικοινωνήστε μαζί μας για υποστήριξη</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4">
+                    <button onclick="tryAgain()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 hover:transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-credit-card mr-2"></i>
+                        Δοκιμή Ξανά
+                    </button>
+                    <button onclick="returnToPOSPal()" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 hover:transform hover:scale-105 shadow-lg">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Επιστροφή στο POSPal
+                    </button>
+                </div>
+
+                <!-- Support -->
+                <div class="text-center pt-4 border-t border-gray-100">
+                    <p class="text-sm text-gray-600 mb-3">Χρειάζεστε βοήθεια;</p>
+                    <a href="mailto:support@pospal.gr" class="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                        <i class="fas fa-envelope mr-1"></i>
+                        support@pospal.gr
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center mt-8">
+            <p class="text-sm text-gray-500">
+                Δεν πειράζει! Μπορείτε να δοκιμάσετε ξανά οποτεδήποτε.
+            </p>
+        </div>
+    </main>
+    
+    <script>
+        // Function to try payment again
+        function tryAgain() {
+            returnToPOSPal(); // Return to POSPal and they can try the subscription again
+        }
+        
+        // Function to return to POSPal with correct port
+        function returnToPOSPal() {
+            // Try different common ports used by POSPal
+            const commonPorts = [5000, 8080, 3000, 8000];
+            
+            // Try to detect the current POSPal port from referrer or localStorage
+            let targetPort = 5000; // Default to 5000 as specified
+            
+            // Check if we have the port stored from when they came to this page
+            const storedPort = localStorage.getItem('pospal_port');
+            if (storedPort) {
+                targetPort = storedPort;
+            } else {
+                // Try to detect from referrer URL
+                try {
+                    const referrer = document.referrer;
+                    if (referrer) {
+                        const url = new URL(referrer);
+                        const port = url.port || (url.protocol === 'https:' ? 443 : 80);
+                        if (commonPorts.includes(parseInt(port))) {
+                            targetPort = port;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Could not parse referrer URL');
+                }
+            }
+            
+            // Redirect to POSPal
+            window.location.href = `http://localhost:${targetPort}`;
+        }
+        
+        // Store the failure in localStorage so POSPal knows payment was cancelled
+        localStorage.setItem('pospal_payment_cancelled', 'true');
+        localStorage.setItem('pospal_payment_timestamp', Date.now().toString());
+        
+        // Get URL parameters to understand the failure reason
+        const urlParams = new URLSearchParams(window.location.search);
+        const reason = urlParams.get('reason');
+        const error = urlParams.get('error');
+        
+        // Log the failure reason for debugging
+        if (reason || error) {
+            console.log('Payment failure reason:', reason || error);
+        }
+    </script>
+</body>
+</html>
