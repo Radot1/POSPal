@@ -558,10 +558,15 @@
                     return;
                 }
 
-                const response = await fetch('https://pospal-licensing-v2.bzoumboulis.workers.dev/account-info', {
+                const response = await fetch('https://pospal-licensing-v2-development.bzoumboulis.workers.dev/customer-portal', {
+                    method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: localStorage.getItem('pospal_customer_email'),
+                        unlockToken: localStorage.getItem('pospal_unlock_token')
+                    })
                 });
 
                 if (!response.ok) {
@@ -569,7 +574,26 @@
                 }
 
                 const data = await response.json();
-                updateAccountDisplay(data);
+                // Transform the data from System #1 format to expected format
+                const transformedData = {
+                    restaurantName: data.customer?.name || 'Restaurant',
+                    email: data.customer?.email || 'No email',
+                    subscription: {
+                        status: data.customer?.subscription_status || 'unknown',
+                        amount: 20,
+                        nextBilling: data.subscription?.current_period_end ? 
+                            new Date(data.subscription.current_period_end * 1000).toLocaleDateString() : 
+                            'Not available',
+                        cancelAtPeriodEnd: data.subscription?.cancel_at_period_end || false
+                    },
+                    stats: {
+                        totalOrders: 0,
+                        monthlyOrders: 0,
+                        activeTables: 0,
+                        uptime: '100'
+                    }
+                };
+                updateAccountDisplay(transformedData);
 
             } catch (error) {
                 console.error('Account data loading failed:', error);
@@ -677,12 +701,15 @@
                 showLoading(true);
                 const token = localStorage.getItem('pospal_token');
                 
-                const response = await fetch('https://pospal-licensing-v2.bzoumboulis.workers.dev/create-portal-session', {
+                const response = await fetch('https://pospal-licensing-v2-development.bzoumboulis.workers.dev/create-portal-session', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        email: localStorage.getItem('pospal_customer_email'),
+                        unlockToken: localStorage.getItem('pospal_unlock_token')
+                    })
                 });
 
                 if (!response.ok) {
@@ -717,12 +744,17 @@
                 showLoading(true);
                 const token = localStorage.getItem('pospal_token');
                 
-                const response = await fetch('https://pospal-licensing-v2.bzoumboulis.workers.dev/cancel-subscription', {
+                const response = await fetch('https://pospal-licensing-v2-development.bzoumboulis.workers.dev/cancel-subscription', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        email: localStorage.getItem('pospal_customer_email'),
+                        unlockToken: localStorage.getItem('pospal_unlock_token'),
+                        reason: 'user_request',
+                        feedback: 'Cancelled via account management page'
+                    })
                 });
 
                 if (!response.ok) {
@@ -731,7 +763,7 @@
 
                 const result = await response.json();
                 closeCancelModal();
-                showSuccess(`Η συνδρομή σου ακυρώθηκε επιτυχώς. Θα παραμείνει ενεργή μέχρι ${result.activeUntil}.`);
+                showSuccess(`Η συνδρομή σου ακυρώθηκε επιτυχώς. Θα παραμείνει ενεργή μέχρι ${result.access_until ? new Date(result.access_until).toLocaleDateString() : 'την επόμενη χρέωση'}.`);
                 await loadAccountData(); // Refresh data
 
             } catch (error) {
@@ -748,10 +780,15 @@
                 showLoading(true);
                 const token = localStorage.getItem('pospal_token');
                 
-                const response = await fetch('https://pospal-licensing-v2.bzoumboulis.workers.dev/export-data', {
+                const response = await fetch('https://pospal-licensing-v2-development.bzoumboulis.workers.dev/export-data', {
+                    method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: localStorage.getItem('pospal_customer_email'),
+                        unlockToken: localStorage.getItem('pospal_unlock_token')
+                    })
                 });
 
                 if (!response.ok) {

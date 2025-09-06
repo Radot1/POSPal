@@ -38,7 +38,8 @@
       "Bash(rm:*)",
       "Bash(git restore:*)",
       "Bash(pip install:*)",
-      "Bash(pyinstaller:*)"
+      "Bash(pyinstaller:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
