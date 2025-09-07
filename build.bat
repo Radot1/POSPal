@@ -118,6 +118,8 @@ pyinstaller ^
     --name "POSPal" ^
     --clean ^
     --noupx ^
+    --hidden-import dotenv ^
+    --hidden-import python-dotenv ^
     --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
     --add-data "..\POSPalDesktop.html;." ^
@@ -153,6 +155,8 @@ if defined BUILD_ONEDIR (
         --name "POSPal" ^
         --clean ^
         --noupx ^
+        --hidden-import dotenv ^
+    --hidden-import python-dotenv ^
         --add-data "..\UISelect.html;." ^
         --add-data "..\POSPal.html;." ^
         --add-data "..\POSPalDesktop.html;." ^

@@ -1,0 +1,473 @@
+/**
+ * Enhanced UX Components for POSPal
+ * Handles rate limiting, fallback modes, and progressive enhancement
+ */
+
+/* Rate Limiting UI */
+.rate-limit-notice {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(245, 158, 11, 0.3);
+    z-index: 1000;
+    min-width: 320px;
+    animation: slideInRight 0.5s ease-out;
+}
+
+.rate-limit-countdown {
+    display: flex;
+    align-items: center;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.countdown-timer {
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    color: #fff3cd;
+    margin-left: 8px;
+}
+
+/* Offline Mode Indicator */
+.offline-mode-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+    color: white;
+    padding: 12px 20px;
+    text-align: center;
+    z-index: 999;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.offline-mode-banner .reconnect-btn {
+    margin-left: 16px;
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.offline-mode-banner .reconnect-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Fallback Mode Cards */
+.fallback-mode-card {
+    background: linear-gradient(135deg, #fef3c7, #fbbf24);
+    border: 1px solid #f59e0b;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.fallback-mode-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #f59e0b, #d97706, #f59e0b);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.fallback-mode-card .card-icon {
+    width: 48px;
+    height: 48px;
+    background: rgba(245, 158, 11, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #d97706;
+    margin-bottom: 16px;
+}
+
+.fallback-mode-card .card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #92400e;
+    margin-bottom: 8px;
+}
+
+.fallback-mode-card .card-description {
+    color: #a16207;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.fallback-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.fallback-actions button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.fallback-actions .primary {
+    background: #d97706;
+    color: white;
+}
+
+.fallback-actions .primary:hover {
+    background: #b45309;
+    transform: translateY(-1px);
+}
+
+.fallback-actions .secondary {
+    background: rgba(217, 119, 6, 0.1);
+    color: #92400e;
+    border: 1px solid #d97706;
+}
+
+.fallback-actions .secondary:hover {
+    background: rgba(217, 119, 6, 0.2);
+}
+
+/* Progressive Loading States */
+.progressive-loader {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #f3f4f6;
+    border-radius: 8px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.progressive-loader .loading-dots {
+    display: flex;
+    gap: 2px;
+}
+
+.progressive-loader .loading-dots span {
+    width: 4px;
+    height: 4px;
+    background: #9ca3af;
+    border-radius: 50%;
+    animation: bounce 1.4s ease-in-out infinite both;
+}
+
+.progressive-loader .loading-dots span:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.progressive-loader .loading-dots span:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+/* Retry Mechanism UI */
+.retry-container {
+    text-align: center;
+    padding: 32px 20px;
+    background: #f9fafb;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+}
+
+.retry-container .retry-icon {
+    width: 64px;
+    height: 64px;
+    background: #fee2e2;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    color: #dc2626;
+    font-size: 24px;
+}
+
+.retry-container .retry-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+}
+
+.retry-container .retry-message {
+    color: #6b7280;
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+
+.retry-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: #059669;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.retry-button:hover {
+    background: #047857;
+    transform: translateY(-1px);
+}
+
+.retry-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.retry-button .retry-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Connection Status Indicator */
+.connection-status {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    z-index: 500;
+    transition: all 0.3s ease;
+}
+
+.connection-status.online {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+.connection-status.offline {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.connection-status.limited {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+.connection-status .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+.connection-status.online .status-dot {
+    background: #10b981;
+}
+
+.connection-status.offline .status-dot {
+    background: #ef4444;
+}
+
+.connection-status.limited .status-dot {
+    background: #f59e0b;
+}
+
+/* Smart Error Messages */
+.smart-error-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #ef4444;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.smart-error-card.warning {
+    border-left-color: #f59e0b;
+}
+
+.smart-error-card.info {
+    border-left-color: #3b82f6;
+}
+
+.smart-error-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.smart-error-header .error-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+}
+
+.smart-error-header .error-title {
+    font-weight: 600;
+    color: #374151;
+}
+
+.smart-error-body {
+    color: #6b7280;
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+.smart-error-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.smart-error-actions button {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.smart-error-actions .primary {
+    background: #3b82f6;
+    color: white;
+    border: none;
+}
+
+.smart-error-actions .primary:hover {
+    background: #2563eb;
+}
+
+.smart-error-actions .secondary {
+    background: transparent;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}
+
+.smart-error-actions .secondary:hover {
+    color: #374151;
+    border-color: #9ca3af;
+}
+
+/* Animations */
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes bounce {
+    0%, 80%, 100% {
+        transform: scale(0);
+    }
+    40% {
+        transform: scale(1.0);
+    }
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .rate-limit-notice {
+        right: 10px;
+        left: 10px;
+        min-width: auto;
+    }
+    
+    .fallback-actions {
+        flex-direction: column;
+    }
+    
+    .fallback-actions button {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .connection-status {
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        justify-content: center;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .fallback-mode-card {
+        border-width: 2px;
+    }
+    
+    .connection-status {
+        border-width: 2px;
+    }
+    
+    .smart-error-card {
+        border-left-width: 6px;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .rate-limit-notice,
+    .progressive-loader .loading-dots span,
+    .retry-button .retry-spinner,
+    .connection-status .status-dot {
+        animation: none;
+    }
+}

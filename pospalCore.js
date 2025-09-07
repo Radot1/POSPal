@@ -4107,6 +4107,12 @@ function showUnlockDialog() {
         dialog.classList.remove('hidden');
         dialog.classList.add('flex');
         
+        // Reset button state when opening modal
+        resetUnlockButtonState();
+        
+        // Clear any previous errors
+        hideUnlockError();
+        
         // Focus on email input
         const emailInput = document.getElementById('unlockEmail');
         if (emailInput) {
@@ -4123,6 +4129,9 @@ function hideUnlockDialog() {
     if (dialog) {
         dialog.classList.add('hidden');
         dialog.classList.remove('flex');
+        
+        // Reset button state when closing modal
+        resetUnlockButtonState();
         
         // Clear form
         const form = document.getElementById('unlockTokenForm');
@@ -4153,15 +4162,53 @@ function hideUnlockError() {
 
 function setUnlockLoading(loading) {
     const btn = document.getElementById('unlockSubmitBtn');
-    const btnText = document.getElementById('unlockBtnText');
     
-    if (btn && btnText) {
+    if (btn) {
         btn.disabled = loading;
         if (loading) {
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i><span>Validating...</span>';
         } else {
+            // Reset to original state
             btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Unlock POSPal</span>';
         }
+    }
+}
+
+// Enhanced function to reset unlock button state
+function resetUnlockButtonState() {
+    // Clear any existing timer
+    if (buttonResetTimer) {
+        clearTimeout(buttonResetTimer);
+        buttonResetTimer = null;
+    }
+    
+    const btn = document.getElementById('unlockSubmitBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Unlock POSPal</span>';
+    }
+}
+
+// Auto-recovery mechanism to prevent permanently stuck button states
+let buttonResetTimer = null;
+
+function setUnlockLoadingWithAutoReset(loading) {
+    setUnlockLoading(loading);
+    
+    // Clear any existing timer
+    if (buttonResetTimer) {
+        clearTimeout(buttonResetTimer);
+        buttonResetTimer = null;
+    }
+    
+    // If setting to loading state, create a safety timer to auto-reset after 45 seconds
+    if (loading) {
+        buttonResetTimer = setTimeout(() => {
+            console.warn('Auto-recovering stuck validation button');
+            resetUnlockButtonState();
+            showUnlockError('Validation took too long. Please try again.');
+            buttonResetTimer = null;
+        }, 45000);
     }
 }
 
@@ -4220,15 +4267,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            setUnlockLoading(true);
+            setUnlockLoadingWithAutoReset(true);
             hideUnlockError();
             
             try {
                 // Generate machine fingerprint
                 const machineFingerprint = await generateMachineFingerprint();
                 
-                // Validate with server
-                const result = await validateUnlockToken(email, token, machineFingerprint);
+                // Validate with server with timeout protection
+                const result = await Promise.race([
+                    validateUnlockToken(email, token, machineFingerprint),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Request timeout')), 30000)
+                    )
+                ]);
                 
                 if (result.valid) {
                     // Store token locally for validation
@@ -4254,8 +4306,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 
             } catch (error) {
                 console.error('Unlock validation error:', error);
-                showUnlockError('Connection failed. Please check your internet connection and try again.');
+                if (error.message === 'Request timeout') {
+                    showUnlockError('Request timed out. Please check your internet connection and try again.');
+                } else {
+                    showUnlockError('Connection failed. Please check your internet connection and try again.');
+                }
             } finally {
+                // Clear timer and reset button state
+                if (buttonResetTimer) {
+                    clearTimeout(buttonResetTimer);
+                    buttonResetTimer = null;
+                }
                 setUnlockLoading(false);
             }
         });
@@ -5111,82 +5172,176 @@ function showOfflineExpiredDialog() {
 // Expose global functions
 window.attemptReconnect = attemptReconnect;
 
-// Handle manual unlock token form submission
-document.addEventListener('DOMContentLoaded', function() {
-    const unlockForm = document.getElementById('unlockTokenForm');
-    if (unlockForm) {
-        unlockForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const email = document.getElementById('unlockEmail').value;
-            const token = document.getElementById('unlockToken').value;
-            const submitBtn = document.getElementById('unlockSubmitBtn');
-            const btnText = document.getElementById('unlockBtnText');
-            const errorDiv = document.getElementById('unlockError');
-            
-            // Clear previous error
-            errorDiv.classList.add('hidden');
-            
-            // Show loading state
-            submitBtn.disabled = true;
-            btnText.textContent = 'Validating...';
-            
-            try {
-                const machineFingerprint = generateMachineFingerprint();
-                
-                const response = await fetch(`${WORKER_URL}/validate`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        email: email,
-                        token: token,
-                        machineFingerprint: machineFingerprint
-                    }),
-                });
-                
-                const result = await response.json();
-                
-                if (result.valid && result.subscriptionStatus === 'active') {
-                    // Success! Unlock POSPal
-                    unlockPOSPal(token, email, result.customerName);
-                    // Start session management for this newly unlocked license
-                    setTimeout(() => {
-                        startSession();
-                    }, 1000);
-                } else {
-                    // Show error
-                    errorDiv.textContent = result.error || 'Invalid unlock code or email';
-                    errorDiv.classList.remove('hidden');
-                }
-                
-            } catch (error) {
-                console.error('Unlock validation error:', error);
-                errorDiv.textContent = 'Failed to validate unlock code. Please check your internet connection.';
-                errorDiv.classList.remove('hidden');
-            } finally {
-                // Reset button state
-                submitBtn.disabled = false;
-                btnText.textContent = 'Unlock POSPal';
-            }
-        });
-    }
-});
 
 // --- Embedded Payment Functions ---
 
 function showEmbeddedPayment() {
+    // Reset email validation state when opening modal
+    resetEmailValidationState();
     // Show the subscription modal
     document.getElementById('subscriptionModal').style.display = 'flex';
 }
 
 function closeSubscriptionModal() {
+    // Reset email validation state when closing modal
+    resetEmailValidationState();
     document.getElementById('subscriptionModal').style.display = 'none';
+}
+
+// Duplicate validation state
+let emailValidationState = {
+    isValidating: false,
+    isDuplicate: false,
+    isReturningCustomer: false,
+    lastValidatedEmail: null,
+    validationTimeout: null
+};
+
+// Reset email validation state
+function resetEmailValidationState() {
+    if (emailValidationState.validationTimeout) {
+        clearTimeout(emailValidationState.validationTimeout);
+    }
+    emailValidationState = {
+        isValidating: false,
+        isDuplicate: false,
+        isReturningCustomer: false,
+        lastValidatedEmail: null,
+        validationTimeout: null
+    };
+    showEmailValidationMessage('clear');
+}
+
+// Email duplicate validation function
+async function checkEmailDuplicate(email) {
+    if (!email || !email.includes('@')) return null;
+    
+    try {
+        const response = await fetch(`${WORKER_URL}/check-duplicate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email.trim().toLowerCase() })
+        });
+
+        if (!response.ok) {
+            console.warn('Duplicate check failed:', response.status);
+            return null;
+        }
+
+        const result = await response.json();
+        return {
+            isDuplicate: result.isDuplicate || false,
+            isReturningCustomer: result.isReturningCustomer || false,
+            portalUrl: result.portalUrl || null
+        };
+    } catch (error) {
+        console.warn('Email validation error:', error);
+        return null;
+    }
+}
+
+// Show/hide email validation messages
+function showEmailValidationMessage(type, portalUrl = null) {
+    const loadingDiv = document.getElementById('email-validation-loading');
+    const activeDiv = document.getElementById('email-duplicate-active');
+    const returningDiv = document.getElementById('email-duplicate-returning');
+    const errorDiv = document.getElementById('email-validation-error');
+    
+    // Hide all messages first
+    [loadingDiv, activeDiv, returningDiv, errorDiv].forEach(div => {
+        if (div) div.style.display = 'none';
+    });
+    
+    switch (type) {
+        case 'loading':
+            if (loadingDiv) loadingDiv.style.display = 'block';
+            break;
+        case 'active':
+            if (activeDiv) {
+                activeDiv.style.display = 'block';
+                const portalLink = activeDiv.querySelector('#redirect-to-portal');
+                if (portalLink && portalUrl) {
+                    portalLink.onclick = (e) => {
+                        e.preventDefault();
+                        window.open(portalUrl, '_blank');
+                    };
+                }
+            }
+            break;
+        case 'returning':
+            if (returningDiv) returningDiv.style.display = 'block';
+            break;
+        case 'error':
+            if (errorDiv) errorDiv.style.display = 'block';
+            break;
+        case 'clear':
+            // All messages already hidden
+            break;
+    }
+}
+
+// Handle email blur validation
+function handleEmailBlur(email) {
+    if (emailValidationState.validationTimeout) {
+        clearTimeout(emailValidationState.validationTimeout);
+    }
+    
+    if (!email || !email.includes('@') || email === emailValidationState.lastValidatedEmail) {
+        showEmailValidationMessage('clear');
+        return;
+    }
+    
+    emailValidationState.validationTimeout = setTimeout(async () => {
+        emailValidationState.isValidating = true;
+        emailValidationState.lastValidatedEmail = email;
+        
+        showEmailValidationMessage('loading');
+        
+        const result = await checkEmailDuplicate(email);
+        emailValidationState.isValidating = false;
+        
+        if (result === null) {
+            showEmailValidationMessage('error');
+            emailValidationState.isDuplicate = false;
+            emailValidationState.isReturningCustomer = false;
+        } else if (result.isDuplicate) {
+            showEmailValidationMessage('active', result.portalUrl);
+            emailValidationState.isDuplicate = true;
+            emailValidationState.isReturningCustomer = false;
+        } else if (result.isReturningCustomer) {
+            showEmailValidationMessage('returning');
+            emailValidationState.isDuplicate = false;
+            emailValidationState.isReturningCustomer = true;
+        } else {
+            showEmailValidationMessage('clear');
+            emailValidationState.isDuplicate = false;
+            emailValidationState.isReturningCustomer = false;
+        }
+    }, 500); // 500ms delay to avoid too many API calls
 }
 
 // Handle subscription form submission
 document.addEventListener('DOMContentLoaded', function() {
+    // Set up email validation
+    const emailInput = document.getElementById('sub-customer-email');
+    if (emailInput) {
+        emailInput.addEventListener('blur', function() {
+            handleEmailBlur(this.value.trim().toLowerCase());
+        });
+        
+        // Clear validation when user starts typing
+        emailInput.addEventListener('input', function() {
+            if (emailValidationState.validationTimeout) {
+                clearTimeout(emailValidationState.validationTimeout);
+            }
+            if (this.value.trim() !== emailValidationState.lastValidatedEmail) {
+                showEmailValidationMessage('clear');
+                emailValidationState.isDuplicate = false;
+                emailValidationState.isReturningCustomer = false;
+            }
+        });
+    }
+    
     const subscriptionForm = document.getElementById('subscriptionForm');
     if (subscriptionForm) {
         subscriptionForm.addEventListener('submit', async function(e) {
@@ -5195,17 +5350,33 @@ document.addEventListener('DOMContentLoaded', function() {
             const errorDiv = document.getElementById('subscription-error');
             const loadingDiv = document.getElementById('subscription-loading');
             const submitBtn = e.target.querySelector('button[type="submit"]');
+            const email = document.getElementById('sub-customer-email').value.trim().toLowerCase();
+            
+            // Check if user has active duplicate and prevent submission
+            if (emailValidationState.isDuplicate && !emailValidationState.isReturningCustomer) {
+                showEmailValidationMessage('active');
+                errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>You already have an active subscription. Please manage your existing subscription instead.';
+                errorDiv.style.display = 'block';
+                return;
+            }
+            
+            // Wait for any ongoing validation to complete
+            if (emailValidationState.isValidating) {
+                showToast('Please wait for email validation to complete', 'info');
+                return;
+            }
             
             // Show loading state
             submitBtn.disabled = true;
             loadingDiv.style.display = 'block';
             errorDiv.style.display = 'none';
+            showEmailValidationMessage('clear');
             
             try {
                 const customerData = {
                     restaurantName: document.getElementById('sub-restaurant-name').value,
                     name: document.getElementById('sub-customer-name').value,
-                    email: document.getElementById('sub-customer-email').value,
+                    email: email,
                     phone: document.getElementById('sub-customer-phone').value
                 };
                 
@@ -5215,18 +5386,52 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify(customerData)
                 });
                 
+                if (response.status === 409) {
+                    // Handle duplicate customer response from backend
+                    const duplicateData = await response.json();
+                    if (duplicateData.redirectToPortal && duplicateData.portalUrl) {
+                        errorDiv.innerHTML = `<i class="fas fa-info-circle mr-2"></i>You already have an active subscription. <a href="${duplicateData.portalUrl}" target="_blank" class="underline font-semibold">Manage your subscription here</a>.`;
+                        errorDiv.className = 'bg-blue-50 border-l-4 border-blue-400 p-3 text-blue-700 text-sm rounded';
+                        errorDiv.style.display = 'block';
+                    } else {
+                        errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>This email is already associated with an active subscription.';
+                        errorDiv.style.display = 'block';
+                    }
+                    return;
+                }
+                
                 if (!response.ok) {
-                    throw new Error('Failed to create checkout session');
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `HTTP ${response.status}: Failed to create checkout session`);
                 }
                 
                 const session = await response.json();
+                
+                if (!session.checkoutUrl) {
+                    throw new Error('Invalid checkout session response');
+                }
                 
                 // Redirect to Stripe Checkout
                 window.location.href = session.checkoutUrl;
                 
             } catch (error) {
                 console.error('Subscription error:', error);
-                errorDiv.textContent = `Error: ${error.message}. Please try again.`;
+                
+                // Provide user-friendly error messages
+                let userMessage = 'Something went wrong. Please try again.';
+                
+                if (error.message.includes('fetch')) {
+                    userMessage = 'Network error. Please check your connection and try again.';
+                } else if (error.message.includes('Invalid checkout')) {
+                    userMessage = 'Unable to create checkout session. Please try again.';
+                } else if (error.message.includes('HTTP 4')) {
+                    userMessage = 'Invalid information provided. Please check your details.';
+                } else if (error.message.includes('HTTP 5')) {
+                    userMessage = 'Server error. Please try again in a moment.';
+                }
+                
+                errorDiv.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i>${userMessage}`;
+                errorDiv.className = 'bg-red-50 border-l-4 border-red-400 p-3 text-red-700 text-sm rounded';
                 errorDiv.style.display = 'block';
                 
                 // Reset button state

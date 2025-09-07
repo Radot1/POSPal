@@ -40,7 +40,10 @@
       "Bash(pip install:*)",
       "Bash(pyinstaller:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(taskkill:*)",
+      "Bash(start POSPal.html)",
+      "Bash(start test-duplicate-validation.html)"
     ],
     "deny": [],
     "ask": []

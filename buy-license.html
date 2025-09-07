@@ -300,7 +300,23 @@
     
     <script>
         // Initialize Stripe (replace with your publishable key)
-        const stripe = Stripe('pk_test_51S2bGO0ee6hGru1PcQXsgn6AvCPqDGqVwZ9AuON37wN3EQpsLNCSCMlpLC4U3xVAda7zgL2D4ifbT1TSXn0PJtbL00b1W7wxZT');
+        let stripe;
+        
+        // Initialize Stripe with config from backend
+        fetch('/api/config')
+            .then(response => response.json())
+            .then(config => {
+                if (config.stripe && config.stripe.publishable_key) {
+                    stripe = Stripe(config.stripe.publishable_key);
+                } else {
+                    console.error('Stripe publishable key not available');
+                    alert('Payment system configuration error');
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load configuration:', error);
+                alert('Failed to initialize payment system');
+            });
         
         const form = document.getElementById('license-form');
         const checkoutButton = document.getElementById('checkout-button');

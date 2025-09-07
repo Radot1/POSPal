@@ -51,6 +51,8 @@ export default {
         return handleCreateCheckout(request, env);
       case '/create-checkout-session':
         return handleCreateCheckoutSession(request, env);
+      case '/check-duplicate':
+        return handleCheckDuplicate(request, env);
       case '/customer-portal':
         return handleCustomerPortal(request, env);
       case '/billing-history':
@@ -127,37 +129,83 @@ async function handleCheckoutCompleted(event, env) {
   }
   
   try {
-    // Generate unlock token
-    const unlockToken = generateUnlockToken();
+    // First check if customer already exists
+    const existingCustomer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE email = ?
+    `).bind(customerEmail).first();
     
-    // Store customer in database
-    const stmt = env.DB.prepare(`
-      INSERT OR REPLACE INTO customers 
-      (email, name, stripe_customer_id, stripe_session_id, unlock_token, subscription_id, subscription_status, created_at, last_seen)
-      VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
-    `);
+    let customerId;
+    let unlockToken;
     
-    const result = await stmt.bind(
-      customerEmail,
-      customerName,
-      session.customer,
-      session.id,
-      unlockToken,
-      subscriptionId
-    ).run();
-    
-    const customerId = result.meta.last_row_id;
+    if (existingCustomer) {
+      customerId = existingCustomer.id;
+      unlockToken = existingCustomer.unlock_token;
+      
+      // Check if they already have an active subscription
+      if (existingCustomer.subscription_id && existingCustomer.subscription_status === 'active') {
+        console.log(`Customer ${customerEmail} already has active subscription: ${existingCustomer.subscription_id}`);
+        
+        // Log the duplicate payment attempt
+        await logAuditEvent(env.DB, customerId, 'duplicate_payment_attempt', {
+          existingSubscriptionId: existingCustomer.subscription_id,
+          newSubscriptionId: subscriptionId,
+          sessionId: session.id
+        });
+        
+        // Update with new subscription data (they might have upgraded or changed plans)
+        await env.DB.prepare(`
+          UPDATE customers 
+          SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?, last_seen = datetime('now')
+          WHERE id = ?
+        `).bind(subscriptionId, session.customer, session.id, customerId).run();
+        
+        // Don't send another welcome email, just log the event
+        console.log(`Updated existing customer ${customerEmail} with new subscription ${subscriptionId}`);
+        return createResponse({ success: true, customer_id: customerId });
+      } else {
+        // Customer exists but no active subscription - reactivate them
+        await env.DB.prepare(`
+          UPDATE customers 
+          SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?, 
+              subscription_status = 'active', payment_failures = 0, last_seen = datetime('now')
+          WHERE id = ?
+        `).bind(subscriptionId, session.customer, session.id, customerId).run();
+        
+        console.log(`Reactivated customer ${customerEmail} with subscription ${subscriptionId}`);
+      }
+    } else {
+      // New customer - create fresh record
+      unlockToken = generateUnlockToken();
+      
+      const insertResult = await env.DB.prepare(`
+        INSERT INTO customers 
+        (email, name, stripe_customer_id, stripe_session_id, unlock_token, subscription_id, subscription_status, created_at, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+      `).bind(
+        customerEmail,
+        customerName,
+        session.customer,
+        session.id,
+        unlockToken,
+        subscriptionId
+      ).run();
+      
+      customerId = insertResult.meta.last_row_id;
+      console.log(`New customer created: ${customerEmail} with token ${unlockToken}`);
+    }
     
     // Log audit event
     await logAuditEvent(env.DB, customerId, 'payment_success', {
       subscriptionId,
-      sessionId: session.id
+      sessionId: session.id,
+      isNewCustomer: !existingCustomer
     });
     
-    // Send welcome email with unlock token
-    await sendWelcomeEmail(env, customerId, customerEmail, customerName, unlockToken);
+    // Send welcome email (only for truly new customers or reactivations)
+    if (!existingCustomer || existingCustomer.subscription_status !== 'active') {
+      await sendWelcomeEmail(env, customerId, customerEmail, customerName, unlockToken);
+    }
     
-    console.log(`New customer created: ${customerEmail} with token ${unlockToken}`);
     return createResponse({ success: true, customer_id: customerId });
     
   } catch (error) {
@@ -456,7 +504,7 @@ async function handleCreateCheckout(request, env) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams(data).toString(),
@@ -894,7 +942,7 @@ async function handleCustomerPortal(request, env) {
       async get(url) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
           }
         });
         return response.json();
@@ -966,7 +1014,7 @@ async function handleBillingHistory(request, env) {
       async get(url) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
           }
         });
         return response.json();
@@ -1022,7 +1070,7 @@ async function handleCancelSubscription(request, env) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams(data).toString(),
@@ -1102,7 +1150,7 @@ async function handlePauseSubscription(request, env) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams(data).toString(),
@@ -1175,7 +1223,7 @@ async function handleRetentionOffer(request, env) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams(data).toString(),
@@ -1548,7 +1596,7 @@ async function handleCreatePortalSession(request, env) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams(data).toString(),
@@ -1584,6 +1632,84 @@ async function handleCreatePortalSession(request, env) {
 }
 
 /**
+ * Handle duplicate email checking for frontend
+ */
+async function handleCheckDuplicate(request, env) {
+  try {
+    const { email } = await request.json();
+    
+    if (!email) {
+      return createResponse({ error: 'Missing email field' }, 400);
+    }
+    
+    if (!isValidEmail(email)) {
+      return createResponse({ error: 'Invalid email format' }, 400);
+    }
+    
+    // Check if customer already has an active subscription
+    const activeCustomer = await env.DB.prepare(`
+      SELECT email, subscription_status, created_at, subscription_id FROM customers 
+      WHERE email = ? AND subscription_status = 'active'
+    `).bind(email).first();
+    
+    if (activeCustomer) {
+      console.log(`Duplicate check: ${email} has active subscription`);
+      
+      return createResponse({ 
+        isDuplicate: true,
+        status: 'active',
+        message: 'This email already has an active POSPal Pro subscription',
+        subscriptionInfo: {
+          email: activeCustomer.email,
+          status: activeCustomer.subscription_status,
+          createdAt: activeCustomer.created_at
+        },
+        actionRequired: 'redirect_to_portal'
+      });
+    }
+    
+    // Check if customer exists with cancelled/paused subscription
+    const inactiveCustomer = await env.DB.prepare(`
+      SELECT email, subscription_status, created_at, subscription_id FROM customers 
+      WHERE email = ? AND subscription_status IN ('cancelled', 'paused', 'inactive')
+    `).bind(email).first();
+    
+    if (inactiveCustomer) {
+      console.log(`Duplicate check: ${email} has inactive subscription (${inactiveCustomer.subscription_status})`);
+      
+      return createResponse({ 
+        isDuplicate: false,
+        isReturningCustomer: true,
+        status: inactiveCustomer.subscription_status,
+        message: `Welcome back! You previously had a ${inactiveCustomer.subscription_status} subscription`,
+        subscriptionInfo: {
+          email: inactiveCustomer.email,
+          status: inactiveCustomer.subscription_status,
+          createdAt: inactiveCustomer.created_at
+        },
+        actionRequired: 'allow_subscription'
+      });
+    }
+    
+    // No existing customer - new subscription allowed
+    console.log(`Duplicate check: ${email} is new customer`);
+    
+    return createResponse({ 
+      isDuplicate: false,
+      isReturningCustomer: false,
+      message: 'Email is available for new subscription',
+      actionRequired: 'allow_subscription'
+    });
+    
+  } catch (error) {
+    console.error('Duplicate check error:', error);
+    return createResponse({ 
+      error: 'Failed to check for duplicates' 
+    }, 500);
+  }
+}
+
+/**
  * Handle Stripe Checkout Session creation (for POSPal subscription modal)
  */
 async function handleCreateCheckoutSession(request, env) {
@@ -1596,6 +1722,48 @@ async function handleCreateCheckoutSession(request, env) {
     
     if (!isValidEmail(email)) {
       return createResponse({ error: 'Invalid email' }, 400);
+    }
+    
+    // Check if customer already has an active subscription
+    const existingCustomer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE email = ? AND subscription_status = 'active'
+    `).bind(email).first();
+    
+    if (existingCustomer) {
+      console.log(`Duplicate subscription attempt blocked for ${email}`);
+      
+      // Log the duplicate attempt
+      await logAuditEvent(env.DB, existingCustomer.id, 'duplicate_subscription_attempt', {
+        attemptedAt: new Date().toISOString(),
+        existingSubscriptionId: existingCustomer.subscription_id
+      });
+      
+      // Return error with redirect to customer portal
+      return createResponse({ 
+        error: 'You already have an active POSPal Pro subscription',
+        duplicate: true,
+        redirectTo: 'customer-portal',
+        existingSubscription: {
+          email: existingCustomer.email,
+          subscriptionStatus: existingCustomer.subscription_status,
+          createdAt: existingCustomer.created_at
+        }
+      }, 409); // 409 Conflict status code
+    }
+    
+    // Check if customer exists but with inactive subscription
+    const inactiveCustomer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE email = ? AND subscription_status != 'active'
+    `).bind(email).first();
+    
+    if (inactiveCustomer) {
+      console.log(`Previous customer returning: ${email}, status: ${inactiveCustomer.subscription_status}`);
+      
+      // Log the returning customer attempt
+      await logAuditEvent(env.DB, inactiveCustomer.id, 'returning_customer_checkout', {
+        previousStatus: inactiveCustomer.subscription_status,
+        previousSubscriptionId: inactiveCustomer.subscription_id
+      });
     }
     
     // Get request origin to determine success/cancel URLs
@@ -1612,7 +1780,7 @@ async function handleCreateCheckoutSession(request, env) {
         const response = await fetch(`https://api.stripe.com/v1${url}`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY || 'sk_test_51S26F01HM7SuDGcMpEQ2vw3EcCVTtcQXEKVRoziKUJI0vmFHRb4OL2eymCqZJVX0QVhKptp84K5TNHYOPNk8lXU400TEuc0HeB'}`,
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: new URLSearchParams(data).toString(),

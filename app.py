@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime, timedelta
 import csv
 import os
+from config import Config
 import win32print  # type: ignore
 import time
 import json
@@ -36,9 +37,20 @@ def _sse_broadcast(event_name: str, payload: dict):
         except Exception:
             pass
 
-# --- Cloudflare hardcoded credentials (per owner request) ---
-CF_FORCE_HARDCODED_KEY = True
-CF_HARDCODED_API_KEY = "y5E7yWQk2mYh9vZb4cHn8RkLp2dJq0XfU3tG7mWz1vQp6aKj9uC5sB8hN0dXr4e"
+# --- Cleanup handler for proper shutdown ---
+def _cleanup_on_exit():
+    """Cleanup function called when the process exits normally or abnormally"""
+    try:
+        _sse_subscribers.clear()
+        app.logger.info("Application cleanup completed")
+    except Exception:
+        pass  # Don't raise exceptions during cleanup
+
+# Register cleanup handler
+atexit.register(_cleanup_on_exit)
+
+# --- Cloudflare configuration (now using environment variables) ---
+# Note: CF_FORCE_HARDCODED_KEY is deprecated - using Config.CLOUDFLARE_API_TOKEN instead
 
 
 # Configure logging
@@ -127,6 +139,309 @@ UNIVERSAL_COMMENT_FILE = os.path.join(DATA_DIR, 'universal_comment.json')
 SELECTED_TABLE_FILE = os.path.join(DATA_DIR, 'selected_table.json')
 DEVICE_SESSIONS_FILE = os.path.join(DATA_DIR, 'device_sessions.json')
 USAGE_ANALYTICS_FILE = os.path.join(DATA_DIR, 'usage_analytics.json')
+
+# --- Cloudflare Worker API Integration ---
+CLOUDFLARE_WORKER_URL = "https://pospal-licensing-v2-development.bzoumboulis.workers.dev"
+
+# Global session for connection pooling
+_api_session = None
+_api_session_lock = threading.Lock()
+
+def get_api_session():
+    """Get or create a shared HTTP session with connection pooling"""
+    global _api_session
+    with _api_session_lock:
+        if _api_session is None:
+            _api_session = requests.Session()
+            # Configure connection pooling
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=2,
+                pool_maxsize=5,
+                max_retries=0  # We handle retries manually
+            )
+            _api_session.mount('https://', adapter)
+            _api_session.headers.update({
+                'Content-Type': 'application/json',
+                'User-Agent': f'POSPal/{CURRENT_VERSION}',
+                'Accept': 'application/json'
+            })
+        return _api_session
+
+def call_cloudflare_api(endpoint, data, timeout=15, max_retries=3):
+    """Call Cloudflare Worker API with comprehensive error handling and retry logic"""
+    import time
+    
+    # Input validation
+    if not endpoint or not isinstance(endpoint, str):
+        app.logger.error("Invalid endpoint provided to call_cloudflare_api")
+        return None
+    
+    if not isinstance(data, dict):
+        app.logger.error("Invalid data format provided to call_cloudflare_api")
+        return None
+    
+    # Sanitize data size (prevent DoS)
+    try:
+        if len(json.dumps(data)) > 10240:  # 10KB limit
+            app.logger.error("Request data too large for Cloudflare API call")
+            return None
+    except (TypeError, ValueError):
+        app.logger.error("Unable to serialize data for Cloudflare API call")
+        return None
+    
+    url = f"{CLOUDFLARE_WORKER_URL}{endpoint}"
+    session = get_api_session()
+    
+    for attempt in range(max_retries + 1):
+        try:
+            app.logger.info(f"Calling Cloudflare API: {url} (attempt {attempt + 1}/{max_retries + 1})")
+            
+            response = session.post(
+                url,
+                json=data,
+                timeout=timeout
+            )
+            
+            # Check for successful response
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    app.logger.info(f"Cloudflare API success: {endpoint}")
+                    return result
+                except json.JSONDecodeError:
+                    app.logger.error(f"Cloudflare API returned invalid JSON for {endpoint}")
+                    return None
+            
+            # Handle specific error codes
+            elif response.status_code == 429:  # Rate limited
+                app.logger.warning(f"Cloudflare API rate limited for {endpoint}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                return None
+            
+            elif response.status_code in [500, 502, 503, 504]:  # Server errors - retry
+                app.logger.warning(f"Cloudflare API server error {response.status_code} for {endpoint}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                return None
+            
+            elif response.status_code in [400, 401, 403, 404]:  # Client errors - don't retry
+                app.logger.error(f"Cloudflare API client error {response.status_code} for {endpoint}: {response.text[:500]}")
+                return None
+            
+            else:
+                app.logger.error(f"Cloudflare API unexpected status {response.status_code} for {endpoint}: {response.text[:500]}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            app.logger.warning(f"Cloudflare API timeout for {endpoint} (attempt {attempt + 1})")
+            if attempt < max_retries:
+                time.sleep(1 + attempt)  # Linear backoff for timeouts
+                continue
+            return None
+            
+        except requests.exceptions.ConnectionError:
+            app.logger.warning(f"Cloudflare API connection error for {endpoint} (attempt {attempt + 1})")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            return None
+            
+        except requests.exceptions.HTTPError as e:
+            app.logger.error(f"Cloudflare API HTTP error for {endpoint}: {e}")
+            return None
+            
+        except Exception as e:
+            app.logger.error(f"Cloudflare API unexpected error for {endpoint}: {e}")
+            return None
+    
+    app.logger.error(f"Cloudflare API failed after {max_retries + 1} attempts for {endpoint}")
+    return None
+
+# License data cache to avoid frequent file reads
+_license_data_cache = None
+_license_cache_time = 0
+_license_cache_lock = threading.Lock()
+LICENSE_CACHE_TTL = 60  # Cache for 60 seconds
+
+def get_license_data(force_reload=False):
+    """Get license data from local file with security, caching, and proper parsing"""
+    global _license_data_cache, _license_cache_time
+    
+    # Check cache first
+    if not force_reload:
+        with _license_cache_lock:
+            if _license_data_cache is not None and time.time() - _license_cache_time < LICENSE_CACHE_TTL:
+                return _license_data_cache
+    
+    try:
+        license_file = find_license_file()
+        if not license_file or not os.path.exists(license_file):
+            app.logger.warning("License file not found")
+            return None
+        
+        # Verify file permissions and size
+        try:
+            stat_info = os.stat(license_file)
+            # Prevent reading huge files (security)
+            if stat_info.st_size > 16384:  # 16KB limit
+                app.logger.error(f"License file too large: {stat_info.st_size} bytes")
+                return None
+                
+            # On Windows, check if file is accessible
+            if not os.access(license_file, os.R_OK):
+                app.logger.error("License file not readable")
+                return None
+                
+        except (OSError, IOError) as e:
+            app.logger.error(f"Cannot access license file: {e}")
+            return None
+        
+        # Read file with proper encoding and error handling
+        try:
+            with open(license_file, 'r', encoding='utf-8', errors='strict') as f:
+                content = f.read(16384)  # Limit read size
+                
+            if not content.strip():
+                app.logger.warning("License file is empty")
+                return None
+                
+        except UnicodeDecodeError:
+            app.logger.error("License file contains invalid UTF-8")
+            return None
+        except (IOError, OSError) as e:
+            app.logger.error(f"Error reading license file: {e}")
+            return None
+        
+        # Parse license data with validation
+        license_data = None
+        content = content.strip()
+        
+        # Try JSON parsing first
+        try:
+            license_data = json.loads(content)
+            if not isinstance(license_data, dict):
+                app.logger.error("License JSON must be an object")
+                return None
+        except json.JSONDecodeError:
+            # Fallback to key-value parsing with validation
+            license_data = {}
+            lines_processed = 0
+            
+            for line in content.split('\n'):
+                lines_processed += 1
+                if lines_processed > 50:  # Prevent DoS with huge files
+                    app.logger.error("License file has too many lines")
+                    return None
+                    
+                line = line.strip()
+                if not line or line.startswith('#'):  # Skip empty lines and comments
+                    continue
+                    
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Validate key format
+                    if not key or not key.replace('_', '').replace('-', '').isalnum():
+                        app.logger.warning(f"Invalid license key format: {key}")
+                        continue
+                        
+                    # Limit value length
+                    if len(value) > 1024:  # 1KB per value max
+                        app.logger.warning(f"License value too long for key: {key}")
+                        continue
+                        
+                    license_data[key] = value
+            
+            if not license_data:
+                app.logger.warning("No valid license data found")
+                return None
+        
+        # Validate required fields for license data
+        if isinstance(license_data, dict):
+            # Remove any potentially dangerous keys
+            dangerous_keys = ['__class__', '__module__', '__dict__', '__weakref__']
+            for dangerous_key in dangerous_keys:
+                license_data.pop(dangerous_key, None)
+            
+            # Limit total number of keys
+            if len(license_data) > 20:
+                app.logger.warning("License file has too many keys, truncating")
+                license_data = dict(list(license_data.items())[:20])
+        
+        # Cache the result
+        with _license_cache_lock:
+            _license_data_cache = license_data
+            _license_cache_time = time.time()
+            
+        app.logger.info("License data loaded successfully")
+        return license_data
+        
+    except Exception as e:
+        app.logger.error(f"Unexpected error reading license data: {e}")
+        return None
+
+# --- Rate Limiting Infrastructure ---
+_rate_limit_data = {}
+_rate_limit_lock = threading.Lock()
+
+def check_rate_limit(client_ip, endpoint, max_requests=10, window_seconds=60):
+    """Simple rate limiting per client IP and endpoint"""
+    import time
+    
+    current_time = time.time()
+    key = f"{client_ip}:{endpoint}"
+    
+    with _rate_limit_lock:
+        if key not in _rate_limit_data:
+            _rate_limit_data[key] = []
+        
+        # Clean old requests outside the window
+        _rate_limit_data[key] = [req_time for req_time in _rate_limit_data[key] 
+                                if current_time - req_time < window_seconds]
+        
+        # Check if limit exceeded
+        if len(_rate_limit_data[key]) >= max_requests:
+            return False
+        
+        # Add current request
+        _rate_limit_data[key].append(current_time)
+        return True
+
+def validate_email(email):
+    """Basic email validation"""
+    import re
+    if not email or not isinstance(email, str):
+        return False
+    if len(email) > 254:  # RFC 5321 limit
+        return False
+    
+    # Simple regex for basic validation
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+def validate_hardware_id(hardware_id):
+    """Validate hardware ID format"""
+    if not hardware_id or not isinstance(hardware_id, str):
+        return False
+    if len(hardware_id) < 10 or len(hardware_id) > 128:
+        return False
+    # Allow alphanumeric, dashes, and underscores
+    return all(c.isalnum() or c in '-_' for c in hardware_id)
+
+def sanitize_string_input(value, max_length=255):
+    """Sanitize string input"""
+    if not isinstance(value, str):
+        return None
+    # Strip whitespace and limit length
+    sanitized = value.strip()[:max_length]
+    # Remove null bytes and control characters
+    sanitized = ''.join(c for c in sanitized if ord(c) >= 32 or c in '\t\n\r')
+    return sanitized if sanitized else None
 
 # --- Single-instance guard (Windows mutex with lock-file fallback) ---
 SINGLE_INSTANCE_MUTEX_NAME = r"Global\\POSPalServerSingleton"
@@ -920,7 +1235,7 @@ def publish_menu_cloudflare():
 
         # Read config
         api_base = str(config.get('cloudflare_api_base', '')).rstrip('/')
-        api_key = CF_HARDCODED_API_KEY if CF_FORCE_HARDCODED_KEY else str(config.get('cloudflare_api_key', ''))
+        api_key = Config.CLOUDFLARE_API_TOKEN or str(config.get('cloudflare_api_key', ''))
         public_base = str(config.get('cloudflare_public_base', '')).rstrip('/')
 
         if not api_base or not api_key or not store_slug:
@@ -1220,6 +1535,31 @@ def get_next_daily_order_number():
                 os.remove(ORDER_COUNTER_LOCK_FILE)
             except Exception as e_rem:
                 app.logger.warning(f"WARNING: Failed to remove lock file {ORDER_COUNTER_LOCK_FILE}: {e_rem}")
+
+
+@app.route('/api/config')
+def get_frontend_config():
+    """Provide configuration data to frontend (non-sensitive only)"""
+    try:
+        return jsonify({
+            'stripe': {
+                'publishable_key': Config.STRIPE_PUBLISHABLE_KEY
+            },
+            'app': {
+                'base_url': Config.APP_BASE_URL,
+                'version': CURRENT_VERSION
+            },
+            'features': {
+                'test_mode': Config.ENABLE_TEST_MODE,
+                'new_checkout': Config.ENABLE_NEW_CHECKOUT,
+                'subscription_management': Config.ENABLE_SUBSCRIPTION_MANAGEMENT,
+                'refund_processing': Config.ENABLE_REFUND_PROCESSING,
+                'email_notifications': Config.ENABLE_EMAIL_NOTIFICATIONS
+            }
+        })
+    except Exception as e:
+        app.logger.error(f"Config endpoint error: {e}")
+        return jsonify({'error': 'Configuration not available'}), 500
 
 
 @app.route('/')
@@ -1719,17 +2059,72 @@ def get_version():
     return jsonify({"version": CURRENT_VERSION})
 
 
+# --- Global shutdown flag for graceful termination ---
+_shutdown_requested = False
+
 # --- NEW ENDPOINT FOR SHUTDOWN ---
 def shutdown_server():
+    global _shutdown_requested
     app.logger.info("Shutdown command received. Terminating server.")
-    os._exit(0)
+    _shutdown_requested = True
+    
+    try:
+        # Clean up SSE subscribers
+        app.logger.info("Cleaning up SSE subscribers...")
+        _sse_subscribers.clear()
+        
+        # Clean up any background threads
+        app.logger.info("Cleaning up background threads...")
+        
+        # Give a moment for cleanup
+        time.sleep(0.5)
+        
+        app.logger.info("Initiating process termination...")
+        
+        # For Windows, try multiple termination methods for reliability
+        if os.name == 'nt':  # Windows
+            try:
+                # Method 1: Use taskkill to forcefully terminate the process tree
+                # This ensures all child processes are also terminated
+                result = subprocess.run(['taskkill', '/F', '/T', '/PID', str(os.getpid())], 
+                                      capture_output=True, text=True, timeout=5)
+                app.logger.info(f"Taskkill result: {result.returncode}")
+            except subprocess.TimeoutExpired:
+                app.logger.warning("Taskkill timeout, proceeding with alternative methods")
+            except Exception as e:
+                app.logger.error(f"Taskkill failed: {e}")
+        
+        try:
+            # Method 2: Use os.kill with SIGTERM (cross-platform)
+            import signal
+            app.logger.info("Sending SIGTERM to process...")
+            os.kill(os.getpid(), signal.SIGTERM)
+        except Exception as e:
+            app.logger.error(f"SIGTERM failed: {e}")
+        
+        # Method 3: Force exit as last resort
+        app.logger.info("Using os._exit() as final termination method")
+        os._exit(1)
+            
+    except Exception as e:
+        app.logger.error(f"Error during shutdown: {e}")
+        # Force exit even if cleanup fails
+        os._exit(1)
 
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown():
-    # Schedule shutdown for 1 second from now
-    threading.Timer(1.0, shutdown_server).start()
-    # Immediately return a response
-    return jsonify({"status": "success", "message": "Server is shutting down."})
+    try:
+        app.logger.info("Shutdown request received from client")
+        # Schedule shutdown for 1 second from now to allow response to be sent
+        shutdown_timer = threading.Timer(1.0, shutdown_server)
+        shutdown_timer.daemon = True  # Make it a daemon thread
+        shutdown_timer.start()
+        app.logger.info("Shutdown timer started, server will terminate in 1 second")
+        # Immediately return a response
+        return jsonify({"status": "success", "message": "Server is shutting down."}), 200
+    except Exception as e:
+        app.logger.error(f"Error initiating shutdown: {e}")
+        return jsonify({"status": "error", "message": "Failed to initiate shutdown."}), 500
 
 
 # --- NEW ENDPOINT to get the next order number ---
@@ -2588,50 +2983,363 @@ def get_usage_analytics_endpoint():
 def create_customer_portal_session():
     """Create Stripe customer portal session for subscription management"""
     try:
+        # Rate limiting
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
+        if not check_rate_limit(client_ip, 'create-portal-session', max_requests=5, window_seconds=300):
+            app.logger.warning(f"Rate limit exceeded for create-portal-session from {client_ip}")
+            return jsonify({"error": "Too many requests. Please try again later."}), 429
+        
         # Check if user has an active subscription
         trial_status = check_trial_status()
         if not trial_status.get('licensed') or not trial_status.get('subscription'):
-            return jsonify({"error": "No active subscription found"}), 400
+            return jsonify({
+                "error": "No active subscription found",
+                "code": "SUBSCRIPTION_REQUIRED"
+            }), 400
         
-        # For now, return a placeholder URL
-        # In production, this would:
-        # 1. Get customer ID from license file
-        # 2. Create Stripe portal session
-        # 3. Return the portal URL
+        # Get customer email from request or license file with validation
+        try:
+            data = request.get_json() or {}
+            if not isinstance(data, dict):
+                return jsonify({"error": "Invalid request format", "code": "INVALID_REQUEST"}), 400
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return jsonify({"error": "Invalid JSON in request", "code": "INVALID_JSON"}), 400
         
-        return jsonify({
-            "url": "https://billing.stripe.com/session/portal_session_placeholder",
-            "message": "Customer portal integration pending - contact support for subscription changes"
+        customer_email = data.get('customerEmail')
+        
+        # Sanitize email input
+        if customer_email:
+            customer_email = sanitize_string_input(customer_email, 254)
+            if not validate_email(customer_email):
+                return jsonify({
+                    "error": "Invalid email format", 
+                    "code": "INVALID_EMAIL"
+                }), 400
+        
+        if not customer_email:
+            # Try to get from license file
+            license_data = get_license_data()
+            if license_data:
+                customer_email = license_data.get('customer_email')
+                if customer_email:
+                    customer_email = sanitize_string_input(customer_email, 254)
+                    if not validate_email(customer_email):
+                        customer_email = None
+            
+        if not customer_email:
+            return jsonify({
+                "error": "Customer email not found or invalid", 
+                "code": "EMAIL_REQUIRED"
+            }), 400
+        
+        # Call Cloudflare Worker to create portal session
+        app.logger.info(f"Creating portal session for email: {customer_email[:5]}***")
+        response = call_cloudflare_api('/create-portal-session', {
+            'email': customer_email
         })
+        
+        if response and response.get('success'):
+            portal_url = response.get('portal_url')
+            if portal_url and isinstance(portal_url, str) and portal_url.startswith('https://'):
+                return jsonify({
+                    "url": portal_url,
+                    "message": "Portal session created successfully",
+                    "code": "SUCCESS"
+                })
+            else:
+                app.logger.error("Invalid portal URL returned from Cloudflare API")
+                return jsonify({
+                    "error": "Invalid portal URL received",
+                    "code": "INVALID_RESPONSE"
+                }), 500
+        else:
+            error_msg = response.get('error') if response else 'Unknown error'
+            app.logger.warning(f"Cloudflare portal session creation failed: {error_msg}")
+            # Fallback to placeholder
+            return jsonify({
+                "url": "https://billing.stripe.com/session/portal_session_placeholder",
+                "message": "Portal temporarily unavailable - contact support for subscription changes",
+                "code": "FALLBACK_MODE"
+            })
         
     except Exception as e:
         app.logger.error(f"Failed to create portal session: {e}")
-        return jsonify({"error": "Failed to create portal session"}), 500
+        return jsonify({
+            "error": "Internal server error", 
+            "code": "SERVER_ERROR"
+        }), 500
 
 @app.route('/api/create-subscription-session', methods=['POST'])
 def create_subscription_session():
     """Create Stripe checkout session for subscription"""
     try:
-        data = request.get_json()
+        # Rate limiting
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
+        if not check_rate_limit(client_ip, 'create-subscription-session', max_requests=3, window_seconds=300):
+            app.logger.warning(f"Rate limit exceeded for create-subscription-session from {client_ip}")
+            return jsonify({"error": "Too many requests. Please try again later.", "code": "RATE_LIMIT"}), 429
         
-        # Validate required fields
+        # Parse and validate JSON request
+        try:
+            data = request.get_json()
+            if not data or not isinstance(data, dict):
+                return jsonify({"error": "Invalid request format", "code": "INVALID_REQUEST"}), 400
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return jsonify({"error": "Invalid JSON in request", "code": "INVALID_JSON"}), 400
+        
+        # Validate required fields with proper sanitization
         required_fields = ['customerName', 'customerEmail', 'hardwareId']
+        validated_data = {}
+        
         for field in required_fields:
-            if not data.get(field):
-                return jsonify({"error": f"Missing {field}"}), 400
+            value = data.get(field)
+            if not value:
+                return jsonify({
+                    "error": f"Missing required field: {field}",
+                    "code": "MISSING_FIELD"
+                }), 400
+            
+            if field == 'customerEmail':
+                email = sanitize_string_input(value, 254)
+                if not validate_email(email):
+                    return jsonify({
+                        "error": "Invalid email format",
+                        "code": "INVALID_EMAIL"
+                    }), 400
+                validated_data['email'] = email
+                
+            elif field == 'customerName':
+                name = sanitize_string_input(value, 100)
+                if not name or len(name) < 2:
+                    return jsonify({
+                        "error": "Invalid customer name",
+                        "code": "INVALID_NAME"
+                    }), 400
+                validated_data['name'] = name
+                
+            elif field == 'hardwareId':
+                hw_id = sanitize_string_input(value, 128)
+                if not validate_hardware_id(hw_id):
+                    return jsonify({
+                        "error": "Invalid hardware ID format",
+                        "code": "INVALID_HARDWARE_ID"
+                    }), 400
+                validated_data['machineFingerprint'] = hw_id
         
-        # For now, return a placeholder session
-        # In production, this would create a real Stripe subscription checkout
+        # Optional restaurant name with validation
+        restaurant_name = data.get('restaurantName')
+        if restaurant_name:
+            restaurant_name = sanitize_string_input(restaurant_name, 100)
+            validated_data['restaurantName'] = restaurant_name if restaurant_name else validated_data['name']
+        else:
+            validated_data['restaurantName'] = validated_data['name']
         
-        return jsonify({
-            "id": "cs_subscription_placeholder",
-            "url": "https://checkout.stripe.com/subscription_placeholder",
-            "message": "Stripe integration pending - use test checkout for now"
-        })
+        # Call Cloudflare Worker to create Stripe checkout session
+        app.logger.info(f"Creating subscription session for: {validated_data['email'][:5]}*** / {validated_data['name']}")
+        response = call_cloudflare_api('/create-checkout-session', validated_data)
+        
+        if response and response.get('success'):
+            session_id = response.get('sessionId')
+            checkout_url = response.get('checkoutUrl')
+            
+            # Validate response data
+            if not session_id or not isinstance(session_id, str):
+                app.logger.error("Invalid session ID from Cloudflare API")
+                return jsonify({
+                    "error": "Invalid session ID received",
+                    "code": "INVALID_RESPONSE"
+                }), 500
+            
+            if not checkout_url or not isinstance(checkout_url, str) or not checkout_url.startswith('https://'):
+                app.logger.error("Invalid checkout URL from Cloudflare API")
+                return jsonify({
+                    "error": "Invalid checkout URL received", 
+                    "code": "INVALID_RESPONSE"
+                }), 500
+            
+            return jsonify({
+                "id": session_id,
+                "url": checkout_url,
+                "message": "Checkout session created successfully",
+                "code": "SUCCESS"
+            })
+        else:
+            error_msg = response.get('error') if response else 'Unknown error'
+            app.logger.warning(f"Cloudflare subscription session creation failed: {error_msg}")
+            # Fallback to placeholder
+            return jsonify({
+                "id": "cs_subscription_placeholder",
+                "url": "https://checkout.stripe.com/subscription_placeholder",
+                "message": "Payment system temporarily unavailable - please try again later",
+                "code": "FALLBACK_MODE"
+            })
         
     except Exception as e:
         app.logger.error(f"Failed to create subscription session: {e}")
-        return jsonify({"error": "Failed to create subscription session"}), 500
+        return jsonify({
+            "error": "Internal server error",
+            "code": "SERVER_ERROR"
+        }), 500
+
+@app.route('/api/validate-license', methods=['POST'])
+def validate_license_api():
+    """Validate license with Cloudflare Worker (real-time check)"""
+    try:
+        # Rate limiting - more lenient for license validation
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
+        if not check_rate_limit(client_ip, 'validate-license', max_requests=20, window_seconds=300):
+            app.logger.warning(f"Rate limit exceeded for validate-license from {client_ip}")
+            return jsonify({"error": "Too many requests. Please try again later.", "code": "RATE_LIMIT"}), 429
+        
+        # Parse and validate request
+        try:
+            data = request.get_json() or {}
+            if not isinstance(data, dict):
+                data = {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            app.logger.warning("Invalid JSON in license validation request, using empty data")
+            data = {}
+        
+        # Get hardware ID (use provided or generate)
+        hardware_id = data.get('hardwareId')
+        if hardware_id:
+            hardware_id = sanitize_string_input(hardware_id, 128)
+            if not validate_hardware_id(hardware_id):
+                hardware_id = None
+                
+        if not hardware_id:
+            try:
+                hardware_id = get_enhanced_hardware_id()
+            except Exception as e:
+                app.logger.error(f"Failed to generate hardware ID: {e}")
+                return jsonify({
+                    "error": "Unable to generate hardware ID",
+                    "code": "HARDWARE_ID_ERROR"
+                }), 500
+        
+        # Get customer email and unlock token with validation
+        customer_email = data.get('customerEmail')
+        unlock_token = data.get('unlockToken')
+        
+        # Sanitize inputs
+        if customer_email:
+            customer_email = sanitize_string_input(customer_email, 254)
+            if not validate_email(customer_email):
+                customer_email = None
+                
+        if unlock_token:
+            unlock_token = sanitize_string_input(unlock_token, 512)  # Tokens can be longer
+            if not unlock_token:
+                unlock_token = None
+        
+        if not customer_email or not unlock_token:
+            # Try to get from license file
+            try:
+                license_data = get_license_data()
+                if license_data:
+                    if not customer_email:
+                        file_email = license_data.get('customer_email')
+                        if file_email:
+                            file_email = sanitize_string_input(file_email, 254)
+                            if validate_email(file_email):
+                                customer_email = file_email
+                    
+                    if not unlock_token:
+                        file_token = license_data.get('unlock_token')
+                        if file_token:
+                            file_token = sanitize_string_input(file_token, 512)
+                            if file_token:
+                                unlock_token = file_token
+            except Exception as e:
+                app.logger.warning(f"Error reading license data for validation: {e}")
+        
+        if not customer_email or not unlock_token:
+            # Fall back to file-based validation
+            app.logger.info("No valid cloud credentials found, using file-based validation")
+            try:
+                trial_status = check_trial_status()
+                trial_status['cloud_validation'] = False
+                trial_status['validation_method'] = 'file_based'
+                return jsonify(trial_status)
+            except Exception as e:
+                app.logger.error(f"File-based validation failed: {e}")
+                return jsonify({
+                    "licensed": False,
+                    "subscription": False,
+                    "status": "error",
+                    "message": "License validation failed",
+                    "cloud_validation": False,
+                    "code": "VALIDATION_ERROR"
+                }), 500
+        
+        # Call Cloudflare Worker for validation
+        app.logger.info(f"Validating license for: {customer_email[:5]}*** via cloud")
+        response = call_cloudflare_api('/validate', {
+            'email': customer_email,
+            'unlockToken': unlock_token,
+            'machineFingerprint': hardware_id
+        })
+        
+        if response and response.get('success'):
+            return jsonify({
+                "licensed": True,
+                "subscription": True,
+                "status": "active",
+                "message": "License validated successfully",
+                "cloud_validation": True,
+                "validation_method": "cloud",
+                "code": "SUCCESS"
+            })
+            
+        elif response and response.get('error'):
+            error_msg = sanitize_string_input(str(response.get('error')), 200)
+            return jsonify({
+                "licensed": False,
+                "subscription": False, 
+                "status": "invalid",
+                "message": error_msg or "License validation failed",
+                "cloud_validation": True,
+                "validation_method": "cloud",
+                "code": "INVALID_LICENSE"
+            })
+            
+        else:
+            # Fallback to file-based validation
+            app.logger.warning("Cloud validation returned no clear response, falling back to file-based")
+            try:
+                trial_status = check_trial_status()
+                trial_status['cloud_validation'] = False
+                trial_status['validation_method'] = 'file_based_fallback'
+                return jsonify(trial_status)
+            except Exception as e:
+                app.logger.error(f"File-based fallback validation failed: {e}")
+                return jsonify({
+                    "licensed": False,
+                    "subscription": False,
+                    "status": "error",
+                    "message": "All validation methods failed",
+                    "cloud_validation": False,
+                    "code": "FALLBACK_ERROR"
+                }), 500
+        
+    except Exception as e:
+        app.logger.error(f"License validation error: {e}")
+        # Always fallback to file-based validation on error
+        try:
+            trial_status = check_trial_status()
+            trial_status['cloud_validation'] = False
+            trial_status['validation_method'] = 'file_based_error_fallback'
+            return jsonify(trial_status)
+        except Exception as fallback_error:
+            app.logger.error(f"Emergency fallback validation failed: {fallback_error}")
+            return jsonify({
+                "licensed": False,
+                "subscription": False,
+                "status": "error", 
+                "message": "License validation system error",
+                "cloud_validation": False,
+                "code": "SYSTEM_ERROR"
+            }), 500
 
 @app.route('/api/system_status')
 def get_system_status():
@@ -3705,7 +4413,9 @@ def _open_browser_when_ready():
 # Add to startup logic (always check for updates when running as packaged executable)
 if getattr(sys, 'frozen', False):
     # Check for updates once, 5 seconds after startup
-    threading.Timer(5, check_for_updates).start()
+    update_timer = threading.Timer(5, check_for_updates)
+    update_timer.daemon = True  # Make it a daemon thread so it won't prevent shutdown
+    update_timer.start()
 
 if __name__ == '__main__':
     # Ensure single instance with retry mechanism
