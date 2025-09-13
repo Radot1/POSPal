@@ -2,6 +2,16 @@ name = "pospal-licensing-v2"
 main = "src/index.js"
 compatibility_date = "2024-08-31"
 
+# Default local development configuration (no environment specified)
+[[d1_databases]]
+binding = "DB"
+database_name = "pospal-subscriptions-dev"
+database_id = "62f81f71-2c41-4c60-bd74-649aa619f2fc"
+
+[vars]
+ENVIRONMENT = "development"
+STRIPE_PRICE_ID = "price_1S2vQN0ee6hGru1PTberJVcZ"
+
 # Production environment
 [env.production]
 
@@ -14,6 +24,7 @@ database_id = "2f0fd6ad-4886-4348-ab6b-9f98087e76f9"
 # Environment variables for production (set via wrangler secret put)
 [env.production.vars]
 ENVIRONMENT = "production"
+STRIPE_PRICE_ID = "price_1S2vQN0ee6hGru1PTberJVcZ"
 # Secrets are set via: wrangler secret put STRIPE_SECRET_KEY --env production
 # Secrets are set via: wrangler secret put STRIPE_WEBHOOK_SECRET --env production
 # Secrets are set via: wrangler secret put RESEND_API_KEY --env production
@@ -31,7 +42,7 @@ ENVIRONMENT = "development"
 # Set development secrets via: wrangler secret put STRIPE_SECRET_KEY --env development
 # Set development secrets via: wrangler secret put STRIPE_WEBHOOK_SECRET --env development
 # Set development secrets via: wrangler secret put RESEND_API_KEY --env development
-STRIPE_PRICE_ID = "price_1S26QQ1HM7SuDGcMAqFI7r9C"
+STRIPE_PRICE_ID = "price_1S2vQN0ee6hGru1PTberJVcZ"
 
 # Workers routes (configure these later)
 # [[env.production.routes]]

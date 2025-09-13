@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>License Lookup - POSPal Pro</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.6;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+        input[type="email"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e1e1;
+            border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input[type="email"]:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        .btn {
+            background: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            transition: background 0.3s;
+        }
+        .btn:hover {
+            background: #2980b9;
+        }
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .license-info {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+        .license-token {
+            font-family: 'Courier New', monospace;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 2px dashed #2196f3;
+            margin: 15px 0;
+        }
+        .copy-btn {
+            background: #4caf50;
+            font-size: 14px;
+            padding: 8px 16px;
+            margin-top: 10px;
+        }
+        .copy-btn:hover {
+            background: #45a049;
+        }
+        .back-link {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .back-link a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">POSPal Pro</div>
+            <h2>License Lookup</h2>
+            <p>Enter your email to find your POSPal Pro license</p>
+        </div>
+
+        <div class="instructions">
+            <strong>Instructions:</strong> Enter the email address you used when purchasing POSPal Pro. If you made a recent payment and don't see your license, please check your spam folder or contact support.
+        </div>
+
+        <form id="lookupForm">
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email" required placeholder="Enter your email address">
+            </div>
+            <button type="submit" class="btn" id="lookupBtn">Find My License</button>
+        </form>
+
+        <div id="result" class="result"></div>
+
+        <div class="back-link">
+            <a href="index.html">← Back to POSPal</a>
+        </div>
+    </div>
+
+    <script>
+        const WORKER_URL = 'https://pospal-licensing-v2-production.bzoumboulis.workers.dev';
+        
+        document.getElementById('lookupForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value.trim();
+            const resultDiv = document.getElementById('result');
+            const lookupBtn = document.getElementById('lookupBtn');
+            
+            if (!email) {
+                showResult('error', 'Please enter your email address');
+                return;
+            }
+            
+            // Disable button and show loading
+            lookupBtn.disabled = true;
+            lookupBtn.textContent = 'Searching...';
+            resultDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${WORKER_URL}/customer-lookup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+                
+                const data = await response.json();
+                
+                if (data.found) {
+                    showLicenseInfo(data.customer);
+                } else {
+                    showResult('error', data.message || 'No account found with this email address. If you recently made a payment, please contact support.');
+                    showResendOption(email);
+                }
+                
+            } catch (error) {
+                console.error('Lookup error:', error);
+                showResult('error', 'Failed to lookup license. Please try again or contact support.');
+            }
+            
+            // Re-enable button
+            lookupBtn.disabled = false;
+            lookupBtn.textContent = 'Find My License';
+        });
+        
+        function showResult(type, message) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = message;
+            resultDiv.style.display = 'block';
+        }
+        
+        function showLicenseInfo(customer) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result success';
+            resultDiv.innerHTML = `
+                <h3>License Found!</h3>
+                <div class="license-info">
+                    <p><strong>Name:</strong> ${customer.name}</p>
+                    <p><strong>Email:</strong> ${customer.email}</p>
+                    <p><strong>Status:</strong> <span style="color: green; font-weight: bold;">${customer.subscription_status.toUpperCase()}</span></p>
+                    <p><strong>Created:</strong> ${new Date(customer.created_at).toLocaleDateString()}</p>
+                    
+                    <p><strong>Your License Key:</strong></p>
+                    <div class="license-token" id="licenseToken">${customer.unlock_token}</div>
+                    <button class="btn copy-btn" onclick="copyLicense()">Copy License Key</button>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #f0f8ff; border-radius: 6px;">
+                        <strong>How to use your license:</strong>
+                        <ol style="margin: 10px 0;">
+                            <li>Open POSPal application</li>
+                            <li>Click "Enter License" or go to Settings</li>
+                            <li>Paste your license key above</li>
+                            <li>Enter your email: ${customer.email}</li>
+                            <li>Click "Activate License"</li>
+                        </ol>
+                    </div>
+                </div>
+                
+                <button class="btn" onclick="resendEmail('${customer.email}')" style="margin-top: 15px; background: #f39c12;">
+                    Resend License Email
+                </button>
+            `;
+            resultDiv.style.display = 'block';
+        }
+        
+        function showResendOption(email) {
+            const resultDiv = document.getElementById('result');
+            const currentContent = resultDiv.innerHTML;
+            resultDiv.innerHTML = currentContent + `
+                <div style="margin-top: 15px; padding: 15px; background: #e8f4fd; border-radius: 6px;">
+                    <p><strong>Recently made a payment?</strong></p>
+                    <p>If you just completed a payment, try requesting your license email:</p>
+                    <button class="btn" onclick="resendEmail('${email}')" style="background: #f39c12;">
+                        Send License Email
+                    </button>
+                </div>
+            `;
+        }
+        
+        function copyLicense() {
+            const licenseToken = document.getElementById('licenseToken').textContent;
+            navigator.clipboard.writeText(licenseToken).then(function() {
+                alert('License key copied to clipboard!');
+            }).catch(function(err) {
+                console.error('Could not copy text: ', err);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = licenseToken;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('License key copied to clipboard!');
+            });
+        }
+        
+        async function resendEmail(email) {
+            try {
+                const response = await fetch(`${WORKER_URL}/resend-license-email`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('License email sent! Please check your inbox (and spam folder).');
+                } else {
+                    alert('Failed to send email. Please contact support.');
+                }
+            } catch (error) {
+                console.error('Resend error:', error);
+                alert('Failed to send email. Please contact support.');
+            }
+        }
+    </script>
+</body>
+</html>

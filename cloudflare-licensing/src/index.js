@@ -7,19 +7,36 @@ import {
   generateUnlockToken, 
   isValidEmail, 
   createResponse, 
+  createErrorResponse,
+  createValidationResponse,
+  createOfflineResponse,
   handleCORS, 
   logAuditEvent,
   logEmailDelivery,
   updateEmailStatus,
   hashMachineFingerprint,
-  isSubscriptionActive
+  isSubscriptionActive,
+  getDetailedSubscriptionStatus,
+  getCustomerForValidation,
+  logValidationEvent,
+  validateMultipleLicenses,
+  executeDbOperation,
+  performHealthCheck,
+  dbCircuitBreaker,
+  retryOperation,
+  checkRateLimit,
+  logRecoveryAttempt,
+  analyzeSecurityIndicators
 } from './utils.js';
 
 import { 
   getWelcomeEmailTemplate, 
   getPaymentFailureEmailTemplate,
+  getImmediateSuspensionEmailTemplate,
+  getImmediateReactivationEmailTemplate,
   getRenewalReminderEmailTemplate,
-  getMachineSwitchEmailTemplate
+  getMachineSwitchEmailTemplate,
+  getLicenseRecoveryEmailTemplate
 } from './email-templates.js';
 
 export default {
@@ -37,8 +54,12 @@ export default {
         return handleStripeWebhook(request, env);
       case '/validate':
         return handleLicenseValidation(request, env);
+      case '/batch-validate':
+        return handleBatchValidation(request, env);
       case '/instant-validate':
         return handleInstantValidation(request, env);
+      case '/validate-status':
+        return handleValidationStatus(request, env);
       case '/session/start':
         return handleSessionStart(request, env);
       case '/session/heartbeat':
@@ -71,8 +92,16 @@ export default {
         return handleExportData(request, env);
       case '/create-portal-session':
         return handleCreatePortalSession(request, env);
+      case '/manual-license-creation':
+        return handleManualLicenseCreation(request, env);
+      case '/customer-lookup':
+        return handleCustomerLookup(request, env);
+      case '/resend-license-email':
+        return handleResendLicenseEmail(request, env);
+      case '/recover-license':
+        return handleLicenseRecovery(request, env);
       case '/health':
-        return createResponse({ status: 'ok', timestamp: new Date().toISOString() });
+        return handleHealthCheck(request, env);
       default:
         return createResponse({ error: 'Not found' }, 404);
     }
@@ -103,6 +132,10 @@ async function handleStripeWebhook(request, env) {
         return await handlePaymentFailed(event, env);
       case 'customer.subscription.deleted':
         return await handleSubscriptionCancelled(event, env);
+      case 'payment_method.attached':
+        return await handlePaymentMethodAttached(event, env);
+      case 'setup_intent.succeeded':
+        return await handleSetupIntentSucceeded(event, env);
       default:
         console.log(`Unhandled event type: ${event.type}`);
         return createResponse({ received: true });
@@ -122,6 +155,16 @@ async function handleCheckoutCompleted(event, env) {
   const customerEmail = session.customer_details?.email;
   const customerName = session.customer_details?.name || 'Customer';
   const subscriptionId = session.subscription;
+  
+  // Debug logging for payment method investigation
+  console.log('Checkout completed debug info:', {
+    sessionId: session.id,
+    customerId: session.customer,
+    paymentMethodId: session.payment_method_id || 'not_available',
+    mode: session.mode,
+    paymentMethodTypes: session.payment_method_types,
+    setupIntentId: session.setup_intent || 'none'
+  });
   
   if (!customerEmail || !subscriptionId) {
     console.error('Missing customer email or subscription ID');
@@ -194,6 +237,40 @@ async function handleCheckoutCompleted(event, env) {
       console.log(`New customer created: ${customerEmail} with token ${unlockToken}`);
     }
     
+    // Fetch and log customer payment methods for debugging
+    if (session.customer) {
+      try {
+        const stripe = {
+          async get(url) {
+            const response = await fetch(`https://api.stripe.com/v1${url}`, {
+              headers: {
+                'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+              }
+            });
+            return response.json();
+          }
+        };
+        
+        const paymentMethods = await stripe.get(`/customers/${session.customer}/payment_methods?type=card`);
+        console.log('Customer payment methods after checkout:', {
+          customerId: session.customer,
+          paymentMethodCount: paymentMethods.data?.length || 0,
+          paymentMethods: paymentMethods.data?.map(pm => ({
+            id: pm.id,
+            type: pm.type,
+            card: pm.card ? {
+              brand: pm.card.brand,
+              last4: pm.card.last4,
+              exp_month: pm.card.exp_month,
+              exp_year: pm.card.exp_year
+            } : null
+          })) || []
+        });
+      } catch (debugError) {
+        console.error('Error fetching payment methods for debugging:', debugError);
+      }
+    }
+
     // Log audit event
     await logAuditEvent(env.DB, customerId, 'payment_success', {
       subscriptionId,
@@ -215,7 +292,8 @@ async function handleCheckoutCompleted(event, env) {
 }
 
 /**
- * Handle successful payment (renewal)
+ * Handle successful payment (renewal) - NO GRACE PERIOD POLICY
+ * Immediate reactivation on successful payment
  */
 async function handlePaymentSucceeded(event, env) {
   const invoice = event.data.object;
@@ -226,16 +304,39 @@ async function handlePaymentSucceeded(event, env) {
   }
   
   try {
-    // Update customer subscription status
-    const stmt = env.DB.prepare(`
+    // Get customer details first to check if this is a reactivation
+    const customer = await env.DB.prepare(`
+      SELECT id, email, name, subscription_status FROM customers WHERE subscription_id = ?
+    `).bind(subscriptionId).first();
+    
+    if (!customer) {
+      console.error(`Customer not found for subscription: ${subscriptionId}`);
+      return createResponse({ error: 'Customer not found' }, 404);
+    }
+    
+    const wasInactive = customer.subscription_status !== 'active';
+    
+    // IMMEDIATE REACTIVATION - clear any inactive status
+    await env.DB.prepare(`
       UPDATE customers 
-      SET subscription_status = 'active', payment_failures = 0, last_seen = datetime('now')
+      SET subscription_status = 'active', last_seen = datetime('now')
       WHERE subscription_id = ?
-    `);
+    `).bind(subscriptionId).run();
     
-    await stmt.bind(subscriptionId).run();
+    // Log audit event
+    await logAuditEvent(env.DB, customer.id, wasInactive ? 'payment_succeeded_immediate_reactivation' : 'payment_succeeded_renewal', {
+      subscriptionId,
+      policy: 'no_grace_period',
+      reactivatedAt: wasInactive ? new Date().toISOString() : null,
+      previousStatus: customer.subscription_status
+    });
     
-    console.log(`Payment succeeded for subscription: ${subscriptionId}`);
+    // Send reactivation email only if account was previously inactive
+    if (wasInactive) {
+      await sendImmediateReactivationEmail(env, customer.id, customer.email, customer.name || 'Customer');
+    }
+    
+    console.log(`Payment succeeded for ${customer.email}${wasInactive ? ' - IMMEDIATELY REACTIVATED' : ' - RENEWED'}`);
     return createResponse({ success: true });
     
   } catch (error) {
@@ -245,7 +346,8 @@ async function handlePaymentSucceeded(event, env) {
 }
 
 /**
- * Handle failed payment
+ * Handle failed payment - NO GRACE PERIOD POLICY
+ * Immediate suspension on first payment failure
  */
 async function handlePaymentFailed(event, env) {
   const invoice = event.data.object;
@@ -257,9 +359,9 @@ async function handlePaymentFailed(event, env) {
   }
   
   try {
-    // Get customer and increment failure count
+    // Get customer details
     const customer = await env.DB.prepare(`
-      SELECT id, email, payment_failures FROM customers WHERE subscription_id = ?
+      SELECT id, email, name FROM customers WHERE subscription_id = ?
     `).bind(subscriptionId).first();
     
     if (!customer) {
@@ -267,30 +369,24 @@ async function handlePaymentFailed(event, env) {
       return createResponse({ error: 'Customer not found' }, 404);
     }
     
-    const newFailureCount = (customer.payment_failures || 0) + 1;
-    
-    // Update failure count
-    const updateStmt = env.DB.prepare(`
+    // IMMEDIATE SUSPENSION - no grace period or failure count tracking
+    await env.DB.prepare(`
       UPDATE customers 
-      SET payment_failures = ?, subscription_status = CASE 
-        WHEN ? >= 3 THEN 'inactive' 
-        ELSE subscription_status 
-      END
+      SET subscription_status = 'inactive', last_seen = datetime('now')
       WHERE subscription_id = ?
-    `);
-    
-    await updateStmt.bind(newFailureCount, newFailureCount, subscriptionId).run();
+    `).bind(subscriptionId).run();
     
     // Log audit event
-    await logAuditEvent(env.DB, customer.id, 'payment_failed', {
-      failureCount: newFailureCount,
-      subscriptionId
+    await logAuditEvent(env.DB, customer.id, 'payment_failed_immediate_suspension', {
+      subscriptionId,
+      policy: 'no_grace_period',
+      suspendedAt: new Date().toISOString()
     });
     
-    // Send payment failure email
-    await sendPaymentFailureEmail(env, customer.id, customerEmail || customer.email, 'Customer');
+    // Send immediate suspension email
+    await sendImmediateSuspensionEmail(env, customer.id, customerEmail || customer.email, customer.name || 'Customer');
     
-    console.log(`Payment failed for ${customer.email}, failure count: ${newFailureCount}`);
+    console.log(`Payment failed for ${customer.email} - IMMEDIATELY SUSPENDED (no grace period)`);
     return createResponse({ success: true });
     
   } catch (error) {
@@ -326,117 +422,284 @@ async function handleSubscriptionCancelled(event, env) {
 }
 
 /**
- * Handle license validation requests
+ * Handle license validation requests (Enhanced for hybrid cloud-first validation)
  */
 async function handleLicenseValidation(request, env) {
+  const startTime = Date.now();
+  
   try {
-    const { email, token, machineFingerprint } = await request.json();
+    const { email, token, machineFingerprint, skipMachineUpdate } = await request.json();
     
-    if (!email || !token || !machineFingerprint) {
-      return createResponse({ 
-        valid: false, 
-        error: 'Missing required fields' 
-      }, 400);
+    if (!email || !token) {
+      return createErrorResponse('Missing required fields: email, token', 400, {
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
     }
     
     if (!isValidEmail(email)) {
-      return createResponse({ 
-        valid: false, 
-        error: 'Invalid email format' 
-      }, 400);
+      return createErrorResponse('Invalid email format', 400, {
+        code: 'INVALID_EMAIL_FORMAT'
+      });
     }
     
-    // Look up customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, token).first();
+    // Performance-optimized customer lookup with circuit breaker protection
+    const customer = await dbCircuitBreaker.execute(async () => {
+      return await getCustomerForValidation(env.DB, email, token);
+    });
     
     if (!customer) {
-      return createResponse({ 
+      return createValidationResponse({ 
         valid: false, 
-        error: 'Invalid email or unlock token' 
-      });
+        error: 'Invalid email or unlock token',
+        errorCode: 'INVALID_CREDENTIALS'
+      }, 60); // Cache negative results for 1 minute
     }
     
-    // Check subscription status
-    if (!isSubscriptionActive(customer)) {
-      return createResponse({ 
-        valid: false, 
-        error: 'Subscription is not active' 
+    // Get detailed subscription status for hybrid validation
+    const detailedStatus = getDetailedSubscriptionStatus(customer);
+    
+    if (!detailedStatus.isActive) {
+      // Log validation attempt for inactive subscription
+      await logValidationEvent(env.DB, customer.id, 'inactive_validation', {
+        responseTime: Date.now() - startTime
+      }, {
+        subscriptionStatus: customer.subscription_status,
+        daysSinceLastSeen: detailedStatus.daysSinceLastSeen
       });
-    }
-    
-    // Hash machine fingerprint for storage
-    const hashedFingerprint = await hashMachineFingerprint(machineFingerprint);
-    
-    // Check if machine has changed
-    const machineChanged = customer.machine_fingerprint && 
-                          customer.machine_fingerprint !== hashedFingerprint;
-    
-    // Update customer with new machine fingerprint and last seen
-    const updateStmt = env.DB.prepare(`
-      UPDATE customers 
-      SET machine_fingerprint = ?, last_seen = datetime('now'), last_validation = datetime('now')
-      WHERE id = ?
-    `);
-    
-    await updateStmt.bind(hashedFingerprint, customer.id).run();
-    
-    // Log validation event
-    await logAuditEvent(env.DB, customer.id, 'validation', {
-      machineChanged,
-      oldMachine: customer.machine_fingerprint,
-      newMachine: hashedFingerprint
-    });
-    
-    // Send machine switch notification if needed
-    if (machineChanged) {
-      await sendMachineSwitchEmail(env, customer.id, customer.email, 'Customer');
       
-      await logAuditEvent(env.DB, customer.id, 'machine_switch', {
-        oldMachine: customer.machine_fingerprint,
-        newMachine: hashedFingerprint
-      });
+      return createValidationResponse({ 
+        valid: false, 
+        error: 'Subscription is not active',
+        errorCode: 'SUBSCRIPTION_INACTIVE',
+        subscriptionInfo: detailedStatus
+      }, 300); // Cache for 5 minutes
     }
     
-    console.log(`License validated for ${email}, machine changed: ${machineChanged}`);
+    let machineChanged = false;
+    let hashedFingerprint = null;
     
-    return createResponse({
-      valid: true,
-      customerName: customer.email.split('@')[0], // Simple name extraction
-      subscriptionStatus: customer.subscription_status,
-      machineChanged
+    // Handle machine fingerprint if provided
+    if (machineFingerprint && !skipMachineUpdate) {
+      hashedFingerprint = await hashMachineFingerprint(machineFingerprint);
+      machineChanged = customer.machine_fingerprint && 
+                      customer.machine_fingerprint !== hashedFingerprint;
+      
+      // Update customer with new machine fingerprint and validation timestamp
+      await dbCircuitBreaker.execute(async () => {
+        return await env.DB.prepare(`
+          UPDATE customers 
+          SET machine_fingerprint = ?, last_seen = datetime('now'), last_validation = datetime('now')
+          WHERE id = ?
+        `).bind(hashedFingerprint, customer.id).run();
+      });
+      
+      // Send machine switch notification if needed
+      if (machineChanged) {
+        await sendMachineSwitchEmail(env, customer.id, customer.email, 'Customer');
+      }
+    } else {
+      // Just update last validation timestamp for tracking
+      await env.DB.prepare(`
+        UPDATE customers 
+        SET last_seen = datetime('now'), last_validation = datetime('now')
+        WHERE id = ?
+      `).bind(customer.id).run();
+    }
+    
+    // Log successful validation with performance metrics
+    await logValidationEvent(env.DB, customer.id, 'successful_validation', {
+      responseTime: Date.now() - startTime,
+      machineChanged,
+      skipMachineUpdate: skipMachineUpdate || false
+    }, {
+      machineChanged,
+      hashedFingerprint,
+      validationRecommendation: detailedStatus.validationRecommendation
     });
+    
+    console.log(`License validated for ${email} in ${Date.now() - startTime}ms, machine changed: ${machineChanged}`);
+    
+    // Determine cache duration based on subscription stability
+    const cacheDuration = detailedStatus.validationRecommendation === 'cached' ? 3600 : 900; // 1 hour or 15 minutes
+    
+    return createValidationResponse({
+      valid: true,
+      customerName: customer.name || customer.email.split('@')[0],
+      customerId: customer.id,
+      subscriptionInfo: detailedStatus,
+      machineChanged,
+      performance: {
+        responseTime: Date.now() - startTime,
+        cached: false,
+        validationRecommendation: detailedStatus.validationRecommendation
+      }
+    }, cacheDuration);
     
   } catch (error) {
     console.error('Validation error:', error);
-    return createResponse({ 
-      valid: false, 
-      error: 'Validation failed' 
-    }, 500);
+    return createErrorResponse('Validation failed', 500, {
+      code: 'VALIDATION_ERROR',
+      responseTime: Date.now() - startTime
+    });
   }
 }
 
 /**
- * Handle instant validation after payment (for embedded flow)
+ * Handle batch validation for multiple licenses
+ */
+async function handleBatchValidation(request, env) {
+  const startTime = Date.now();
+  
+  try {
+    const { validations, options = {} } = await request.json();
+    
+    if (!validations || !Array.isArray(validations)) {
+      return createErrorResponse('Missing or invalid validations array', 400, {
+        code: 'INVALID_VALIDATIONS_ARRAY'
+      });
+    }
+    
+    if (validations.length > 50) {
+      return createErrorResponse('Too many validations requested (max 50)', 400, {
+        code: 'TOO_MANY_VALIDATIONS'
+      });
+    }
+    
+    // Validate request format
+    for (let i = 0; i < validations.length; i++) {
+      const validation = validations[i];
+      if (!validation.email || !validation.token) {
+        return createErrorResponse(`Invalid validation at index ${i}: missing email or token`, 400, {
+          code: 'INVALID_VALIDATION_FORMAT',
+          index: i
+        });
+      }
+      
+      if (!isValidEmail(validation.email)) {
+        return createErrorResponse(`Invalid email format at index ${i}`, 400, {
+          code: 'INVALID_EMAIL_FORMAT',
+          index: i
+        });
+      }
+    }
+    
+    // Process batch validation
+    const batchResult = await validateMultipleLicenses(env.DB, validations);
+    
+    // Log batch validation event
+    const sampleCustomerId = batchResult.results.find(r => r.valid && r.customer)?.customer?.id;
+    if (sampleCustomerId) {
+      await logValidationEvent(env.DB, sampleCustomerId, 'batch_validation', {
+        ...batchResult.metadata,
+        totalRequests: validations.length
+      }, {
+        batchSize: validations.length,
+        successRate: batchResult.results.filter(r => r.valid).length / validations.length
+      });
+    }
+    
+    console.log(`Batch validation completed: ${validations.length} requests in ${Date.now() - startTime}ms`);
+    
+    return createValidationResponse({
+      success: batchResult.success,
+      results: batchResult.results,
+      metadata: {
+        ...batchResult.metadata,
+        processedAt: new Date().toISOString(),
+        totalProcessingTime: Date.now() - startTime
+      }
+    }, 300); // Cache batch results for 5 minutes
+    
+  } catch (error) {
+    console.error('Batch validation error:', error);
+    return createErrorResponse('Batch validation failed', 500, {
+      code: 'BATCH_VALIDATION_ERROR',
+      responseTime: Date.now() - startTime
+    });
+  }
+}
+
+/**
+ * Handle validation status check (lightweight endpoint for status polling)
+ */
+async function handleValidationStatus(request, env) {
+  const startTime = Date.now();
+  
+  try {
+    const { email, token } = await request.json();
+    
+    if (!email || !token) {
+      return createErrorResponse('Missing required fields: email, token', 400, {
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+    
+    if (!isValidEmail(email)) {
+      return createErrorResponse('Invalid email format', 400, {
+        code: 'INVALID_EMAIL_FORMAT'
+      });
+    }
+    
+    // Lightweight customer lookup (no machine fingerprint updates)
+    const customer = await getCustomerForValidation(env.DB, email, token);
+    
+    if (!customer) {
+      return createValidationResponse({ 
+        valid: false, 
+        error: 'Invalid email or unlock token',
+        errorCode: 'INVALID_CREDENTIALS'
+      }, 300); // Cache negative results for 5 minutes
+    }
+    
+    // Get detailed subscription status
+    const detailedStatus = getDetailedSubscriptionStatus(customer);
+    
+    // Log lightweight validation
+    await logValidationEvent(env.DB, customer.id, 'status_check', {
+      responseTime: Date.now() - startTime,
+      lightweight: true
+    });
+    
+    console.log(`Status check for ${email} in ${Date.now() - startTime}ms`);
+    
+    return createValidationResponse({
+      valid: detailedStatus.isActive,
+      subscriptionInfo: detailedStatus,
+      customerName: customer.name || customer.email.split('@')[0],
+      performance: {
+        responseTime: Date.now() - startTime,
+        lightweight: true
+      }
+    }, 600); // Cache status for 10 minutes
+    
+  } catch (error) {
+    console.error('Status check error:', error);
+    return createErrorResponse('Status check failed', 500, {
+      code: 'STATUS_CHECK_ERROR',
+      responseTime: Date.now() - startTime
+    });
+  }
+}
+
+/**
+ * Handle instant validation after payment (Enhanced for embedded flow)
  */
 async function handleInstantValidation(request, env) {
+  const startTime = Date.now();
+  
   try {
     const { email, stripeSessionId, machineFingerprint } = await request.json();
     
     if (!email || !stripeSessionId || !machineFingerprint) {
-      return createResponse({ 
-        valid: false, 
-        error: 'Missing required fields' 
-      }, 400);
+      return createErrorResponse('Missing required fields', 400, {
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
     }
     
     if (!isValidEmail(email)) {
-      return createResponse({ 
-        valid: false, 
-        error: 'Invalid email format' 
-      }, 400);
+      return createErrorResponse('Invalid email format', 400, {
+        code: 'INVALID_EMAIL_FORMAT'
+      });
     }
     
     // Look up customer by email and verify they have a recent payment
@@ -446,40 +709,55 @@ async function handleInstantValidation(request, env) {
     `).bind(email, stripeSessionId).first();
     
     if (!customer) {
-      return createResponse({ 
+      return createValidationResponse({ 
         valid: false, 
-        error: 'No valid subscription found for this payment session' 
-      });
+        error: 'No valid subscription found for this payment session',
+        errorCode: 'NO_VALID_SUBSCRIPTION'
+      }, 60); // Cache negative results briefly
     }
+    
+    // Get detailed subscription status
+    const detailedStatus = getDetailedSubscriptionStatus(customer);
     
     // Hash machine fingerprint for storage
     const hashedFingerprint = await hashMachineFingerprint(machineFingerprint);
     
-    // Update customer with machine fingerprint
+    // Update customer with machine fingerprint and validation timestamp
     await env.DB.prepare(`
       UPDATE customers 
       SET machine_fingerprint = ?, last_seen = datetime('now'), last_validation = datetime('now')
       WHERE id = ?
     `).bind(hashedFingerprint, customer.id).run();
     
-    // Log successful validation
-    await logAuditEvent(env, customer.id, 'INSTANT_VALIDATION_SUCCESS', {
+    // Log successful instant validation with performance metrics
+    await logValidationEvent(env.DB, customer.id, 'instant_validation', {
+      responseTime: Date.now() - startTime,
+      sessionId: stripeSessionId
+    }, {
       sessionId: stripeSessionId,
-      machineFingerprint: hashedFingerprint
+      machineFingerprint: hashedFingerprint,
+      paymentFlow: 'embedded'
     });
     
-    return createResponse({ 
+    console.log(`Instant validation successful for ${email} in ${Date.now() - startTime}ms`);
+    
+    return createValidationResponse({ 
       valid: true,
       unlockToken: customer.unlock_token,
-      customerName: customer.name
-    });
+      customerName: customer.name,
+      subscriptionInfo: detailedStatus,
+      performance: {
+        responseTime: Date.now() - startTime,
+        instant: true
+      }
+    }, 3600); // Cache instant validations for 1 hour
     
   } catch (error) {
     console.error('Instant validation error:', error);
-    return createResponse({ 
-      valid: false, 
-      error: 'Validation failed' 
-    }, 500);
+    return createErrorResponse('Validation failed', 500, {
+      code: 'INSTANT_VALIDATION_ERROR',
+      responseTime: Date.now() - startTime
+    });
   }
 }
 
@@ -655,6 +933,133 @@ async function sendPaymentFailureEmail(env, customerId, email, name) {
 }
 
 /**
+ * Send immediate suspension email - NO GRACE PERIOD POLICY
+ */
+async function sendImmediateSuspensionEmail(env, customerId, email, name) {
+  try {
+    const { subject, html } = getImmediateSuspensionEmailTemplate(name);
+    
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'immediate_suspension', email, subject);
+    
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal Billing <billing@pospal.gr>',
+        to: [email],
+        subject: subject,
+        html: html,
+      }),
+    });
+    
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`Immediate suspension email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send immediate suspension email:`, error);
+    }
+    
+  } catch (error) {
+    console.error('Immediate suspension email error:', error);
+  }
+}
+
+/**
+ * Send immediate reactivation email - NO GRACE PERIOD POLICY
+ */
+async function sendImmediateReactivationEmail(env, customerId, email, name) {
+  try {
+    const { subject, html } = getImmediateReactivationEmailTemplate(name);
+    
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'immediate_reactivation', email, subject);
+    
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal <noreply@pospal.gr>',
+        to: [email],
+        subject: subject,
+        html: html,
+      }),
+    });
+    
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`Immediate reactivation email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send immediate reactivation email:`, error);
+    }
+    
+  } catch (error) {
+    console.error('Immediate reactivation email error:', error);
+  }
+}
+
+/**
+ * Send license recovery email with enhanced security template
+ */
+async function sendLicenseRecoveryEmail(env, customerId, email, name, unlockToken, securityFlags = {}) {
+  try {
+    const { subject, html } = getLicenseRecoveryEmailTemplate(name, unlockToken, email, securityFlags);
+    
+    // Log email attempt
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'license_recovery', email, subject);
+    
+    // Send email via Resend
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal License Recovery <recovery@pospal.gr>',
+        to: [email],
+        subject: subject,
+        html: html,
+      }),
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`License recovery email sent to ${email}, ID: ${result.id}`);
+      
+      // Log successful email delivery
+      await logAuditEvent(env.DB, customerId, 'license_recovery_email_sent', {
+        emailId: result.id,
+        securityLevel: securityFlags.securityLevel || 'normal',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send license recovery email to ${email}:`, error);
+      
+      // Log failed email delivery
+      await logAuditEvent(env.DB, customerId, 'license_recovery_email_failed', {
+        error: error,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+  } catch (error) {
+    console.error('License recovery email error:', error);
+  }
+}
+
+/**
  * Send machine switch notification email
  */
 async function sendMachineSwitchEmail(env, customerId, email, name) {
@@ -753,7 +1158,7 @@ async function handleSessionStart(request, env) {
     ).run();
     
     // Log audit event
-    await logAuditEvent(env, customer.id, 'SESSION_START', {
+    await logAuditEvent(env.DB, customer.id, 'SESSION_START', {
       sessionId,
       deviceInfo: deviceInfo || {}
     });
@@ -897,7 +1302,7 @@ async function handleSessionTakeover(request, env) {
     ).run();
     
     // Log audit event
-    await logAuditEvent(env, customer.id, 'SESSION_TAKEOVER', {
+    await logAuditEvent(env.DB, customer.id, 'SESSION_TAKEOVER', {
       newSessionId: sessionId,
       deviceInfo: deviceInfo || {}
     });
@@ -946,12 +1351,55 @@ async function handleCustomerPortal(request, env) {
           }
         });
         return response.json();
+      },
+      async post(url, data) {
+        const response = await fetch(`https://api.stripe.com/v1${url}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams(data).toString(),
+        });
+        return response.json();
       }
     };
     
+    // Handle missing stripe_customer_id (same fallback as portal session)
+    if (!customer.stripe_customer_id || customer.stripe_customer_id === 'null') {
+      console.log(`Customer ${customer.email} missing stripe_customer_id, creating Stripe customer`);
+      
+      const stripeCustomer = await stripe.post('/customers', {
+        email: customer.email,
+        name: customer.name || customer.email.split('@')[0],
+        'metadata[pospal_customer_id]': customer.id.toString(),
+        'metadata[unlock_token]': customer.unlock_token,
+        'metadata[created_via]': 'customer_portal_fallback'
+      });
+      
+      if (stripeCustomer.error) {
+        console.error('Failed to create Stripe customer for portal:', stripeCustomer.error);
+      } else {
+        // Update database with new Stripe customer ID
+        await env.DB.prepare(`
+          UPDATE customers 
+          SET stripe_customer_id = ?
+          WHERE id = ?
+        `).bind(stripeCustomer.id, customer.id).run();
+        
+        customer.stripe_customer_id = stripeCustomer.id;
+        
+        // Log the fallback customer creation
+        await logAuditEvent(env.DB, customer.id, 'stripe_customer_created_portal_fallback', {
+          stripeCustomerId: stripeCustomer.id,
+          reason: 'missing_stripe_customer_id_during_portal_data_fetch'
+        });
+      }
+    }
+    
     // Get subscription details from Stripe
     let subscriptionData = null;
-    if (customer.subscription_id) {
+    if (customer.subscription_id && customer.stripe_customer_id) {
       subscriptionData = await stripe.get(`/subscriptions/${customer.subscription_id}?expand[]=default_payment_method&expand[]=customer`);
       
       if (subscriptionData.error) {
@@ -1586,10 +2034,6 @@ async function handleCreatePortalSession(request, env) {
       return createResponse({ error: 'Invalid credentials' }, 401);
     }
     
-    if (!customer.stripe_customer_id) {
-      return createResponse({ error: 'No Stripe customer found' }, 400);
-    }
-    
     // Create Stripe API helper
     const stripe = {
       async post(url, data) {
@@ -1605,15 +2049,72 @@ async function handleCreatePortalSession(request, env) {
       }
     };
     
+    let stripeCustomerId = customer.stripe_customer_id;
+    
+    // If no Stripe customer ID, create one (check for both null and string "null")
+    if (!stripeCustomerId || stripeCustomerId === 'null') {
+      console.log(`Creating Stripe customer for ${email} - missing stripe_customer_id`);
+      
+      const stripeCustomer = await stripe.post('/customers', {
+        email: customer.email,
+        name: customer.name || customer.email.split('@')[0],
+        'metadata[pospal_customer_id]': customer.id.toString(),
+        'metadata[unlock_token]': customer.unlock_token,
+        'metadata[created_via]': 'portal_session_fallback'
+      });
+      
+      if (stripeCustomer.error) {
+        console.error('Failed to create Stripe customer:', stripeCustomer.error);
+        return createResponse({ 
+          error: 'Unable to access customer portal at this time. Please try again in a few minutes or contact support if the issue persists.',
+          errorCode: 'STRIPE_CUSTOMER_CREATION_FAILED',
+          supportEmail: 'support@pospal.gr'
+        }, 500);
+      }
+      
+      stripeCustomerId = stripeCustomer.id;
+      
+      // Update database with new Stripe customer ID
+      await env.DB.prepare(`
+        UPDATE customers 
+        SET stripe_customer_id = ?
+        WHERE id = ?
+      `).bind(stripeCustomerId, customer.id).run();
+      
+      // Log the fallback customer creation
+      await logAuditEvent(env.DB, customer.id, 'stripe_customer_created_fallback', {
+        stripeCustomerId: stripeCustomerId,
+        reason: 'missing_stripe_customer_id_during_portal_access',
+        originalSubscriptionId: customer.subscription_id
+      });
+      
+      console.log(`Created Stripe customer ${stripeCustomerId} for existing customer ${customer.email}`);
+    }
+    
     // Create billing portal session
     const portalSession = await stripe.post('/billing_portal/sessions', {
-      customer: customer.stripe_customer_id,
+      customer: stripeCustomerId,
       return_url: request.headers.get('Referer') || 'http://127.0.0.1:5000'
     });
     
     if (portalSession.error) {
       console.error('Failed to create portal session:', portalSession.error);
-      return createResponse({ error: 'Failed to create portal session' }, 500);
+      
+      // Special handling for portal configuration error
+      if (portalSession.error.message && portalSession.error.message.includes('No configuration provided')) {
+        return createResponse({ 
+          error: 'Customer portal is temporarily unavailable. Please try again in a few minutes or contact support.',
+          errorCode: 'STRIPE_PORTAL_NOT_CONFIGURED',
+          supportEmail: 'support@pospal.gr',
+          details: 'Portal configuration required'
+        }, 503); // Service Unavailable
+      }
+      
+      return createResponse({ 
+        error: 'Unable to open customer portal at this time. Please try again in a few minutes.',
+        errorCode: 'STRIPE_PORTAL_CREATION_FAILED',
+        supportEmail: 'support@pospal.gr'
+      }, 500);
     }
     
     // Log portal access
@@ -1710,6 +2211,316 @@ async function handleCheckDuplicate(request, env) {
 }
 
 /**
+ * Handle manual license creation for users who paid but didn't receive license
+ * SECURITY: This should be protected with an admin key in production
+ */
+async function handleManualLicenseCreation(request, env) {
+  try {
+    const { email, name, adminKey, subscriptionId } = await request.json();
+    
+    // Simple admin key check (in production, use a secure admin key)
+    if (adminKey !== 'pospal-admin-2024') {
+      return createResponse({ error: 'Unauthorized' }, 401);
+    }
+    
+    if (!email || !name) {
+      return createResponse({ error: 'Missing required fields: email, name' }, 400);
+    }
+    
+    if (!isValidEmail(email)) {
+      return createResponse({ error: 'Invalid email format' }, 400);
+    }
+    
+    // Check if customer already exists
+    const existingCustomer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE email = ?
+    `).bind(email).first();
+    
+    if (existingCustomer) {
+      // Resend the existing license
+      await sendWelcomeEmail(env, existingCustomer.id, existingCustomer.email, existingCustomer.name, existingCustomer.unlock_token);
+      
+      return createResponse({
+        success: true,
+        message: 'License email resent to existing customer',
+        customer_id: existingCustomer.id,
+        unlock_token: existingCustomer.unlock_token
+      });
+    }
+    
+    // Create new customer
+    const unlockToken = generateUnlockToken();
+    const insertResult = await env.DB.prepare(`
+      INSERT INTO customers 
+      (email, name, unlock_token, subscription_id, subscription_status, created_at, last_seen)
+      VALUES (?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+    `).bind(
+      email,
+      name,
+      unlockToken,
+      subscriptionId || `manual_${Date.now()}`
+    ).run();
+    
+    const customerId = insertResult.meta.last_row_id;
+    
+    // Log the manual creation
+    await logAuditEvent(env.DB, customerId, 'manual_license_created', {
+      adminCreated: true,
+      subscriptionId: subscriptionId || 'manual',
+      timestamp: new Date().toISOString()
+    });
+    
+    // Send welcome email
+    await sendWelcomeEmail(env, customerId, email, name, unlockToken);
+    
+    console.log(`Manual license created for ${email}: ${unlockToken}`);
+    
+    return createResponse({
+      success: true,
+      message: 'License created and email sent successfully',
+      customer_id: customerId,
+      unlock_token: unlockToken
+    });
+    
+  } catch (error) {
+    console.error('Manual license creation error:', error);
+    return createResponse({ error: 'Failed to create license' }, 500);
+  }
+}
+
+/**
+ * Handle customer lookup by email
+ */
+async function handleCustomerLookup(request, env) {
+  try {
+    const { email } = await request.json();
+    
+    if (!email) {
+      return createResponse({ error: 'Missing email field' }, 400);
+    }
+    
+    if (!isValidEmail(email)) {
+      return createResponse({ error: 'Invalid email format' }, 400);
+    }
+    
+    // Look up customer
+    const customer = await env.DB.prepare(`
+      SELECT id, email, name, unlock_token, subscription_status, created_at, last_seen 
+      FROM customers WHERE email = ?
+    `).bind(email).first();
+    
+    if (!customer) {
+      return createResponse({ 
+        found: false, 
+        message: 'No account found with this email address. If you recently made a payment, please contact support.' 
+      });
+    }
+    
+    // Update last seen
+    await env.DB.prepare(`
+      UPDATE customers SET last_seen = datetime('now') WHERE id = ?
+    `).bind(customer.id).run();
+    
+    return createResponse({
+      found: true,
+      customer: {
+        email: customer.email,
+        name: customer.name,
+        unlock_token: customer.unlock_token,
+        subscription_status: customer.subscription_status,
+        created_at: customer.created_at
+      }
+    });
+    
+  } catch (error) {
+    console.error('Customer lookup error:', error);
+    return createResponse({ error: 'Failed to lookup customer' }, 500);
+  }
+}
+
+/**
+ * Handle license key recovery with enhanced security and rate limiting
+ * This is the main endpoint for license recovery with full security features
+ */
+async function handleLicenseRecovery(request, env) {
+  try {
+    const { email } = await request.json();
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+    
+    if (!email) {
+      return createResponse({ error: 'Missing email field' }, 400);
+    }
+    
+    if (!isValidEmail(email)) {
+      return createResponse({ error: 'Invalid email format' }, 400);
+    }
+    
+    // Check rate limits first
+    const rateLimitResult = await checkRateLimit(env.DB, ip, email);
+    if (!rateLimitResult.allowed) {
+      // Log the blocked attempt
+      await logRecoveryAttempt(env.DB, email, ip, userAgent, false, null, {
+        blocked: true,
+        reason: rateLimitResult.reason,
+        message: rateLimitResult.message
+      });
+      
+      return createResponse({ 
+        error: rateLimitResult.message,
+        rateLimited: true,
+        reason: rateLimitResult.reason,
+        blockedUntil: rateLimitResult.blockedUntil
+      }, 429);
+    }
+    
+    // Look up customer
+    const customer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE email = ?
+    `).bind(email).first();
+    
+    // Analyze security indicators
+    const securityFlags = analyzeSecurityIndicators(request, email, customer);
+    
+    if (!customer) {
+      // Log failed attempt for non-existent customer
+      await logRecoveryAttempt(env.DB, email, ip, userAgent, false, null, securityFlags);
+      
+      // Return generic error to prevent email enumeration
+      return createResponse({ 
+        error: 'If this email has a POSPal account, a recovery email will be sent within a few minutes.'
+      });
+    }
+    
+    // For inactive subscriptions, still send the email but include subscription status info
+    const isActive = isSubscriptionActive(customer);
+    
+    // Send license recovery email (using dedicated template)
+    await sendLicenseRecoveryEmail(env, customer.id, customer.email, customer.name, customer.unlock_token, securityFlags);
+    
+    // Log successful recovery attempt
+    await logRecoveryAttempt(env.DB, email, ip, userAgent, true, customer.id, securityFlags);
+    
+    // Log audit event
+    await logAuditEvent(env.DB, customer.id, 'license_recovery_requested', {
+      timestamp: new Date().toISOString(),
+      ip: ip,
+      userAgent: userAgent,
+      subscriptionActive: isActive,
+      securityLevel: securityFlags.securityLevel,
+      securityReason: securityFlags.reason || 'normal'
+    });
+    
+    // Generic success message to prevent information leakage
+    return createResponse({
+      success: true,
+      message: 'If this email has a POSPal account, a recovery email will be sent within a few minutes.',
+      // Only include customer info if this is a successful recovery
+      ...(customer && {
+        customerInfo: {
+          subscriptionStatus: customer.subscription_status,
+          accountCreated: customer.created_at
+        }
+      })
+    });
+    
+  } catch (error) {
+    console.error('License recovery error:', error);
+    return createResponse({ error: 'Failed to process recovery request' }, 500);
+  }
+}
+
+/**
+ * Handle resending license email for existing customers
+ * DEPRECATED: This endpoint is kept for backward compatibility
+ * Use /recover-license for new implementations
+ */
+async function handleResendLicenseEmail(request, env) {
+  console.warn('DEPRECATED ENDPOINT: /resend-license-email is deprecated. Use /recover-license instead.');
+  
+  // Forward to the new secure recovery handler
+  return handleLicenseRecovery(request, env);
+}
+
+/**
+ * Handle payment method attachment to customer
+ */
+async function handlePaymentMethodAttached(event, env) {
+  try {
+    const paymentMethod = event.data.object;
+    const customerId = paymentMethod.customer;
+    
+    if (!customerId) {
+      console.log('Payment method attached but no customer ID');
+      return createResponse({ received: true });
+    }
+    
+    // Find customer in our database by Stripe customer ID
+    const customer = await env.DB.prepare(`
+      SELECT id, email FROM customers WHERE stripe_customer_id = ?
+    `).bind(customerId).first();
+    
+    if (customer) {
+      // Log payment method attachment for audit
+      await logAuditEvent(env.DB, customer.id, 'payment_method_attached', {
+        paymentMethodId: paymentMethod.id,
+        paymentMethodType: paymentMethod.type,
+        last4: paymentMethod.card?.last4,
+        brand: paymentMethod.card?.brand,
+        expMonth: paymentMethod.card?.exp_month,
+        expYear: paymentMethod.card?.exp_year
+      });
+      
+      console.log(`Payment method ${paymentMethod.id} attached to customer ${customer.email}`);
+    }
+    
+    return createResponse({ received: true });
+    
+  } catch (error) {
+    console.error('Payment method attachment handling error:', error);
+    return createResponse({ error: 'Failed to process payment method attachment' }, 500);
+  }
+}
+
+/**
+ * Handle setup intent succeeded (for saving cards without immediate payment)
+ */
+async function handleSetupIntentSucceeded(event, env) {
+  try {
+    const setupIntent = event.data.object;
+    const customerId = setupIntent.customer;
+    const paymentMethodId = setupIntent.payment_method;
+    
+    if (!customerId || !paymentMethodId) {
+      console.log('Setup intent succeeded but missing customer ID or payment method ID');
+      return createResponse({ received: true });
+    }
+    
+    // Find customer in our database by Stripe customer ID
+    const customer = await env.DB.prepare(`
+      SELECT id, email FROM customers WHERE stripe_customer_id = ?
+    `).bind(customerId).first();
+    
+    if (customer) {
+      // Log setup intent completion for audit
+      await logAuditEvent(env.DB, customer.id, 'setup_intent_succeeded', {
+        setupIntentId: setupIntent.id,
+        paymentMethodId: paymentMethodId,
+        usage: setupIntent.usage
+      });
+      
+      console.log(`Setup intent ${setupIntent.id} succeeded for customer ${customer.email}`);
+    }
+    
+    return createResponse({ received: true });
+    
+  } catch (error) {
+    console.error('Setup intent handling error:', error);
+    return createResponse({ error: 'Failed to process setup intent' }, 500);
+  }
+}
+
+/**
  * Handle Stripe Checkout Session creation (for POSPal subscription modal)
  */
 async function handleCreateCheckoutSession(request, env) {
@@ -1795,7 +2606,7 @@ async function handleCreateCheckoutSession(request, env) {
       'line_items[0][price]': env.STRIPE_PRICE_ID || 'price_1S26QQ1HM7SuDGcMAqFI7r9C',
       'line_items[0][quantity]': '1',
       mode: 'subscription',
-      success_url: `${baseUrl}/success.html?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${baseUrl}/success.html?session_id={CHECKOUT_SESSION_ID}&email=${encodeURIComponent(email)}`,
       cancel_url: `${baseUrl}/payment-failed.html?reason=cancelled`,
       customer_email: email,
       'metadata[restaurant_name]': restaurantName,
@@ -1803,7 +2614,12 @@ async function handleCreateCheckoutSession(request, env) {
       'metadata[customer_phone]': phone || '',
       'allow_promotion_codes': 'true',
       'billing_address_collection': 'required',
-      'automatic_tax[enabled]': 'true'
+      'automatic_tax[enabled]': 'true',
+      // CRITICAL: Save payment methods for future use and customer portal
+      'payment_method_collection': 'always',
+      'payment_method_options[card][setup_future_usage]': 'off_session',
+      // Additional configuration for better test mode compatibility
+      'customer_creation': 'always'
     });
 
     if (session.error) {
@@ -1827,5 +2643,58 @@ async function handleCreateCheckoutSession(request, env) {
   } catch (error) {
     console.error('Checkout session creation error:', error);
     return createResponse({ error: 'Failed to create checkout session' }, 500);
+  }
+}
+
+/**
+ * Enhanced health check endpoint with circuit breaker monitoring
+ */
+async function handleHealthCheck(request, env) {
+  try {
+    // Use circuit breaker for database health check
+    const healthData = await dbCircuitBreaker.execute(async () => {
+      return await performHealthCheck(env.DB);
+    });
+    
+    // Add circuit breaker status
+    healthData.circuitBreaker = dbCircuitBreaker.getState();
+    
+    // Add system information
+    healthData.system = {
+      worker: 'cloudflare-licensing',
+      version: '2.0.0',
+      environment: env.ENVIRONMENT || 'production'
+    };
+    
+    // Determine overall status based on services
+    let overallStatus = 'healthy';
+    if (healthData.services.database?.status === 'unhealthy') {
+      overallStatus = 'unhealthy';
+    } else if (healthData.circuitBreaker.state !== 'CLOSED') {
+      overallStatus = 'degraded';
+    }
+    
+    healthData.status = overallStatus;
+    
+    const statusCode = overallStatus === 'healthy' ? 200 : 
+                      overallStatus === 'degraded' ? 200 : 503;
+    
+    return new Response(JSON.stringify(healthData), {
+      status: statusCode,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Health check error:', error);
+    
+    // Return offline response if health check fails
+    return createOfflineResponse('unknown', {
+      error: error.message,
+      circuitBreaker: dbCircuitBreaker.getState()
+    });
   }
 }

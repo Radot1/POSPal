@@ -20,9 +20,32 @@ import atexit
 import socket
 import subprocess
 import webbrowser
+import signal
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
 app = Flask(__name__)
+
+# --- Signal handlers for graceful shutdown ---
+def signal_handler(signum, frame):
+    """Handle shutdown signals (SIGTERM, SIGINT) gracefully"""
+    signal_names = {signal.SIGTERM: 'SIGTERM', signal.SIGINT: 'SIGINT'}
+    signal_name = signal_names.get(signum, f'Signal {signum}')
+    app.logger.info(f"Received {signal_name}, initiating graceful shutdown...")
+    shutdown_server()
+
+# Register signal handlers (will be set up after shutdown_server is defined)
+def setup_signal_handlers():
+    """Set up signal handlers for graceful shutdown"""
+    try:
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C
+        app.logger.info("Signal handlers registered for graceful shutdown")
+    except Exception as e:
+        app.logger.warning(f"Could not set up signal handlers: {e}")
 # --- Lightweight in-process pub-sub for server-sent events (SSE) ---
 _sse_subscribers: list[Queue] = []
 
@@ -125,6 +148,12 @@ PERSIST_DIR = PROGRAM_DATA_DIR
 PUBLISH_MARKER_FILE = os.path.join(PERSIST_DIR, 'published_site.json')
 
 APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A  # Use a strong secret key
+
+# License cache constants for hybrid cloud-first validation
+LICENSE_CACHE_FILE = os.path.join(DATA_DIR, 'license_cache.enc')
+LICENSE_CACHE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'license_cache.enc')
+GRACE_PERIOD_DAYS = 10  # Days allowed offline after last successful validation
+CLOUD_VALIDATION_TIMEOUT = 3  # Seconds to wait for cloud validation response
 
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
@@ -2061,24 +2090,87 @@ def get_version():
 
 # --- Global shutdown flag for graceful termination ---
 _shutdown_requested = False
+_server_instance = None  # Store reference to Waitress server for graceful shutdown
 
 # --- NEW ENDPOINT FOR SHUTDOWN ---
 def shutdown_server():
-    global _shutdown_requested
-    app.logger.info("Shutdown command received. Terminating server.")
+    global _shutdown_requested, _api_session, _lock_file_fd, _instance_mutex_handle, _server_instance
+    
+    # Prevent multiple shutdown calls
+    if _shutdown_requested:
+        app.logger.info("Shutdown already in progress, ignoring duplicate request")
+        return
+        
+    app.logger.info("Shutdown command received. Starting comprehensive cleanup...")
     _shutdown_requested = True
     
     try:
-        # Clean up SSE subscribers
+        # Step 1: Clean up SSE subscribers with timeout
         app.logger.info("Cleaning up SSE subscribers...")
-        _sse_subscribers.clear()
+        try:
+            # Notify all SSE clients that server is shutting down
+            for q in list(_sse_subscribers):
+                try:
+                    q.put(('shutdown', '{"message": "Server shutting down"}'))
+                except:
+                    pass
+            # Clear subscriber list
+            _sse_subscribers.clear()
+            app.logger.info("SSE subscribers cleaned up successfully")
+        except Exception as e:
+            app.logger.error(f"Error cleaning SSE subscribers: {e}")
         
-        # Clean up any background threads
-        app.logger.info("Cleaning up background threads...")
+        # Step 2: Clean up HTTP session
+        app.logger.info("Cleaning up HTTP session...")
+        try:
+            if _api_session:
+                _api_session.close()
+                _api_session = None
+                app.logger.info("HTTP session closed successfully")
+        except Exception as e:
+            app.logger.error(f"Error closing HTTP session: {e}")
         
-        # Give a moment for cleanup
-        time.sleep(0.5)
+        # Step 3: Release single instance locks and file handles
+        app.logger.info("Releasing single instance locks...")
+        try:
+            release_single_instance_lock()
+            app.logger.info("Single instance locks released successfully")
+        except Exception as e:
+            app.logger.error(f"Error releasing single instance locks: {e}")
         
+        # Step 4: Clean up any remaining lock files
+        app.logger.info("Cleaning up remaining lock files...")
+        lock_files_to_clean = [ORDER_COUNTER_LOCK_FILE, APP_INSTANCE_LOCK_FILE]
+        for lock_file in lock_files_to_clean:
+            try:
+                if os.path.exists(lock_file):
+                    os.remove(lock_file)
+                    app.logger.info(f"Removed lock file: {lock_file}")
+            except Exception as e:
+                app.logger.warning(f"Could not remove lock file {lock_file}: {e}")
+        
+        # Step 5: Cancel/stop all active timers and background threads
+        app.logger.info("Stopping background threads and timers...")
+        try:
+            # Kill all non-daemon threads
+            import threading
+            current_thread = threading.current_thread()
+            for thread in threading.enumerate():
+                if thread != current_thread and thread.is_alive() and not thread.daemon:
+                    try:
+                        app.logger.info(f"Found active non-daemon thread: {thread.name}")
+                        # For most threads we can only log them, but some specific ones we can interrupt
+                    except Exception as e:
+                        app.logger.warning(f"Error checking thread {thread}: {e}")
+            app.logger.info("Background thread cleanup completed")
+        except Exception as e:
+            app.logger.error(f"Error during background thread cleanup: {e}")
+        
+        # Step 6: Give time for cleanup to complete
+        app.logger.info("Waiting for cleanup to complete...")
+        time.sleep(1.0)
+        
+        # Step 7: Attempt graceful shutdown using multiple methods
         app.logger.info("Initiating process termination...")
         
         # For Windows, try multiple termination methods for reliability
@@ -2086,42 +2178,70 @@ def shutdown_server():
             try:
                 # Method 1: Use taskkill to forcefully terminate the process tree
                 # This ensures all child processes are also terminated
+                app.logger.info("Using taskkill to terminate process tree...")
                 result = subprocess.run(['taskkill', '/F', '/T', '/PID', str(os.getpid())], 
-                                      capture_output=True, text=True, timeout=5)
+                                      capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
                 app.logger.info(f"Taskkill result: {result.returncode}")
+                if result.returncode == 0:
+                    return  # Successful termination
             except subprocess.TimeoutExpired:
                 app.logger.warning("Taskkill timeout, proceeding with alternative methods")
             except Exception as e:
                 app.logger.error(f"Taskkill failed: {e}")
         
+        # Method 2: Try SIGTERM for graceful shutdown
         try:
-            # Method 2: Use os.kill with SIGTERM (cross-platform)
             import signal
             app.logger.info("Sending SIGTERM to process...")
             os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(2)  # Give time for SIGTERM to work
         except Exception as e:
             app.logger.error(f"SIGTERM failed: {e}")
         
-        # Method 3: Force exit as last resort
+        # Method 3: Try SIGKILL for forceful shutdown (Unix-like systems)
+        if os.name != 'nt':
+            try:
+                import signal
+                app.logger.info("Sending SIGKILL to process...")
+                os.kill(os.getpid(), signal.SIGKILL)
+            except Exception as e:
+                app.logger.error(f"SIGKILL failed: {e}")
+        
+        # Method 4: Force exit as last resort
         app.logger.info("Using os._exit() as final termination method")
-        os._exit(1)
+        os._exit(0)  # Use exit code 0 for normal shutdown
             
     except Exception as e:
-        app.logger.error(f"Error during shutdown: {e}")
+        app.logger.error(f"Critical error during shutdown: {e}")
         # Force exit even if cleanup fails
-        os._exit(1)
+        try:
+            app.logger.error("Emergency shutdown using os._exit()")
+            os._exit(1)
+        except:
+            # If even os._exit fails, try the nuclear option
+            import sys
+            sys.exit(1)
+
+# Setup signal handlers now that shutdown_server is defined
+setup_signal_handlers()
 
 @app.route('/api/shutdown', methods=['POST'])
 def shutdown():
     try:
         app.logger.info("Shutdown request received from client")
-        # Schedule shutdown for 1 second from now to allow response to be sent
-        shutdown_timer = threading.Timer(1.0, shutdown_server)
+        app.logger.info("Returning success response to client before initiating shutdown...")
+        
+        # Return response first
+        response = jsonify({"status": "success", "message": "Server is shutting down."})
+        
+        # Schedule shutdown for 2 seconds from now to allow response to be sent
+        # Increased delay to ensure the response reaches the client
+        shutdown_timer = threading.Timer(2.0, shutdown_server)
         shutdown_timer.daemon = True  # Make it a daemon thread
         shutdown_timer.start()
-        app.logger.info("Shutdown timer started, server will terminate in 1 second")
-        # Immediately return a response
-        return jsonify({"status": "success", "message": "Server is shutting down."}), 200
+        app.logger.info("Shutdown timer started, server will terminate in 2 seconds")
+        
+        return response, 200
     except Exception as e:
         app.logger.error(f"Error initiating shutdown: {e}")
         return jsonify({"status": "error", "message": "Failed to initiate shutdown."}), 500
@@ -2765,9 +2885,14 @@ def diagnose_license_failure(license_file_path):
     return True
     
 def check_trial_status():
-    """Check trial status with enhanced diagnostics"""
-    # License check (highest priority)
+    """
+    Hybrid cloud-first license validation with encrypted local cache and grace period
+    Priority: Cloud validation -> Encrypted cache (with grace period) -> Legacy license.key -> Trial
+    """
+    
+    # Step 1: Check for legacy license.key file (backward compatibility)
     if os.path.exists(LICENSE_FILE):
+        app.logger.info("Found legacy license.key file - checking validity")
         # Add comprehensive diagnosis
         diagnose_license_failure(LICENSE_FILE)
         
@@ -2796,50 +2921,178 @@ def check_trial_status():
                             current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
                             
                             if current_date <= expiration_date:
-                                app.logger.info(f"SUBSCRIPTION LICENSE SUCCESS: Valid until {valid_until} for customer: {license.get('customer', 'unknown')}")
+                                app.logger.info(f"LEGACY LICENSE SUCCESS: Valid until {valid_until} for customer: {license.get('customer', 'unknown')}")
                                 return {
                                     "licensed": True, 
                                     "active": True,
                                     "subscription": True,
                                     "valid_until": valid_until,
                                     "subscription_id": license.get('subscription_id'),
-                                    "days_left": (expiration_date - current_date).days
+                                    "days_left": (expiration_date - current_date).days,
+                                    "source": "legacy_license_key"
                                 }
                             else:
-                                app.logger.error(f"SUBSCRIPTION LICENSE EXPIRED: Expired on {valid_until}")
-                                return {
-                                    "licensed": False,
-                                    "active": False, 
-                                    "expired": True,
-                                    "subscription_expired": True,
-                                    "expired_date": valid_until
-                                }
+                                app.logger.error(f"LEGACY LICENSE EXPIRED: Expired on {valid_until}")
                         except ValueError as e:
-                            app.logger.error(f"LICENSE FAILED: Invalid date format in valid_until: {e}")
-                            return {"licensed": False, "active": False, "expired": True}
+                            app.logger.error(f"LEGACY LICENSE FAILED: Invalid date format in valid_until: {e}")
                     else:
                         # Permanent license (backward compatibility)
-                        app.logger.info(f"PERMANENT LICENSE SUCCESS: Validated for customer: {license.get('customer', 'unknown')}")
-                        return {"licensed": True, "active": True, "subscription": False}
+                        app.logger.info(f"LEGACY PERMANENT LICENSE SUCCESS: Validated for customer: {license.get('customer', 'unknown')}")
+                        return {"licensed": True, "active": True, "subscription": False, "source": "legacy_license_key"}
                         
                 else:
-                    app.logger.error(f"LICENSE FAILED: Hardware ID mismatch")
-                    app.logger.error(f"  License expects: {license['hardware_id']}")
-                    app.logger.error(f"  Current enhanced: {current_hw_id}")
-                    app.logger.error(f"  Current MAC hex: {mac_hex}")
+                    app.logger.error(f"LEGACY LICENSE FAILED: Hardware ID mismatch")
             else:
-                app.logger.error("LICENSE FAILED: Invalid signature")
+                app.logger.error("LEGACY LICENSE FAILED: Invalid signature")
                 
         except json.JSONDecodeError as e:
-            app.logger.error(f"LICENSE FAILED: Invalid JSON format - {e}")
+            app.logger.error(f"LEGACY LICENSE FAILED: Invalid JSON format - {e}")
         except KeyError as e:
-            app.logger.error(f"LICENSE FAILED: Missing required field - {e}")
+            app.logger.error(f"LEGACY LICENSE FAILED: Missing required field - {e}")
         except Exception as e:
-            app.logger.error(f"LICENSE FAILED: Unexpected error - {e}")
-    else:
-        app.logger.info(f"License file not found at: {LICENSE_FILE}")
+            app.logger.error(f"LEGACY LICENSE FAILED: Unexpected error - {e}")
+            
+    # Step 2: Try to load encrypted license cache
+    cache_data = _load_license_cache()
+    cloud_validation_attempted = False
     
-    # Trial check - aggregate across all storage locations and pick the earliest valid
+    # Step 3: If we have cache data, attempt cloud validation first (cloud-first approach)
+    if cache_data:
+        license_data = cache_data.get('license_data', {})
+        customer_email = license_data.get('customer_email')
+        unlock_token = license_data.get('unlock_token')
+        hardware_id = license_data.get('hardware_id')
+        
+        if customer_email and unlock_token and hardware_id:
+            app.logger.info("Found cached credentials - attempting cloud validation")
+            cloud_validation_attempted = True
+            
+            # Attempt cloud validation with timeout
+            success, cloud_license_data, error_msg = _validate_license_with_cloud(
+                customer_email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
+            )
+            
+            if success and cloud_license_data:
+                app.logger.info("CLOUD VALIDATION SUCCESS - updating cache")
+                
+                # Update cache with fresh validation
+                _save_license_cache(cloud_license_data)
+                
+                # Process cloud validation result
+                valid_until = cloud_license_data.get('valid_until')
+                if valid_until:
+                    try:
+                        expiration_date = datetime.strptime(valid_until, '%Y-%m-%d')
+                        current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        
+                        if current_date <= expiration_date:
+                            return {
+                                "licensed": True,
+                                "active": True,
+                                "subscription": True,
+                                "valid_until": valid_until,
+                                "subscription_id": cloud_license_data.get('subscription_id'),
+                                "days_left": (expiration_date - current_date).days,
+                                "source": "cloud_validation"
+                            }
+                        else:
+                            app.logger.error(f"CLOUD LICENSE EXPIRED: Expired on {valid_until}")
+                            _clear_license_cache()  # Clear invalid cache
+                            return {
+                                "licensed": False,
+                                "active": False,
+                                "expired": True,
+                                "subscription_expired": True,
+                                "expired_date": valid_until,
+                                "source": "cloud_validation"
+                            }
+                    except ValueError:
+                        app.logger.error("CLOUD LICENSE: Invalid date format")
+                else:
+                    # Permanent license
+                    return {"licensed": True, "active": True, "subscription": False, "source": "cloud_validation"}
+            else:
+                app.logger.warning(f"Cloud validation failed: {error_msg}")
+    
+    # Step 4: Cloud validation failed or not attempted - check cached data with grace period
+    if cache_data:
+        app.logger.info("Using cached license data with grace period validation")
+        
+        last_validation = cache_data.get('last_validation')
+        license_data = cache_data.get('license_data', {})
+        
+        if last_validation:
+            days_offline, is_expired, warning_level = _calculate_grace_period_status(last_validation)
+            days_left = GRACE_PERIOD_DAYS - days_offline
+            
+            if is_expired:
+                app.logger.error(f"GRACE PERIOD EXPIRED: {days_offline} days offline (limit: {GRACE_PERIOD_DAYS})")
+                _clear_license_cache()  # Clear expired cache
+                return {
+                    "licensed": False,
+                    "active": False,
+                    "expired": True,
+                    "grace_period_expired": True,
+                    "days_offline": days_offline,
+                    "source": "grace_period_expired"
+                }
+            else:
+                # Still within grace period
+                app.logger.info(f"GRACE PERIOD ACTIVE: {days_offline} days offline, {days_left} days remaining")
+                
+                # Generate warning message if needed
+                warning_message = _get_grace_period_warning_message(warning_level, days_offline, days_left)
+                
+                # Check cached license validity
+                valid_until = license_data.get('valid_until')
+                result = {
+                    "licensed": True,
+                    "active": True,
+                    "grace_period": True,
+                    "days_offline": days_offline,
+                    "grace_days_left": days_left,
+                    "source": "cached_grace_period",
+                    "cloud_validation_attempted": cloud_validation_attempted
+                }
+                
+                if warning_message:
+                    result["warning"] = warning_message
+                    result["warning_level"] = warning_level
+                
+                if valid_until:
+                    try:
+                        expiration_date = datetime.strptime(valid_until, '%Y-%m-%d')
+                        current_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                        
+                        result.update({
+                            "subscription": True,
+                            "valid_until": valid_until,
+                            "subscription_id": license_data.get('subscription_id'),
+                            "days_left": (expiration_date - current_date).days
+                        })
+                        
+                        # Check if subscription itself is expired
+                        if current_date > expiration_date:
+                            app.logger.error(f"CACHED SUBSCRIPTION EXPIRED: Expired on {valid_until}")
+                            _clear_license_cache()
+                            return {
+                                "licensed": False,
+                                "active": False,
+                                "expired": True,
+                                "subscription_expired": True,
+                                "expired_date": valid_until,
+                                "source": "cached_subscription_expired"
+                            }
+                    except ValueError:
+                        app.logger.error("CACHED LICENSE: Invalid date format")
+                else:
+                    result["subscription"] = False
+                
+                return result
+    
+    # Step 5: No valid cache or license - fall back to trial system
+    app.logger.info("No valid license found - checking trial status")
+    
     try:
         candidates = []
         # File
@@ -2858,7 +3111,7 @@ def check_trial_status():
 
         valid_candidates = [c for c in candidates if c]
         if not valid_candidates:
-            return {"licensed": False, "active": False, "expired": True}
+            return {"licensed": False, "active": False, "expired": True, "source": "no_trial"}
 
         earliest = min(valid_candidates, key=lambda c: c['date_obj'])
         first_run = earliest['date_obj']
@@ -2875,10 +3128,12 @@ def check_trial_status():
             "licensed": False,
             "active": days_left > 0,
             "days_left": max(0, days_left),
-            "expired": days_left <= 0
+            "expired": days_left <= 0,
+            "source": "trial"
         }
-    except Exception:
-        return {"licensed": False, "active": False, "expired": True}
+    except Exception as e:
+        app.logger.error(f"Trial check failed: {e}")
+        return {"licensed": False, "active": False, "expired": True, "source": "trial_error"}
 
 # --- Usage Analytics Functions ---
 def track_order_analytics(order_data):
@@ -3281,6 +3536,18 @@ def validate_license_api():
         })
         
         if response and response.get('success'):
+            # Save successful validation to encrypted cache
+            license_data = response.get('licenseData', {})
+            if license_data:
+                # Add the credentials to cache for future use
+                license_data.update({
+                    'customer_email': customer_email,
+                    'unlock_token': unlock_token,
+                    'hardware_id': hardware_id
+                })
+                _save_license_cache(license_data)
+                app.logger.info("License validation successful - saved to cache")
+            
             return jsonify({
                 "licensed": True,
                 "subscription": True,
@@ -3440,6 +3707,230 @@ def get_enhanced_hardware_id():
     enhanced_id = hashlib.sha256(combined.encode()).hexdigest()[:16]
     
     return enhanced_id
+
+# --- License Cache Encryption Utilities ---
+def _get_license_encryption_key():
+    """Generate encryption key based on hardware ID and app secret"""
+    try:
+        hardware_id = get_enhanced_hardware_id()
+        # Combine hardware ID with app secret for key derivation
+        key_material = f"{hardware_id}{APP_SECRET_KEY}".encode()
+        
+        # Use PBKDF2 to derive a proper encryption key
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b'pospal_license_salt_v1',  # Fixed salt for consistency
+            iterations=100000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(key_material))
+        return Fernet(key)
+    except Exception as e:
+        app.logger.error(f"Failed to generate license encryption key: {e}")
+        return None
+
+def _encrypt_license_data(data):
+    """Encrypt license data for secure local storage"""
+    try:
+        fernet = _get_license_encryption_key()
+        if not fernet:
+            return None
+            
+        json_data = json.dumps(data, separators=(',', ':'))
+        encrypted_data = fernet.encrypt(json_data.encode())
+        return base64.urlsafe_b64encode(encrypted_data).decode()
+    except Exception as e:
+        app.logger.error(f"Failed to encrypt license data: {e}")
+        return None
+
+def _decrypt_license_data(encrypted_data):
+    """Decrypt license data from secure local storage"""
+    try:
+        fernet = _get_license_encryption_key()
+        if not fernet:
+            return None
+            
+        encrypted_bytes = base64.urlsafe_b64decode(encrypted_data.encode())
+        decrypted_data = fernet.decrypt(encrypted_bytes)
+        return json.loads(decrypted_data.decode())
+    except Exception as e:
+        app.logger.error(f"Failed to decrypt license data: {e}")
+        return None
+
+def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, timeout=CLOUD_VALIDATION_TIMEOUT):
+    """
+    Validate license with Cloudflare Worker with timeout and error handling
+    Returns: (success: bool, license_data: dict, error_message: str)
+    """
+    try:
+        app.logger.info(f"Attempting cloud license validation for {customer_email[:5]}*** with {timeout}s timeout")
+        
+        # Prepare validation data
+        validation_data = {
+            'email': customer_email,
+            'unlockToken': unlock_token,
+            'hardwareId': hardware_id
+        }
+        
+        # Call cloud validation with timeout
+        response = call_cloudflare_api('/validate', validation_data, timeout=timeout, max_retries=1)
+        
+        if not response:
+            return False, None, "No response from cloud validation service"
+            
+        if response.get('success'):
+            license_data = response.get('licenseData', {})
+            if license_data:
+                app.logger.info(f"Cloud validation successful for {customer_email[:5]}***")
+                return True, license_data, None
+            else:
+                return False, None, "Cloud validation succeeded but no license data returned"
+        else:
+            error_msg = response.get('error', 'Unknown cloud validation error')
+            app.logger.warning(f"Cloud validation failed: {error_msg}")
+            return False, None, error_msg
+            
+    except Exception as e:
+        error_msg = f"Cloud validation exception: {str(e)}"
+        app.logger.error(error_msg)
+        return False, None, error_msg
+
+def _save_license_cache(license_data, last_validation_timestamp=None):
+    """Save validated license data to encrypted local cache"""
+    try:
+        if last_validation_timestamp is None:
+            last_validation_timestamp = datetime.now().isoformat()
+            
+        cache_data = {
+            'license_data': license_data,
+            'last_validation': last_validation_timestamp,
+            'cache_version': '1.0',
+            'hardware_id': get_enhanced_hardware_id()
+        }
+        
+        encrypted_data = _encrypt_license_data(cache_data)
+        if not encrypted_data:
+            app.logger.error("Failed to encrypt license cache data")
+            return False
+            
+        # Ensure directories exist
+        os.makedirs(os.path.dirname(LICENSE_CACHE_FILE), exist_ok=True)
+        os.makedirs(os.path.dirname(LICENSE_CACHE_BACKUP), exist_ok=True)
+        
+        # Save to primary location
+        with open(LICENSE_CACHE_FILE, 'w') as f:
+            f.write(encrypted_data)
+            
+        # Save backup copy
+        with open(LICENSE_CACHE_BACKUP, 'w') as f:
+            f.write(encrypted_data)
+            
+        app.logger.info("License cache saved successfully")
+        return True
+        
+    except Exception as e:
+        app.logger.error(f"Failed to save license cache: {e}")
+        return False
+
+def _load_license_cache():
+    """Load and decrypt license data from local cache"""
+    try:
+        cache_file = None
+        
+        # Try primary cache first, then backup
+        for cache_path in [LICENSE_CACHE_FILE, LICENSE_CACHE_BACKUP]:
+            if os.path.exists(cache_path):
+                cache_file = cache_path
+                break
+                
+        if not cache_file:
+            app.logger.info("No license cache file found")
+            return None
+            
+        with open(cache_file, 'r') as f:
+            encrypted_data = f.read().strip()
+            
+        if not encrypted_data:
+            app.logger.warning("License cache file is empty")
+            return None
+            
+        cache_data = _decrypt_license_data(encrypted_data)
+        if not cache_data:
+            app.logger.warning("Failed to decrypt license cache")
+            return None
+            
+        # Validate cache data structure
+        required_fields = ['license_data', 'last_validation', 'hardware_id']
+        if not all(field in cache_data for field in required_fields):
+            app.logger.warning("License cache missing required fields")
+            return None
+            
+        # Verify hardware ID matches (cache is machine-specific)
+        current_hw_id = get_enhanced_hardware_id()
+        if cache_data['hardware_id'] != current_hw_id:
+            app.logger.warning("License cache hardware ID mismatch - cache invalid")
+            return None
+            
+        app.logger.info("License cache loaded successfully")
+        return cache_data
+        
+    except Exception as e:
+        app.logger.error(f"Failed to load license cache: {e}")
+        return None
+
+def _clear_license_cache():
+    """Clear the license cache (on validation failure)"""
+    try:
+        for cache_path in [LICENSE_CACHE_FILE, LICENSE_CACHE_BACKUP]:
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
+        app.logger.info("License cache cleared")
+    except Exception as e:
+        app.logger.error(f"Failed to clear license cache: {e}")
+
+def _calculate_grace_period_status(last_validation_timestamp):
+    """
+    Calculate grace period status and warnings
+    Returns: (days_offline: int, is_expired: bool, warning_level: int)
+    warning_level: 0=none, 1=day 8, 2=day 9, 3=day 10, 4=expired
+    """
+    try:
+        last_validation = datetime.fromisoformat(last_validation_timestamp)
+        current_time = datetime.now()
+        days_offline = (current_time - last_validation).days
+        
+        is_expired = days_offline >= GRACE_PERIOD_DAYS
+        
+        # Determine warning level
+        warning_level = 0
+        if days_offline >= 8 and days_offline < 9:
+            warning_level = 1  # Day 8 warning
+        elif days_offline >= 9 and days_offline < 10:
+            warning_level = 2  # Day 9 warning  
+        elif days_offline >= 10 and days_offline < GRACE_PERIOD_DAYS:
+            warning_level = 3  # Day 10 warning
+        elif is_expired:
+            warning_level = 4  # Expired
+            
+        return days_offline, is_expired, warning_level
+        
+    except Exception as e:
+        app.logger.error(f"Failed to calculate grace period status: {e}")
+        # Assume expired on error
+        return GRACE_PERIOD_DAYS, True, 4
+
+def _get_grace_period_warning_message(warning_level, days_offline, days_left):
+    """Generate appropriate warning message based on warning level"""
+    if warning_level == 1:
+        return f"License validation offline for {days_offline} days. Please connect to internet soon. ({days_left} days remaining)"
+    elif warning_level == 2:
+        return f"License validation offline for {days_offline} days. Please connect to internet. ({days_left} days remaining)"
+    elif warning_level == 3:
+        return f"URGENT: License validation offline for {days_offline} days. Must connect to internet today! ({days_left} days remaining)"
+    elif warning_level == 4:
+        return f"License validation expired after {GRACE_PERIOD_DAYS} days offline. Please connect to internet to restore access."
+    else:
+        return None
 
 @app.route('/api/hardware_id')
 def get_hardware_id():
@@ -4512,7 +5003,7 @@ if __name__ == '__main__':
         # List alternative IP addresses
         try:
             import subprocess
-            result = subprocess.run(['ipconfig'], capture_output=True, text=True, shell=True)
+            result = subprocess.run(['ipconfig'], capture_output=True, text=True, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
             if result.returncode == 0:
                 lines = result.stdout.split('\n')
                 for i, line in enumerate(lines):
@@ -4541,4 +5032,13 @@ if __name__ == '__main__':
     if getattr(sys, 'frozen', False):
         threading.Thread(target=_open_browser_when_ready, daemon=True).start()
     
-    serve(app, host='0.0.0.0', port=config.get('port', 5000))
+    # Start Waitress server with graceful shutdown capability
+    try:
+        app.logger.info("Starting Waitress server with graceful shutdown support...")
+        serve(app, host='0.0.0.0', port=config.get('port', 5000))
+    except KeyboardInterrupt:
+        app.logger.info("KeyboardInterrupt received, shutting down gracefully...")
+        shutdown_server()
+    except Exception as e:
+        app.logger.error(f"Server error: {e}")
+        shutdown_server()

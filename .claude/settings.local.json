@@ -43,7 +43,21 @@
       "Bash(git commit:*)",
       "Bash(taskkill:*)",
       "Bash(start POSPal.html)",
-      "Bash(start test-duplicate-validation.html)"
+      "Bash(start test-duplicate-validation.html)",
+      "Bash(for i in {1..5})",
+      "Bash(do)",
+      "Bash(echo:*)",
+      "Bash(time curl:*)",
+      "Bash(done)",
+      "Bash(for i in {1..3})",
+      "Bash(do echo \"Request $i:\")",
+      "Bash(npx wrangler d1 execute:*)",
+      "Bash(del test_unlock_input.html token_test.js)",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(npx wrangler dev:*)",
+      "WebFetch(domain:pospal-licensing-v2-production.bzoumboulis.workers.dev)",
+      "WebSearch",
+      "Bash(start http://localhost:5000)"
     ],
     "deny": [],
     "ask": []

@@ -172,6 +172,173 @@
         // Store the success in localStorage so POSPal knows payment was successful
         localStorage.setItem('pospal_payment_success', 'true');
         localStorage.setItem('pospal_payment_timestamp', Date.now().toString());
+        
+        // AUTOMATIC LICENSE ACTIVATION - Check for session_id and attempt instant activation
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        
+        if (sessionId) {
+            console.log('Payment session detected, attempting automatic license activation...');
+            attemptAutomaticActivation(sessionId);
+        }
+        
+        /**
+         * Attempt automatic license activation using the payment session ID
+         */
+        async function attemptAutomaticActivation(sessionId) {
+            try {
+                // Show activation status in the UI
+                updateActivationStatus('Activating your license...', 'progress');
+                
+                // Generate machine fingerprint (same logic as pospalCore.js)
+                const machineFingerprint = await generateMachineFingerprint();
+                
+                // Get customer email from URL parameter
+                const customerEmail = urlParams.get('email');
+                
+                if (!customerEmail) {
+                    console.log('No email in URL parameters, skipping automatic activation');
+                    updateActivationStatus('Activation will be completed manually - Check your email for instructions', 'info');
+                    return;
+                }
+                
+                console.log('Attempting instant validation with session:', sessionId);
+                
+                // Call the instant validation endpoint
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/instant-validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: customerEmail,
+                        stripeSessionId: sessionId,
+                        machineFingerprint: machineFingerprint
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.valid) {
+                    console.log('Automatic activation successful!', result);
+                    
+                    // Store license data in localStorage for POSPal to use
+                    localStorage.setItem('pospal_unlock_token', result.unlockToken);
+                    localStorage.setItem('pospal_customer_email', customerEmail);
+                    localStorage.setItem('pospal_customer_name', result.customerName || 'Customer');
+                    localStorage.setItem('pospal_license_status', 'active');
+                    localStorage.setItem('pospal_activation_method', 'automatic');
+                    localStorage.setItem('pospal_activation_timestamp', Date.now().toString());
+                    
+                    updateActivationStatus('License activated successfully! POSPal is ready to use.', 'success');
+                    
+                    // Auto-redirect to POSPal after a few seconds
+                    setTimeout(() => {
+                        updateActivationStatus('Redirecting to POSPal...', 'progress');
+                        returnToPOSPal();
+                    }, 3000);
+                    
+                } else {
+                    console.warn('Automatic activation failed:', result);
+                    updateActivationStatus('Activation pending - Please check your email for manual activation instructions', 'info');
+                }
+                
+            } catch (error) {
+                console.error('Error during automatic activation:', error);
+                updateActivationStatus('Activation pending - Please check your email for activation instructions', 'info');
+            }
+        }
+        
+        /**
+         * Generate machine fingerprint for license validation
+         */
+        async function generateMachineFingerprint() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('POSPal fingerprint', 2, 2);
+            
+            const fingerprint = [
+                navigator.userAgent,
+                navigator.language,
+                screen.width + 'x' + screen.height,
+                new Date().getTimezoneOffset(),
+                canvas.toDataURL()
+            ].join('|');
+            
+            const encoder = new TextEncoder();
+            const data = encoder.encode(fingerprint);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+        }
+        
+        /**
+         * Update activation status in the UI
+         */
+        function updateActivationStatus(message, type) {
+            // Find or create status element
+            let statusElement = document.getElementById('activation-status');
+            if (!statusElement) {
+                statusElement = document.createElement('div');
+                statusElement.id = 'activation-status';
+                statusElement.style.cssText = `
+                    margin-top: 20px;
+                    padding: 15px;
+                    border-radius: 8px;
+                    text-align: center;
+                    font-weight: 500;
+                `;
+                
+                // Insert after the subscription info
+                const subscriptionInfo = document.querySelector('.bg-green-50');
+                if (subscriptionInfo && subscriptionInfo.parentNode) {
+                    subscriptionInfo.parentNode.insertBefore(statusElement, subscriptionInfo.nextSibling);
+                }
+            }
+            
+            // Update styling based on type
+            const styles = {
+                progress: {
+                    backgroundColor: '#dbeafe',
+                    borderColor: '#3b82f6',
+                    color: '#1e40af'
+                },
+                success: {
+                    backgroundColor: '#dcfce7',
+                    borderColor: '#10b981',
+                    color: '#047857'
+                },
+                info: {
+                    backgroundColor: '#fef3c7',
+                    borderColor: '#f59e0b',
+                    color: '#92400e'
+                },
+                error: {
+                    backgroundColor: '#fee2e2',
+                    borderColor: '#ef4444',
+                    color: '#dc2626'
+                }
+            };
+            
+            const style = styles[type] || styles.info;
+            statusElement.style.backgroundColor = style.backgroundColor;
+            statusElement.style.borderColor = style.borderColor;
+            statusElement.style.color = style.color;
+            statusElement.style.borderWidth = '2px';
+            statusElement.style.borderStyle = 'solid';
+            
+            // Add appropriate icon
+            const icons = {
+                progress: '<i class="fas fa-spinner fa-spin mr-2"></i>',
+                success: '<i class="fas fa-check-circle mr-2"></i>',
+                info: '<i class="fas fa-info-circle mr-2"></i>',
+                error: '<i class="fas fa-exclamation-circle mr-2"></i>'
+            };
+            
+            statusElement.innerHTML = `${icons[type] || icons.info}${message}`;
+        }
     </script>
 
     <script src="enhanced-error-handler.js"></script>

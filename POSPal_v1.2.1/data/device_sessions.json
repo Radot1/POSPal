@@ -1,11 +1,11 @@
 {
-  "device_1757246597071_25edua0za": {
+  "device_1757744327183_twlenxco9": {
     "info": {
-      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
       "ip": "127.0.0.1",
-      "timestamp": "2025-09-07T15:03:17.077419"
+      "timestamp": "2025-09-13T09:18:47.208042"
     },
-    "last_seen": "2025-09-07T15:03:17.077602",
+    "last_seen": "2025-09-13T09:18:47.208353",
     "active": true
   }
 }

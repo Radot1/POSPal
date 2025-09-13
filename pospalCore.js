@@ -9,7 +9,7 @@ let printerVerificationStatus = 'unknown'; // 'unknown', 'verified', 'failed'
 // --- Constants ---
 const SELECTED_TABLE_KEY = 'pospal_selected_table';
 const UNIVERSAL_COMMENT_KEY = 'pospal_universal_comment';
-const WORKER_URL = 'https://pospal-licensing-v2-development.bzoumboulis.workers.dev';
+const WORKER_URL = 'https://pospal-licensing-v2-production.bzoumboulis.workers.dev';
 
 // --- NEW: Centralized State Management ---
 // Generate unique device ID for this session
@@ -226,6 +226,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     startClock();
     console.log('Checking trial status...');
     checkAndDisplayTrialStatus();
+    
+    // Check for automatic activation after payment
+    console.log('Checking for automatic license activation...');
+    await checkAutomaticActivation();
     if (elements.universalOrderCommentInput) {
         elements.universalOrderCommentInput.addEventListener('input', async (e) => {
             universalOrderComment = e.target.value;
@@ -254,6 +258,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     console.log('Updating order display...');
     updateOrderDisplay();
+    
+    // Initialize portal return handling
+    console.log('Initializing portal return handling...');
+    initializePortalReturnHandling();
+    
     console.log('Initialization complete!');
 });
 
@@ -3587,16 +3596,39 @@ function showActiveLicenseStatus() {
     const customerName = localStorage.getItem('pospal_customer_name') || 'Customer';
     const customerEmail = localStorage.getItem('pospal_customer_email') || '';
     
-    // Set status displays
-    const licensedHTML = `Your POSPal Pro subscription is active and ready to use.`;
-    const badgeHTML = `Active Subscription`;
+    // Set status displays with enhanced visual feedback
+    const licensedHTML = `
+        <div class="flex items-center space-x-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div class="flex-shrink-0">
+                <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="flex-1">
+                <h3 class="text-lg font-semibold text-green-800">Welcome to POSPal Pro!</h3>
+                <p class="text-green-700">Your subscription is active and ready to use.</p>
+                <p class="text-sm text-green-600">Licensed to: ${customerName}</p>
+            </div>
+        </div>
+    `;
+    const badgeHTML = `<i class="fas fa-check-circle mr-1"></i>Active Pro`;
     const badgeClass = 'bg-green-100 text-green-800';
     
-    if (statusDisplay) statusDisplay.innerHTML = licensedHTML;
-    if (footerStatusDisplay) footerStatusDisplay.innerHTML = `Licensed to: ${customerName}`;
+    if (statusDisplay) {
+        statusDisplay.innerHTML = licensedHTML;
+        // Add a subtle animation effect
+        statusDisplay.style.opacity = '0';
+        statusDisplay.style.transform = 'translateY(10px)';
+        setTimeout(() => {
+            statusDisplay.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+            statusDisplay.style.opacity = '1';
+            statusDisplay.style.transform = 'translateY(0)';
+        }, 100);
+    }
+    if (footerStatusDisplay) footerStatusDisplay.innerHTML = `<i class="fas fa-star text-yellow-500 mr-1"></i>Licensed to: ${customerName}`;
     if (statusBadge) {
         statusBadge.innerHTML = badgeHTML;
-        statusBadge.className = `px-2 py-1 text-xs font-semibold rounded-full ${badgeClass}`;
+        statusBadge.className = `px-3 py-1 text-sm font-semibold rounded-full ${badgeClass}`;
     }
     
     // Hide trial actions and show subscription details
@@ -3612,6 +3644,142 @@ function showActiveLicenseStatus() {
         
         // Don't overwrite innerHTML - let the existing HTML with buttons remain
     }
+    
+    // Show portal access buttons for active subscriptions
+    const quickPortalBtn = document.getElementById('quick-portal-btn');
+    const footerPortalBtn = document.getElementById('footer-portal-btn');
+    if (quickPortalBtn) {
+        quickPortalBtn.classList.remove('hidden');
+    }
+    if (footerPortalBtn) {
+        footerPortalBtn.classList.remove('hidden');
+    }
+}
+
+// Verification function to ensure license status is correctly displayed
+function verifyAndDisplayLicenseStatus() {
+    const unlockToken = localStorage.getItem('pospal_unlock_token');
+    const customerEmail = localStorage.getItem('pospal_customer_email');
+    const licenseStatus = localStorage.getItem('pospal_license_status');
+    
+    if (unlockToken && customerEmail && licenseStatus === 'active') {
+        console.log('License verification: Valid cached license found, displaying active status');
+        showActiveLicenseStatus();
+        return true;
+    }
+    
+    console.log('License verification: No valid cached license found');
+    return false;
+}
+
+// Background validation function to verify cached subscription data
+async function validateSubscriptionInBackground(customerEmail, unlockToken) {
+    try {
+        console.log('Performing background subscription validation');
+        
+        const validationResponse = await fetch(`${WORKER_URL}/customer-portal`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: customerEmail,
+                unlockToken: unlockToken
+            })
+        });
+        
+        if (validationResponse.ok) {
+            const data = await validationResponse.json();
+            if (!data.subscription || data.subscription.status !== 'active') {
+                console.log('Background validation failed - subscription no longer active');
+                // Clear invalid cached data and refresh UI
+                localStorage.removeItem('pospal_unlock_token');
+                localStorage.removeItem('pospal_customer_email');
+                localStorage.removeItem('pospal_customer_name');
+                localStorage.removeItem('pospal_license_status');
+                
+                // Refresh to show trial status
+                setTimeout(() => checkAndDisplayTrialStatus(), 100);
+            } else {
+                console.log('Background validation successful - subscription confirmed active');
+            }
+        } else {
+            console.log('Background validation request failed - clearing cached data');
+            // Clear invalid cached data and refresh UI
+            localStorage.removeItem('pospal_unlock_token');
+            localStorage.removeItem('pospal_customer_email');
+            localStorage.removeItem('pospal_customer_name');
+            localStorage.removeItem('pospal_license_status');
+            
+            // Refresh to show trial status
+            setTimeout(() => checkAndDisplayTrialStatus(), 100);
+        }
+    } catch (validationError) {
+        console.log('Background subscription validation error:', validationError.message);
+        // Don't clear cache on network errors - keep showing active status
+    }
+}
+
+/**
+ * Check for automatic license activation after payment
+ * This function runs on startup to detect if a payment was recently completed
+ * and the license should be automatically activated
+ */
+async function checkAutomaticActivation() {
+    try {
+        // Check if there's a payment success flag in localStorage
+        const paymentSuccess = localStorage.getItem('pospal_payment_success');
+        const paymentTimestamp = localStorage.getItem('pospal_payment_timestamp');
+        const activationMethod = localStorage.getItem('pospal_activation_method');
+        
+        // Only check for automatic activation if payment was recent (within last 10 minutes)
+        if (paymentSuccess === 'true' && paymentTimestamp && activationMethod === 'automatic') {
+            const paymentTime = parseInt(paymentTimestamp);
+            const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+            
+            if (paymentTime > tenMinutesAgo) {
+                console.log('Recent automatic activation detected, checking license status...');
+                
+                // Check if we have all the required license data
+                const unlockToken = localStorage.getItem('pospal_unlock_token');
+                const customerEmail = localStorage.getItem('pospal_customer_email');
+                const customerName = localStorage.getItem('pospal_customer_name');
+                const licenseStatus = localStorage.getItem('pospal_license_status');
+                
+                if (unlockToken && customerEmail && licenseStatus === 'active') {
+                    console.log('Automatic activation successful! License data found:', {
+                        email: customerEmail,
+                        name: customerName,
+                        status: licenseStatus,
+                        activatedAt: new Date(paymentTime).toISOString()
+                    });
+                    
+                    // Show success notification
+                    showToast(`Welcome ${customerName || customerEmail}! Your POSPal license has been automatically activated.`, 'success', 8000);
+                    
+                    // Update license display immediately
+                    showActiveLicenseStatus();
+                    
+                    // Clear the payment success flag since we've processed it
+                    localStorage.removeItem('pospal_payment_success');
+                    localStorage.removeItem('pospal_payment_timestamp');
+                    
+                } else {
+                    console.log('Automatic activation incomplete - missing license data');
+                    showToast('Payment successful! Please check your email for activation instructions.', 'info', 6000);
+                }
+            } else {
+                console.log('Payment success flag is too old, ignoring...');
+                // Clean up old flags
+                localStorage.removeItem('pospal_payment_success');
+                localStorage.removeItem('pospal_payment_timestamp');
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error checking automatic activation:', error);
+        // Don't show error to user for this background check
+    }
 }
 
 async function checkAndDisplayTrialStatus() {
@@ -3622,47 +3790,15 @@ async function checkAndDisplayTrialStatus() {
         const licenseStatus = localStorage.getItem('pospal_license_status');
         
         if (unlockToken && customerEmail && licenseStatus === 'active') {
-            console.log('Cached Stripe subscription found - validating with server');
+            console.log('Cached Stripe subscription found - showing immediately and validating in background');
             
-            // Validate the cached subscription with the server
-            try {
-                const validationResponse = await fetch(`${WORKER_URL}/customer-portal`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        email: customerEmail,
-                        unlockToken: unlockToken
-                    })
-                });
-                
-                if (validationResponse.ok) {
-                    const data = await validationResponse.json();
-                    if (data.subscription && data.subscription.status === 'active') {
-                        console.log('Subscription validated - showing active license status');
-                        showActiveLicenseStatus();
-                        return; // Skip trial check
-                    } else {
-                        console.log('Subscription validation failed - clearing cached data');
-                        // Clear invalid cached data
-                        localStorage.removeItem('pospal_unlock_token');
-                        localStorage.removeItem('pospal_customer_email');
-                        localStorage.removeItem('pospal_customer_name');
-                        localStorage.removeItem('pospal_license_status');
-                    }
-                } else {
-                    console.log('Subscription validation request failed - clearing cached data');
-                    // Clear invalid cached data
-                    localStorage.removeItem('pospal_unlock_token');
-                    localStorage.removeItem('pospal_customer_email');
-                    localStorage.removeItem('pospal_customer_name');
-                    localStorage.removeItem('pospal_license_status');
-                }
-            } catch (validationError) {
-                console.log('Subscription validation error - will try again later:', validationError.message);
-                // Don't clear cache on network errors, just proceed to show trial status
-            }
+            // Immediately show active license status based on cached data
+            showActiveLicenseStatus();
+            
+            // Perform background validation without blocking UI
+            validateSubscriptionInBackground(customerEmail, unlockToken);
+            
+            return; // Skip trial check since we have valid cached license
         }
         
         // No Stripe subscription, check Flask trial status
@@ -3705,6 +3841,16 @@ async function checkAndDisplayTrialStatus() {
                     footerStatusDisplay.innerHTML = footerHTML;
                     footerStatusDisplay.className = 'font-medium text-green-600';
                 }
+                
+                // Show portal access buttons for active subscriptions
+                const quickPortalBtn = document.getElementById('quick-portal-btn');
+                const footerPortalBtn = document.getElementById('footer-portal-btn');
+                if (quickPortalBtn) {
+                    quickPortalBtn.classList.remove('hidden');
+                }
+                if (footerPortalBtn) {
+                    footerPortalBtn.classList.remove('hidden');
+                }
             }
             
             // Update main status display
@@ -3729,6 +3875,16 @@ async function checkAndDisplayTrialStatus() {
             // Show trial actions, hide subscription management
             if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
             if (trialActions) trialActions.classList.remove('hidden');
+            
+            // Hide portal access buttons for expired subscriptions  
+            const quickPortalBtn = document.getElementById('quick-portal-btn');
+            const footerPortalBtn = document.getElementById('footer-portal-btn');
+            if (quickPortalBtn) {
+                quickPortalBtn.classList.add('hidden');
+            }
+            if (footerPortalBtn) {
+                footerPortalBtn.classList.add('hidden');
+            }
             
             // Footer status
             const footerHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Subscription Expired`;
@@ -3756,6 +3912,16 @@ async function checkAndDisplayTrialStatus() {
             if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
             if (trialActions) trialActions.classList.remove('hidden');
             
+            // Hide portal access buttons for expired trials
+            const quickPortalBtn = document.getElementById('quick-portal-btn');
+            const footerPortalBtn = document.getElementById('footer-portal-btn');
+            if (quickPortalBtn) {
+                quickPortalBtn.classList.add('hidden');
+            }
+            if (footerPortalBtn) {
+                footerPortalBtn.classList.add('hidden');
+            }
+            
             // Footer status
             const footerHTML = `<i class="fas fa-times-circle text-red-600 mr-2"></i>Trial Expired`;
             if (footerStatusDisplay) {
@@ -3782,6 +3948,16 @@ async function checkAndDisplayTrialStatus() {
             // Show trial actions and activation instructions
             if (subscriptionDetails) subscriptionDetails.classList.add('hidden');
             if (trialActions) trialActions.classList.remove('hidden');
+            
+            // Hide portal access buttons for active trials (no subscription yet)
+            const quickPortalBtn = document.getElementById('quick-portal-btn');
+            const footerPortalBtn = document.getElementById('footer-portal-btn');
+            if (quickPortalBtn) {
+                quickPortalBtn.classList.add('hidden');
+            }
+            if (footerPortalBtn) {
+                footerPortalBtn.classList.add('hidden');
+            }
             
             // Footer status
             const footerText = `Trial: ${days} ${dayText} remaining`;
@@ -4018,6 +4194,284 @@ async function debugCustomerValidation(email) {
 }
 
 // --- Subscription Management Functions ---
+
+// Function to manage portal loading states
+function showPortalLoading(isLoading, message = 'Loading...') {
+    const portalButtons = document.querySelectorAll('#manage-subscription-btn, #update-payment-btn, .portal-access-btn');
+    
+    portalButtons.forEach(button => {
+        if (isLoading) {
+            button.disabled = true;
+            button.style.opacity = '0.6';
+            button.style.cursor = 'not-allowed';
+            
+            // Store original content if not already stored
+            if (!button.dataset.originalContent) {
+                button.dataset.originalContent = button.innerHTML;
+            }
+            
+            // Show loading spinner and message
+            button.innerHTML = `
+                <i class="fas fa-spinner fa-spin mr-2"></i>
+                ${message}
+            `;
+        } else {
+            button.disabled = false;
+            button.style.opacity = '1';
+            button.style.cursor = 'pointer';
+            
+            // Restore original content
+            if (button.dataset.originalContent) {
+                button.innerHTML = button.dataset.originalContent;
+            }
+        }
+    });
+}
+
+// Enhanced error handling for portal access
+function handlePortalError(error) {
+    const errorMessage = error.message || error.toString();
+    
+    // Network-related errors
+    if (error.name === 'TypeError' && errorMessage.includes('fetch')) {
+        return {
+            message: 'Connection failed. Please check your internet connection and try again.',
+            duration: 6000,
+            showGuidance: true,
+            guidanceType: 'network'
+        };
+    }
+    
+    // Authentication errors
+    if (errorMessage.includes('Invalid credentials') || errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+        return {
+            message: 'Authentication failed. Your session may have expired.',
+            duration: 8000,
+            showGuidance: true,
+            guidanceType: 'auth'
+        };
+    }
+    
+    // Stripe customer setup errors
+    if (errorMessage.includes('No Stripe customer found') || errorMessage.includes('STRIPE_CUSTOMER_CREATION_FAILED')) {
+        return {
+            message: 'Your billing account needs to be set up. This usually happens automatically.',
+            duration: 10000,
+            showGuidance: true,
+            guidanceType: 'setup'
+        };
+    }
+    
+    // Portal creation errors
+    if (errorMessage.includes('STRIPE_PORTAL_CREATION_FAILED') || errorMessage.includes('Failed to create portal session')) {
+        return {
+            message: 'Customer portal is temporarily unavailable. Please try again in a few minutes.',
+            duration: 8000,
+            showGuidance: true,
+            guidanceType: 'retry'
+        };
+    }
+    
+    // Subscription status errors
+    if (errorMessage.includes('No active subscription') || errorMessage.includes('subscription not found')) {
+        return {
+            message: 'No active subscription found. You may need to subscribe or reactivate your account.',
+            duration: 8000,
+            showGuidance: true,
+            guidanceType: 'subscription'
+        };
+    }
+    
+    // Server errors (5xx)
+    if (errorMessage.includes('500') || errorMessage.includes('502') || errorMessage.includes('503')) {
+        return {
+            message: 'Our servers are temporarily unavailable. Please try again in a few minutes.',
+            duration: 8000,
+            showGuidance: true,
+            guidanceType: 'server'
+        };
+    }
+    
+    // Generic fallback
+    return {
+        message: 'Unable to access customer portal. Please try again or contact support if the problem persists.',
+        duration: 8000,
+        showGuidance: true,
+        guidanceType: 'generic'
+    };
+}
+
+// Show contextual guidance based on error type
+function showPortalErrorGuidance(guidanceType, error) {
+    let guidanceMessage = '';
+    let actions = [];
+    
+    switch (guidanceType) {
+        case 'network':
+            guidanceMessage = 'Network Connection Issue';
+            actions = [
+                '• Check your internet connection',
+                '• Try refreshing the page',
+                '• If using a VPN, try disconnecting temporarily'
+            ];
+            break;
+            
+        case 'auth':
+            guidanceMessage = 'Authentication Problem';
+            actions = [
+                '• Try validating your license again',
+                '• Clear browser cache and cookies for this site',
+                '• Contact support@pospal.gr if the issue persists'
+            ];
+            break;
+            
+        case 'setup':
+            guidanceMessage = 'Account Setup Required';
+            actions = [
+                '• This usually resolves automatically within a few minutes',
+                '• Try again in 2-3 minutes',
+                '• Contact support@pospal.gr if you continue having issues'
+            ];
+            break;
+            
+        case 'retry':
+            guidanceMessage = 'Service Temporarily Unavailable';
+            actions = [
+                '• Wait 2-3 minutes and try again',
+                '• Check our status page for known issues',
+                '• Contact support@pospal.gr if the problem continues'
+            ];
+            break;
+            
+        case 'subscription':
+            guidanceMessage = 'Subscription Issue';
+            actions = [
+                '• Verify your subscription is active',
+                '• Try validating your license again',
+                '• Check your email for subscription notifications',
+                '• Contact support@pospal.gr for assistance'
+            ];
+            break;
+            
+        case 'server':
+            guidanceMessage = 'Server Maintenance';
+            actions = [
+                '• Our servers are being updated',
+                '• Please try again in 5-10 minutes',
+                '• No action required from you'
+            ];
+            break;
+            
+        default:
+            guidanceMessage = 'Need Help?';
+            actions = [
+                '• Try refreshing the page and attempting again',
+                '• Clear your browser cache',
+                '• Contact support@pospal.gr with error details'
+            ];
+    }
+    
+    const fullMessage = `${guidanceMessage}\n\n${actions.join('\n')}`;
+    
+    // Show as a confirm dialog for better visibility
+    if (confirm(fullMessage + '\n\nWould you like to try again now?')) {
+        // Give a brief moment before retry
+        setTimeout(() => {
+            openCustomerPortal();
+        }, 500);
+    }
+}
+
+// Handle return from Stripe Customer Portal
+function handlePortalReturn() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Check for portal return parameter
+    if (urlParams.has('portal') || urlParams.has('stripe_portal')) {
+        const returnType = urlParams.get('portal') || urlParams.get('stripe_portal');
+        
+        // Show appropriate success message based on return type
+        let successMessage = 'Welcome back! Your billing session has completed.';
+        let toastDuration = 5000;
+        
+        switch (returnType) {
+            case 'payment_updated':
+            case 'payment_method_updated':
+                successMessage = 'Payment method updated successfully! Your subscription will continue uninterrupted.';
+                toastDuration = 6000;
+                break;
+                
+            case 'subscription_updated':
+            case 'subscription_changed':
+                successMessage = 'Subscription updated successfully! Changes will take effect at your next billing cycle.';
+                toastDuration = 6000;
+                break;
+                
+            case 'invoice_paid':
+                successMessage = 'Payment processed successfully! Thank you for your payment.';
+                toastDuration = 6000;
+                break;
+                
+            case 'cancelled':
+            case 'canceled':
+                successMessage = 'Billing session cancelled. No changes were made to your account.';
+                toastDuration = 4000;
+                break;
+                
+            case 'return':
+            default:
+                // Generic return - could be from any portal action
+                successMessage = 'Billing portal session completed. Any changes you made have been saved.';
+                toastDuration = 5000;
+        }
+        
+        // Show success message
+        setTimeout(() => {
+            showToast(successMessage, 'success', toastDuration);
+        }, 500);
+        
+        // Clean up URL parameters
+        cleanPortalReturnUrl();
+        
+        // Optionally refresh license status after portal return
+        setTimeout(() => {
+            if (typeof refreshLicenseStatus === 'function') {
+                refreshLicenseStatus();
+            }
+        }, 2000);
+        
+        return true;
+    }
+    
+    return false;
+}
+
+// Clean portal-related URL parameters
+function cleanPortalReturnUrl() {
+    const url = new URL(window.location);
+    const paramsToRemove = ['portal', 'stripe_portal', 'session_id', 'payment_intent'];
+    
+    paramsToRemove.forEach(param => {
+        url.searchParams.delete(param);
+    });
+    
+    // Update URL without reloading the page
+    window.history.replaceState({}, document.title, url.pathname + url.search);
+}
+
+// Initialize portal return handling when page loads
+function initializePortalReturnHandling() {
+    // Handle return immediately if URL indicates portal return
+    if (handlePortalReturn()) {
+        console.log('Handled portal return successfully');
+    }
+    
+    // Also listen for hash changes in case of SPA routing
+    window.addEventListener('hashchange', () => {
+        handlePortalReturn();
+    });
+}
+
 async function openCustomerPortal() {
     try {
         const customerEmail = localStorage.getItem('pospal_customer_email');
@@ -4028,7 +4482,10 @@ async function openCustomerPortal() {
             return;
         }
         
-        showToast('Opening Stripe Customer Portal...', 'info');
+        // Show loading state and disable portal buttons
+        showPortalLoading(true, 'Connecting to POSPal Customer Portal...');
+        
+        showToast('Opening POSPal Customer Portal...', 'info');
         
         const response = await fetch(`${WORKER_URL}/create-portal-session`, {
             method: 'POST',
@@ -4049,16 +4506,65 @@ async function openCustomerPortal() {
         const data = await response.json();
         
         if (data.url) {
-            // Open Stripe Customer Portal in new tab
-            window.open(data.url, '_blank');
-            showToast('Stripe Customer Portal opened successfully', 'success');
+            // Open Stripe Customer Portal in new tab with enhanced user experience and proper branding
+            const portalWindow = window.open(
+                data.url, 
+                'POSPalCustomerPortal', // Named window for better branding
+                'width=1200,height=800,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,status=yes'
+            );
+            
+            // Check if popup was blocked
+            if (!portalWindow || portalWindow.closed || typeof portalWindow.closed == 'undefined') {
+                // Fallback: show a modal with instructions to manually open the link
+                const fallbackMessage = `Your browser blocked the POSPal Customer Portal popup.\n\nClick "OK" to open it in this tab instead.`;
+                if (confirm(fallbackMessage)) {
+                    // Try opening again with better messaging
+                    showToast('Redirecting to POSPal Customer Portal...', 'info');
+                    window.location.href = data.url;
+                }
+            } else {
+                showPortalLoading(false); // Hide loading state
+                showToast('POSPal Customer Portal opened successfully - manage your subscription in the new window', 'success');
+                
+                // Optional: Focus the new window after a brief delay
+                setTimeout(() => {
+                    try {
+                        portalWindow.focus();
+                    } catch (e) {
+                        // Ignore focus errors
+                    }
+                }, 500);
+                
+                // Add window title update attempt (may not work due to cross-origin, but worth trying)
+                setTimeout(() => {
+                    try {
+                        if (!portalWindow.closed && portalWindow.document) {
+                            portalWindow.document.title = 'POSPal Customer Portal - Manage Subscription';
+                        }
+                    } catch (e) {
+                        // Cross-origin restrictions prevent this, but that's expected
+                    }
+                }, 2000);
+            }
         } else {
             throw new Error('No portal URL received');
         }
         
     } catch (error) {
         console.error('Customer portal error:', error);
-        showToast('Failed to open customer portal: ' + error.message, 'error');
+        
+        showPortalLoading(false); // Hide loading state on error
+        
+        // Enhanced error handling with specific messages and guidance
+        const errorResult = handlePortalError(error);
+        showToast(errorResult.message, 'error', errorResult.duration);
+        
+        // Show additional guidance if provided
+        if (errorResult.showGuidance) {
+            setTimeout(() => {
+                showPortalErrorGuidance(errorResult.guidanceType, error);
+            }, 1000);
+        }
     }
 }
 
@@ -4148,7 +4654,12 @@ function hideUnlockDialog() {
 function showUnlockError(message) {
     const errorDiv = document.getElementById('unlockError');
     if (errorDiv) {
-        errorDiv.textContent = message;
+        // Check if this is a license-related error that could benefit from recovery
+        if (message.includes('Invalid email or unlock token') || message.includes('License not found')) {
+            errorDiv.innerHTML = `${message} <br><br><button onclick="hideLicenseRecoveryModal(); showLicenseRecoveryModal();" class="text-blue-600 hover:text-blue-700 underline text-sm">Forgot your license key? Click here to recover it</button>`;
+        } else {
+            errorDiv.textContent = message;
+        }
         errorDiv.classList.remove('hidden');
     }
 }
@@ -4289,15 +4800,28 @@ document.addEventListener('DOMContentLoaded', function() {
                     localStorage.setItem('pospal_customer_name', result.customerName);
                     localStorage.setItem('pospal_license_status', 'active');
                     
-                    // Show success message
-                    alert('✅ License validated successfully!\n\nYour subscription is now active.');
+                    // Turn off loading state
+                    setUnlockLoading(false);
                     
-                    // Hide dialog
+                    // Show success message with customer portal option
+                    const welcomeMessage = `🎉 Welcome to POSPal Pro, ${result.customerName}!\n\nYour subscription has been successfully activated.\n\nYou now have access to all premium features including:\n• Advanced analytics and reporting\n• Priority customer support\n• Enhanced customization options\n• Automatic data backup\n\nWould you like to access your customer portal to manage your subscription and billing?`;
+                    
+                    // Hide dialog first
                     hideUnlockDialog();
                     
-                    // Refresh trial status
+                    // Immediately update UI to show active license
+                    showActiveLicenseStatus();
+                    
+                    // Add a brief celebration effect
                     setTimeout(() => {
-                        checkAndDisplayTrialStatus();
+                        showToast('🎉 POSPal Pro activated successfully! All premium features are now available.', 'success', 5000);
+                    }, 500);
+                    
+                    // Show welcome message and offer customer portal access
+                    setTimeout(() => {
+                        if (confirm(welcomeMessage)) {
+                            openCustomerPortal();
+                        }
                     }, 1000);
                     
                 } else {
@@ -4342,8 +4866,8 @@ document.addEventListener('DOMContentLoaded', function() {
             let formatted = 'POSPAL-' + segments.join('-');
             
             // Limit length
-            if (formatted.length > 23) { // POSPAL-XXXX-XXXX-XXXX = 23 chars
-                formatted = formatted.substring(0, 23);
+            if (formatted.length > 35) { // POSPAL-XXXX-XXXX-XXXX-XXXX = up to 35 chars
+                formatted = formatted.substring(0, 35);
             }
             
             e.target.value = formatted;
@@ -4371,6 +4895,270 @@ document.addEventListener('DOMContentLoaded', function() {
         endSession();
     });
 });
+
+// --- License Recovery Functions ---
+let lastRecoveryRequest = 0;
+const RECOVERY_RATE_LIMIT_MS = 60000; // 1 minute between requests
+
+function showLicenseRecoveryModal() {
+    const modal = document.getElementById('licenseRecoveryModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        // Reset form and messages
+        const form = document.getElementById('licenseRecoveryForm');
+        if (form) form.reset();
+        hideRecoveryMessages();
+        resetRecoveryButtonState();
+        
+        // Focus on email input
+        const emailInput = document.getElementById('recoveryEmail');
+        if (emailInput) {
+            setTimeout(() => emailInput.focus(), 100);
+        }
+        
+        // Disable body scrolling
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+function hideLicenseRecoveryModal() {
+    const modal = document.getElementById('licenseRecoveryModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        
+        // Clear any active countdown
+        clearRecoveryCountdown();
+        
+        // Reset form and messages
+        const form = document.getElementById('licenseRecoveryForm');
+        if (form) form.reset();
+        hideRecoveryMessages();
+        resetRecoveryButtonState();
+        
+        // Re-enable body scrolling
+        document.body.style.overflow = 'auto';
+    }
+}
+
+function showRecoveryError(message) {
+    hideRecoveryMessages();
+    const errorDiv = document.getElementById('recoveryError');
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.classList.remove('hidden');
+    }
+}
+
+// Global variable to track countdown interval
+let recoveryCountdownInterval = null;
+
+function showRecoverySuccess(message) {
+    hideRecoveryMessages();
+    const successDiv = document.getElementById('recoverySuccess');
+    if (successDiv) {
+        successDiv.innerHTML = `
+            <div>${message}</div>
+            <div id="recoveryCountdown" class="mt-2 text-sm text-green-600 font-medium"></div>
+        `;
+        successDiv.classList.remove('hidden');
+    }
+}
+
+function startRecoveryCountdown(seconds = 8) {
+    // Clear any existing countdown
+    if (recoveryCountdownInterval) {
+        clearInterval(recoveryCountdownInterval);
+    }
+    
+    let timeLeft = seconds;
+    const countdownElement = document.getElementById('recoveryCountdown');
+    
+    // Update countdown display immediately
+    updateCountdownDisplay(timeLeft);
+    
+    // Start the countdown interval
+    recoveryCountdownInterval = setInterval(() => {
+        timeLeft--;
+        
+        if (timeLeft <= 0) {
+            clearInterval(recoveryCountdownInterval);
+            recoveryCountdownInterval = null;
+            hideLicenseRecoveryModal();
+        } else {
+            updateCountdownDisplay(timeLeft);
+        }
+    }, 1000);
+}
+
+function updateCountdownDisplay(seconds) {
+    const countdownElement = document.getElementById('recoveryCountdown');
+    if (countdownElement) {
+        countdownElement.textContent = `Modal will close in ${seconds} second${seconds !== 1 ? 's' : ''}...`;
+    }
+}
+
+function clearRecoveryCountdown() {
+    if (recoveryCountdownInterval) {
+        clearInterval(recoveryCountdownInterval);
+        recoveryCountdownInterval = null;
+    }
+}
+
+function showRecoveryWarning(message) {
+    hideRecoveryMessages();
+    const warningDiv = document.getElementById('recoveryWarning');
+    if (warningDiv) {
+        warningDiv.textContent = message;
+        warningDiv.classList.remove('hidden');
+    }
+}
+
+function hideRecoveryMessages() {
+    // Clear any active countdown when hiding messages
+    clearRecoveryCountdown();
+    
+    const errorDiv = document.getElementById('recoveryError');
+    const successDiv = document.getElementById('recoverySuccess');
+    const warningDiv = document.getElementById('recoveryWarning');
+    
+    if (errorDiv) errorDiv.classList.add('hidden');
+    if (successDiv) successDiv.classList.add('hidden');
+    if (warningDiv) warningDiv.classList.add('hidden');
+}
+
+function setRecoveryLoading(loading) {
+    const btn = document.getElementById('recoverySubmitBtn');
+    const btnText = document.getElementById('recoveryBtnText');
+    
+    if (btn && btnText) {
+        btn.disabled = loading;
+        if (loading) {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i><span>Sending...</span>';
+        } else {
+            btn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i><span>Send License Key</span>';
+        }
+    }
+}
+
+function resetRecoveryButtonState() {
+    setRecoveryLoading(false);
+}
+
+async function submitLicenseRecovery(email) {
+    try {
+        // Check rate limiting
+        const now = Date.now();
+        if (now - lastRecoveryRequest < RECOVERY_RATE_LIMIT_MS) {
+            const remainingSeconds = Math.ceil((RECOVERY_RATE_LIMIT_MS - (now - lastRecoveryRequest)) / 1000);
+            throw new Error(`Please wait ${remainingSeconds} seconds before requesting another recovery.`);
+        }
+        
+        const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/recover-license', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: email
+            }),
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            lastRecoveryRequest = now;
+            return {
+                success: true,
+                message: result.message || 'License key has been sent to your email address.'
+            };
+        } else {
+            throw new Error(result.error || 'Failed to process recovery request.');
+        }
+        
+    } catch (error) {
+        console.error('License recovery error:', error);
+        
+        if (error.message.includes('wait')) {
+            // Rate limiting error
+            return {
+                success: false,
+                isRateLimit: true,
+                message: error.message
+            };
+        } else if (error.name === 'TypeError' || error.message.includes('fetch')) {
+            // Network error
+            return {
+                success: false,
+                message: 'Network error. Please check your internet connection and try again.'
+            };
+        } else {
+            // Server error
+            return {
+                success: false,
+                message: error.message
+            };
+        }
+    }
+}
+
+// Set up recovery form handler
+document.addEventListener('DOMContentLoaded', function() {
+    const recoveryForm = document.getElementById('licenseRecoveryForm');
+    if (recoveryForm) {
+        recoveryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('recoveryEmail').value.trim();
+            
+            // Validation
+            if (!email) {
+                showRecoveryError('Please enter your email address.');
+                return;
+            }
+            
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showRecoveryError('Please enter a valid email address.');
+                return;
+            }
+            
+            // Show loading state
+            setRecoveryLoading(true);
+            hideRecoveryMessages();
+            
+            // Submit recovery request
+            const result = await submitLicenseRecovery(email);
+            
+            setRecoveryLoading(false);
+            
+            if (result.success) {
+                showRecoverySuccess(result.message);
+                // Start countdown timer for better user experience
+                startRecoveryCountdown(8);
+            } else if (result.isRateLimit) {
+                showRecoveryWarning(result.message);
+            } else {
+                showRecoveryError(result.message);
+            }
+        });
+    }
+});
+
+// Support contact function (used in recovery modal)
+function contactSupport() {
+    const subject = encodeURIComponent('POSPal License Recovery Support');
+    const body = encodeURIComponent(`Hi,
+
+I need help recovering my POSPal license key.
+
+Issue: [Please describe your issue here]
+
+Thank you!`);
+    
+    window.open(`mailto:support@pospal.gr?subject=${subject}&body=${body}`, '_self');
+}
 
 // --- Subscription Validation Functions ---
 
@@ -4439,7 +5227,7 @@ function handleTrialValidation() {
     }
 }
 
-// Check if user is within offline grace period
+// Check if user is within offline grace period with progressive warnings
 function isInOfflineGracePeriod() {
     const lastSuccessfulCheck = localStorage.getItem('pospal_last_successful_validation');
     const customerType = localStorage.getItem('pospal_cached_status');
@@ -4450,24 +5238,42 @@ function isInOfflineGracePeriod() {
     
     const daysSinceLastValidation = (Date.now() - parseInt(lastSuccessfulCheck)) / (1000 * 60 * 60 * 24);
     
-    // Simple time-based grace period
-    const gracePeriodDays = customerType === 'active' ? 7 : 1;
-    const inGracePeriod = daysSinceLastValidation <= gracePeriodDays;
+    // Extended grace period: 7 days normal + 3 days warning period
+    const normalGraceDays = customerType === 'active' ? 7 : 1;
+    const warningPeriodDays = 3; // Days 8, 9, 10
+    const totalGraceDays = normalGraceDays + warningPeriodDays;
+    
+    const inGracePeriod = daysSinceLastValidation <= totalGraceDays;
+    const inWarningPeriod = daysSinceLastValidation > normalGraceDays && daysSinceLastValidation <= totalGraceDays;
+    const remainingDays = Math.max(0, totalGraceDays - daysSinceLastValidation);
     
     if (inGracePeriod) {
-        console.log(`Offline grace: ${daysSinceLastValidation.toFixed(1)}/${gracePeriodDays} days`);
-        showOfflineIndicator(daysSinceLastValidation, gracePeriodDays);
+        console.log(`Offline status: ${daysSinceLastValidation.toFixed(1)}/${totalGraceDays} days`);
+        
+        if (inWarningPeriod) {
+            // Show progressive warnings for days 8, 9, 10
+            showProgressiveWarning(daysSinceLastValidation, normalGraceDays, totalGraceDays);
+            updateLicenseStatusDisplay('warning', false, remainingDays);
+        } else {
+            // Normal grace period - show standard offline indicator
+            showOfflineIndicator(daysSinceLastValidation, normalGraceDays);
+            updateLicenseStatusDisplay('offline', false);
+        }
     } else {
-        console.log('Offline grace period expired');
+        console.log('Grace period expired - entering trial mode');
+        showTrialModeNotification();
     }
     
     return inGracePeriod;
 }
 
-// Attempt server validation with timeout
+// Attempt server validation with timeout and enhanced UI feedback
 async function attemptServerValidation(customerEmail, unlockToken, timeout = 10000) {
     try {
         console.log('Attempting server validation...');
+        
+        // Show checking status
+        showConnectivityStatus(true, 'checking');
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -4499,12 +5305,22 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
             localStorage.setItem('pospal_cached_status', 'active');
             localStorage.setItem('pospal_last_successful_validation', Date.now().toString());
             console.log('Server validation: ACTIVE');
+            
+            // Hide all warning indicators and show success
             hideOfflineIndicator();
+            hideProgressiveWarning();
+            showConnectivityStatus(true, 'active');
+            updateLicenseStatusDisplay('active', true);
+            
             return true;
         } else {
             // License issues detected online
             localStorage.setItem('pospal_cached_status', 'inactive');
             console.log('Server validation failed:', result.error || 'Unknown error');
+            
+            // Show online but license issue
+            showConnectivityStatus(true, 'invalid');
+            updateLicenseStatusDisplay('inactive', true);
             
             if (result.error && result.error.includes('Subscription is not active')) {
                 showUnlockRedirect('subscription');
@@ -4517,11 +5333,16 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
         
     } catch (error) {
         console.log('Server validation failed (likely offline):', error.name);
+        
+        // Show offline status
+        showConnectivityStatus(false);
+        updateLicenseStatusDisplay('offline', false);
+        
         return false; // Assume offline
     }
 }
 
-// Handle offline mode gracefully
+// Handle offline mode gracefully with enhanced UI feedback
 function handleOfflineMode() {
     const lastOnlineCheck = localStorage.getItem('pospal_last_online_check');
     if (!lastOnlineCheck) {
@@ -4529,14 +5350,27 @@ function handleOfflineMode() {
         localStorage.setItem('pospal_last_online_check', Date.now().toString());
     }
     
+    // Update UI to show offline status
+    showConnectivityStatus(false);
+    
     if (!isInOfflineGracePeriod()) {
-        // Grace period expired
-        const customerType = localStorage.getItem('pospal_cached_status');
+        // Grace period expired - show trial mode
+        updateLicenseStatusDisplay('trial', false);
+        showTrialModeNotification();
+    } else {
+        // Still in grace period - update status accordingly
+        const lastSuccessful = localStorage.getItem('pospal_last_successful_validation');
+        const daysSince = lastSuccessful ? 
+            (Date.now() - parseInt(lastSuccessful)) / (1000 * 60 * 60 * 24) : 0;
         
-        if (customerType === 'active') {
-            showOfflineExpiredDialog();
+        const normalGraceDays = 7;
+        
+        if (daysSince > normalGraceDays) {
+            // In warning period
+            updateLicenseStatusDisplay('warning', false);
         } else {
-            showUnlockRedirect('trial');
+            // Normal grace period
+            updateLicenseStatusDisplay('offline', false);
         }
     }
 }
@@ -5172,6 +6006,439 @@ function showOfflineExpiredDialog() {
 // Expose global functions
 window.attemptReconnect = attemptReconnect;
 
+// --- Progressive Warning System ---
+
+let warningNotificationElement = null;
+let connectivityStatusElement = null;
+
+// Show progressive warnings for days 8, 9, 10
+function showProgressiveWarning(daysSinceLastValidation, normalGraceDays, totalGraceDays) {
+    const warningDay = Math.floor(daysSinceLastValidation - normalGraceDays) + 1;
+    const remainingDays = Math.max(0, totalGraceDays - daysSinceLastValidation);
+    
+    // Check if warning is temporarily dismissed
+    const dismissedUntil = localStorage.getItem('pospal_warning_dismissed_until');
+    if (dismissedUntil && Date.now() < parseInt(dismissedUntil)) {
+        return; // Warning is dismissed, don't show
+    }
+    
+    // Check if we've already shown this warning today to avoid spam
+    const lastShownKey = `pospal_warning_shown_day_${warningDay}`;
+    const lastShown = localStorage.getItem(lastShownKey);
+    const hoursAgo = lastShown ? (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60) : 25;
+    
+    if (hoursAgo < 8) {
+        return; // Don't spam - wait at least 8 hours between same-level warnings
+    }
+    
+    // Hide any existing warning first
+    hideProgressiveWarning();
+    
+    let warningLevel, warningTitle, warningMessage, warningIcon, warningColors;
+    
+    if (warningDay === 1) {
+        // Day 8: Soft warning
+        warningLevel = 'soft';
+        warningTitle = 'Connection Notice';
+        warningMessage = `POSPal hasn't been able to verify your license for ${daysSinceLastValidation.toFixed(1)} days. Please check your internet connection when convenient.`;
+        warningIcon = 'fa-info-circle';
+        warningColors = 'bg-blue-50 border-blue-200 text-blue-800';
+    } else if (warningDay === 2) {
+        // Day 9: More prominent warning
+        warningLevel = 'moderate';
+        warningTitle = 'License Verification Needed';
+        warningMessage = `Your license needs verification. ${remainingDays.toFixed(1)} days remaining before entering trial mode. Please reconnect to the internet.`;
+        warningIcon = 'fa-exclamation-triangle';
+        warningColors = 'bg-yellow-50 border-yellow-300 text-yellow-800';
+    } else {
+        // Day 10: Final warning
+        warningLevel = 'urgent';
+        warningTitle = 'FINAL DAY - Action Required';
+        warningMessage = `This is your final day! License verification required within ${remainingDays.toFixed(1)} days or POSPal will enter trial mode. Please connect to the internet immediately.`;
+        warningIcon = 'fa-exclamation-circle';
+        warningColors = 'bg-red-50 border-red-300 text-red-800';
+    }
+    
+    // Create warning notification
+    warningNotificationElement = document.createElement('div');
+    warningNotificationElement.id = 'progressiveWarning';
+    warningNotificationElement.className = `fixed top-4 left-1/2 transform -translate-x-1/2 ${warningColors} border-2 px-6 py-4 rounded-lg shadow-lg z-50 max-w-2xl mx-auto warning-notification progressive-warning`;
+    
+    warningNotificationElement.innerHTML = `
+        <div class="flex items-start space-x-3">
+            <div class="flex-shrink-0 pt-1">
+                <i class="fas ${warningIcon} text-xl"></i>
+            </div>
+            <div class="flex-1">
+                <h3 class="font-bold text-lg mb-2">${warningTitle}</h3>
+                <p class="text-sm mb-3">${warningMessage}</p>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="attemptReconnect()" class="bg-white hover:bg-gray-50 text-gray-800 px-4 py-2 rounded border text-sm font-medium transition-colors">
+                        <i class="fas fa-wifi mr-2"></i>Try Reconnect
+                    </button>
+                    <button onclick="showConnectivityHelp()" class="bg-white hover:bg-gray-50 text-gray-800 px-4 py-2 rounded border text-sm font-medium transition-colors">
+                        <i class="fas fa-question-circle mr-2"></i>Connection Help
+                    </button>
+                    ${warningDay >= 2 ? `<button onclick="dismissWarningTemporarily()" class="bg-white hover:bg-gray-50 text-gray-600 px-3 py-2 rounded border text-sm transition-colors">Dismiss (1hr)</button>` : ''}
+                </div>
+            </div>
+            <button onclick="dismissWarningTemporarily()" class="flex-shrink-0 text-gray-400 hover:text-gray-600 p-1">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(warningNotificationElement);
+    
+    // Show appropriate toast notification
+    if (warningDay === 1) {
+        showToast('License verification needed - please check your connection when convenient', 'info', 5000);
+    } else if (warningDay === 2) {
+        showToast(`Warning: ${remainingDays.toFixed(1)} days remaining for license verification`, 'warning', 7000);
+    } else {
+        showToast(`URGENT: Final day for license verification! ${remainingDays.toFixed(1)} days remaining`, 'error', 10000);
+    }
+    
+    // Store warning display to avoid spam
+    localStorage.setItem(`pospal_warning_shown_day_${warningDay}`, Date.now().toString());
+}
+
+// Hide progressive warning
+function hideProgressiveWarning() {
+    if (warningNotificationElement) {
+        document.body.removeChild(warningNotificationElement);
+        warningNotificationElement = null;
+    }
+}
+
+// Dismiss warning temporarily (1 hour)
+function dismissWarningTemporarily() {
+    hideProgressiveWarning();
+    localStorage.setItem('pospal_warning_dismissed_until', (Date.now() + (60 * 60 * 1000)).toString());
+    showToast('Warning dismissed for 1 hour', 'info', 3000);
+}
+
+// Show trial mode notification for day 11+
+function showTrialModeNotification() {
+    // Hide other indicators
+    hideOfflineIndicator();
+    hideProgressiveWarning();
+    
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-90 z-[120] flex items-center justify-center p-4';
+    modal.id = 'trialModeModal';
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div class="p-6 text-center border-b border-gray-200">
+                <div class="text-4xl text-orange-500 mb-3 trial-mode-indicator">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">Trial Mode Active</h2>
+                <p class="text-gray-600">License verification required</p>
+            </div>
+            
+            <div class="p-6">
+                <div class="bg-orange-50 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-orange-700 mb-2">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        POSPal is now running in trial mode due to extended offline period
+                    </p>
+                    <p class="text-sm text-orange-600">
+                        Your subscription is still active! Simply reconnect to the internet to restore full functionality.
+                    </p>
+                </div>
+                
+                <div class="bg-blue-50 rounded-lg p-4 mb-6">
+                    <h4 class="font-semibold text-blue-800 mb-2">What this means:</h4>
+                    <ul class="text-sm text-blue-700 space-y-1">
+                        <li>• Basic POS functions continue to work</li>
+                        <li>• Some advanced features are temporarily limited</li>
+                        <li>• Your data and settings are completely safe</li>
+                        <li>• Full functionality resumes once connected</li>
+                    </ul>
+                </div>
+                
+                <div class="space-y-3">
+                    <button onclick="attemptReconnect()" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-wifi mr-2"></i>
+                        Check Connection Now
+                    </button>
+                    
+                    <button onclick="showConnectivityHelp()" class="w-full bg-gray-200 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
+                        <i class="fas fa-question-circle mr-2"></i>
+                        Connection Troubleshooting
+                    </button>
+                    
+                    <button onclick="closeTrialModeModal()" class="w-full bg-gray-100 text-gray-600 py-2 px-4 rounded-lg hover:bg-gray-200 transition-colors">
+                        Continue in Trial Mode
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    showToast('Running in trial mode - reconnect to restore full functionality', 'warning', 8000);
+}
+
+// Close trial mode modal
+function closeTrialModeModal() {
+    const modal = document.getElementById('trialModeModal');
+    if (modal) {
+        document.body.removeChild(modal);
+    }
+}
+
+// Show connectivity help dialog
+function showConnectivityHelp() {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-90 z-[130] flex items-center justify-center p-4 connection-help-modal';
+    modal.id = 'connectivityHelpModal';
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-screen overflow-y-auto">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-bold text-gray-900">Connection Troubleshooting</h2>
+                    <button onclick="closeConnectivityHelp()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6">
+                <div class="space-y-6">
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <h3 class="font-semibold text-blue-800 mb-2">Quick Check</h3>
+                        <p class="text-sm text-blue-700 mb-3">First, verify your internet connection:</p>
+                        <button onclick="testInternetConnection()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-globe mr-2"></i>Test Internet Connection
+                        </button>
+                    </div>
+                    
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h3 class="font-semibold text-gray-800 mb-3">Common Solutions</h3>
+                        <ul class="space-y-2 text-sm text-gray-700">
+                            <li class="flex items-start space-x-2">
+                                <i class="fas fa-wifi text-blue-500 mt-0.5"></i>
+                                <span>Check that your device is connected to WiFi or ethernet</span>
+                            </li>
+                            <li class="flex items-start space-x-2">
+                                <i class="fas fa-shield-alt text-green-500 mt-0.5"></i>
+                                <span>Temporarily disable firewall/antivirus and try again</span>
+                            </li>
+                            <li class="flex items-start space-x-2">
+                                <i class="fas fa-router text-orange-500 mt-0.5"></i>
+                                <span>Restart your router/modem and wait 2 minutes</span>
+                            </li>
+                            <li class="flex items-start space-x-2">
+                                <i class="fas fa-sync text-purple-500 mt-0.5"></i>
+                                <span>Try refreshing the page or restarting POSPal</span>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-yellow-50 rounded-lg p-4">
+                        <h3 class="font-semibold text-yellow-800 mb-2">Still Having Issues?</h3>
+                        <p class="text-sm text-yellow-700 mb-3">POSPal needs to reach our license servers occasionally. If you continue having problems:</p>
+                        <ul class="space-y-1 text-sm text-yellow-700">
+                            <li>• Contact your IT administrator about firewall settings</li>
+                            <li>• Check if your network blocks external connections</li>
+                            <li>• Try connecting from a different network (mobile hotspot)</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="mt-6 flex space-x-3">
+                    <button onclick="attemptReconnect()" class="flex-1 bg-blue-600 text-white py-2 px-4 rounded font-medium hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-sync mr-2"></i>Try Again
+                    </button>
+                    <button onclick="closeConnectivityHelp()" class="flex-1 bg-gray-200 text-gray-700 py-2 px-4 rounded font-medium hover:bg-gray-300 transition-colors">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Close connectivity help modal
+function closeConnectivityHelp() {
+    const modal = document.getElementById('connectivityHelpModal');
+    if (modal) {
+        document.body.removeChild(modal);
+    }
+}
+
+// Test internet connection
+async function testInternetConnection() {
+    showToast('Testing internet connection...', 'info', 2000);
+    
+    try {
+        const response = await fetch('https://www.google.com/favicon.ico', {
+            method: 'HEAD',
+            mode: 'no-cors',
+            cache: 'no-cache'
+        });
+        showToast('Internet connection: OK', 'success', 3000);
+        return true;
+    } catch (error) {
+        showToast('No internet connection detected', 'error', 4000);
+        return false;
+    }
+}
+
+// Enhanced connectivity status indicator
+function showConnectivityStatus(isOnline, validationStatus = null) {
+    hideConnectivityStatus(); // Remove existing indicator
+    
+    connectivityStatusElement = document.createElement('div');
+    connectivityStatusElement.id = 'connectivityStatus';
+    connectivityStatusElement.className = 'fixed bottom-4 right-4 px-3 py-2 rounded-lg shadow-lg text-sm z-40 connectivity-status';
+    
+    let statusIcon, statusText, statusColor;
+    
+    if (isOnline && validationStatus === 'active') {
+        statusIcon = 'fa-check-circle';
+        statusText = 'Online & Licensed';
+        statusColor = 'bg-green-100 border border-green-300 text-green-800';
+    } else if (isOnline && validationStatus === 'checking') {
+        statusIcon = 'fa-spinner fa-spin';
+        statusText = 'Verifying License...';
+        statusColor = 'bg-blue-100 border border-blue-300 text-blue-800';
+    } else if (isOnline && validationStatus === 'invalid') {
+        statusIcon = 'fa-exclamation-triangle';
+        statusText = 'Online - License Issue';
+        statusColor = 'bg-red-100 border border-red-300 text-red-800';
+    } else if (isOnline) {
+        statusIcon = 'fa-wifi';
+        statusText = 'Online';
+        statusColor = 'bg-blue-100 border border-blue-300 text-blue-800';
+    } else {
+        statusIcon = 'fa-wifi-slash';
+        statusText = 'Offline Mode';
+        statusColor = 'bg-orange-100 border border-orange-300 text-orange-800';
+    }
+    
+    connectivityStatusElement.className += ` ${statusColor}`;
+    connectivityStatusElement.innerHTML = `
+        <div class="flex items-center space-x-2">
+            <i class="fas ${statusIcon}"></i>
+            <span class="font-medium">${statusText}</span>
+        </div>
+    `;
+    
+    document.body.appendChild(connectivityStatusElement);
+    
+    // Auto-hide online status after 5 seconds (but keep license issues and offline status)
+    if (isOnline && validationStatus === 'active') {
+        setTimeout(() => {
+            if (connectivityStatusElement && connectivityStatusElement.id === 'connectivityStatus') {
+                connectivityStatusElement.style.opacity = '0';
+                setTimeout(() => hideConnectivityStatus(), 300);
+            }
+        }, 5000);
+    }
+}
+
+// Hide connectivity status
+function hideConnectivityStatus() {
+    if (connectivityStatusElement) {
+        document.body.removeChild(connectivityStatusElement);
+        connectivityStatusElement = null;
+    }
+}
+
+// Update license status display with hybrid validation states
+function updateLicenseStatusDisplay(status, isOnline) {
+    const statusDisplay = elements.licenseStatusDisplay;
+    const statusBadge = document.getElementById('license-status-badge');
+    
+    if (!statusDisplay || !statusBadge) return;
+    
+    let badgeText, badgeClass, statusMessage;
+    
+    switch (status) {
+        case 'active':
+            if (isOnline) {
+                badgeText = 'Active & Verified';
+                badgeClass = 'bg-green-100 text-green-800';
+                statusMessage = '✅ Your POSPal license is active and verified online.';
+            } else {
+                badgeText = 'Active (Offline)';
+                badgeClass = 'bg-blue-100 text-blue-800';
+                statusMessage = '📱 License active but running offline. Full verification will resume when connected.';
+            }
+            break;
+            
+        case 'offline':
+            const lastSuccessful = localStorage.getItem('pospal_last_successful_validation');
+            const daysSince = lastSuccessful ? 
+                ((Date.now() - parseInt(lastSuccessful)) / (1000 * 60 * 60 * 24)).toFixed(1) : 'unknown';
+            
+            badgeText = 'Grace Period';
+            badgeClass = 'bg-orange-100 text-orange-800';
+            statusMessage = `⚠️ Running in offline grace period (${daysSince} days since last verification). Please reconnect when possible.`;
+            break;
+            
+        case 'warning':
+            const remainingDays = parseFloat(arguments[2] || 0).toFixed(1);
+            badgeText = 'Verification Needed';
+            badgeClass = 'bg-yellow-100 text-yellow-800';
+            statusMessage = `⏰ License verification required! ${remainingDays} days remaining before trial mode.`;
+            break;
+            
+        case 'trial':
+            badgeText = 'Trial Mode';
+            badgeClass = 'bg-gray-100 text-gray-800';
+            statusMessage = '🔒 Running in trial mode due to extended offline period. Your subscription is still active - reconnect to restore full functionality.';
+            break;
+            
+        case 'inactive':
+            badgeText = 'License Issue';
+            badgeClass = 'bg-red-100 text-red-800';
+            statusMessage = '❌ License verification failed. Please check your subscription status or contact support.';
+            break;
+            
+        default:
+            badgeText = 'Checking...';
+            badgeClass = 'bg-gray-100 text-gray-600';
+            statusMessage = '🔄 Checking license status...';
+    }
+    
+    // Update badge
+    statusBadge.textContent = badgeText;
+    statusBadge.className = `px-3 py-1 rounded-full text-sm font-medium ${badgeClass}`;
+    
+    // Add special styling for active licenses
+    if (status === 'active' && isOnline) {
+        statusBadge.classList.add('license-badge-active');
+    }
+    
+    // Update status message with connectivity info
+    const connectivityInfo = isOnline ? 
+        '<div class="mt-2 text-sm text-green-600"><i class="fas fa-wifi mr-1"></i>Connected to license servers</div>' :
+        '<div class="mt-2 text-sm text-orange-600"><i class="fas fa-wifi-slash mr-1"></i>Unable to reach license servers</div>';
+    
+    statusDisplay.innerHTML = `
+        <div class="license-status-message">${statusMessage}</div>
+        ${connectivityInfo}
+        <div class="mt-3 text-xs text-gray-500">
+            Last updated: ${new Date().toLocaleString()}
+        </div>
+    `;
+}
+
+// Expose new global functions
+window.dismissWarningTemporarily = dismissWarningTemporarily;
+window.closeTrialModeModal = closeTrialModeModal;
+window.showConnectivityHelp = showConnectivityHelp;
+window.closeConnectivityHelp = closeConnectivityHelp;
+window.testInternetConnection = testInternetConnection;
+
 
 // --- Embedded Payment Functions ---
 
@@ -5185,6 +6452,14 @@ function showEmbeddedPayment() {
 function closeSubscriptionModal() {
     // Reset email validation state when closing modal
     resetEmailValidationState();
+    
+    // Clear all input boxes
+    document.getElementById('sub-restaurant-name').value = '';
+    document.getElementById('sub-customer-name').value = '';
+    document.getElementById('sub-customer-email').value = '';
+    document.getElementById('sub-customer-phone').value = '';
+    
+    // Hide modal
     document.getElementById('subscriptionModal').style.display = 'none';
 }
 
@@ -5246,9 +6521,10 @@ function showEmailValidationMessage(type, portalUrl = null) {
     const activeDiv = document.getElementById('email-duplicate-active');
     const returningDiv = document.getElementById('email-duplicate-returning');
     const errorDiv = document.getElementById('email-validation-error');
+    const successDiv = document.getElementById('email-validation-success');
     
     // Hide all messages first
-    [loadingDiv, activeDiv, returningDiv, errorDiv].forEach(div => {
+    [loadingDiv, activeDiv, returningDiv, errorDiv, successDiv].forEach(div => {
         if (div) div.style.display = 'none';
     });
     
@@ -5273,6 +6549,9 @@ function showEmailValidationMessage(type, portalUrl = null) {
             break;
         case 'error':
             if (errorDiv) errorDiv.style.display = 'block';
+            break;
+        case 'success':
+            if (successDiv) successDiv.style.display = 'block';
             break;
         case 'clear':
             // All messages already hidden
@@ -5313,7 +6592,7 @@ function handleEmailBlur(email) {
             emailValidationState.isDuplicate = false;
             emailValidationState.isReturningCustomer = true;
         } else {
-            showEmailValidationMessage('clear');
+            showEmailValidationMessage('success');
             emailValidationState.isDuplicate = false;
             emailValidationState.isReturningCustomer = false;
         }

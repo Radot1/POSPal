@@ -1,0 +1,1955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POSPal - Restaurant Account Hub</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="enhanced-ux-components.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #1f2937;
+            background: #f9fafb;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Enhanced Header with POSPal Branding */
+        .header {
+            background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 32px rgba(17, 24, 39, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
+            transform: translate(100px, -100px);
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header-left h1 {
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin-bottom: 8px;
+        }
+
+        .brand-accent {
+            color: #10b981;
+        }
+
+        .header-subtitle {
+            opacity: 0.8;
+            font-size: 18px;
+            margin-bottom: 16px;
+        }
+
+        .subscription-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-active {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+
+        .status-cancelled {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+
+        .status-past_due {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        .status-paused {
+            background: linear-gradient(135deg, #6b7280, #4b5563);
+            color: white;
+        }
+
+        .header-right {
+            text-align: right;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 32px;
+            margin-top: 16px;
+        }
+
+        .header-stat {
+            text-align: center;
+        }
+
+        .header-stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #10b981;
+            margin-bottom: 4px;
+        }
+
+        .header-stat-label {
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        /* Progressive Disclosure Tab Navigation */
+        .tab-navigation {
+            display: flex;
+            background: white;
+            border-radius: 16px;
+            padding: 8px;
+            margin-bottom: 32px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            overflow-x: auto;
+            gap: 4px;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 16px 20px;
+            border: none;
+            background: transparent;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #6b7280;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-width: 120px;
+        }
+
+        .tab-button:hover {
+            color: #374151;
+            background: #f9fafb;
+        }
+
+        .tab-button.active {
+            background: linear-gradient(135deg, #111827, #1f2937);
+            color: white;
+            box-shadow: 0 4px 12px rgba(17, 24, 39, 0.3);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Enhanced Card System */
+        .card {
+            background: white;
+            padding: 32px;
+            border-radius: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #f3f4f6;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+        }
+
+        .card h2 {
+            margin-bottom: 24px;
+            color: #111827;
+            font-size: 28px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        /* Dashboard Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 32px;
+            margin-bottom: 32px;
+        }
+
+        .quick-actions {
+            display: grid;
+            gap: 16px;
+        }
+
+        /* Information Display System */
+        .billing-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .info-item {
+            padding: 24px;
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            border-radius: 16px;
+            border-left: 4px solid #3b82f6;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .info-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 70%);
+            transform: translate(20px, -20px);
+        }
+
+        .info-item.highlight {
+            border-left-color: #10b981;
+            background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+        }
+
+        .info-item.warning {
+            border-left-color: #f59e0b;
+            background: linear-gradient(135deg, #fffbeb, #fef3c7);
+        }
+
+        .info-item.danger {
+            border-left-color: #ef4444;
+            background: linear-gradient(135deg, #fef2f2, #fecaca);
+        }
+
+        .info-label {
+            font-size: 13px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .info-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Enhanced Button System */
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin-right: 12px;
+            margin-bottom: 12px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563eb, #1e40af);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-secondary {
+            background: #f8fafc;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+        }
+
+        .btn-secondary:hover {
+            background: #f1f5f9;
+            border-color: #d1d5db;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
+        }
+
+        /* Financial Analytics */
+        .analytics-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .analytics-card {
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            text-align: center;
+            border: 1px solid #f3f4f6;
+        }
+
+        .analytics-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+
+        .analytics-label {
+            font-size: 14px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .analytics-trend {
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .trend-up {
+            color: #10b981;
+        }
+
+        .trend-down {
+            color: #ef4444;
+        }
+
+        /* Help System */
+        .help-categories {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .help-category {
+            padding: 24px;
+            background: white;
+            border-radius: 16px;
+            border: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .help-category:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .help-category h3 {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 12px;
+            color: #111827;
+            font-size: 20px;
+        }
+
+        .help-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+        }
+
+        /* Payment Method Display */
+        .payment-method {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 24px;
+            background: #f8fafc;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .card-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .card-brand {
+            width: 48px;
+            height: 30px;
+            background: #1f2937;
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        /* Security Notice */
+        .security-notice {
+            margin-top: 24px;
+            padding: 20px;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 16px;
+        }
+
+        .security-notice-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .security-icon {
+            width: 32px;
+            height: 32px;
+            background: #0ea5e9;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+        }
+
+        /* Billing History Table */
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 24px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 0 0 1px #e5e7eb;
+        }
+
+        .invoice-table th,
+        .invoice-table td {
+            padding: 16px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .invoice-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .invoice-table tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        /* Modal Enhancements */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 32px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 600px;
+            position: relative;
+            animation: modalSlideIn 0.3s ease-out;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #6b7280;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .close:hover {
+            color: #111827;
+            background: #f3f4f6;
+        }
+
+        /* Form Elements */
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* Loading States */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Messages */
+        .message {
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .message.error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #b91c1c;
+        }
+
+        .message.success {
+            background: #ecfdf5;
+            border: 1px solid #bbf7d0;
+            color: #166534;
+        }
+
+        .message.warning {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #92400e;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .header-stats {
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 16px;
+            }
+            
+            .header {
+                padding: 24px;
+            }
+            
+            .header h1 {
+                font-size: 28px;
+            }
+            
+            .billing-info {
+                grid-template-columns: 1fr;
+            }
+            
+            .btn {
+                width: 100%;
+                margin-right: 0;
+                margin-bottom: 12px;
+            }
+            
+            .tab-navigation {
+                flex-direction: column;
+                gap: 8px;
+            }
+            
+            .tab-button {
+                width: 100%;
+                min-width: auto;
+            }
+            
+            .help-categories {
+                grid-template-columns: 1fr;
+            }
+            
+            .modal-content {
+                margin: 10% auto;
+                padding: 24px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 24px;
+            }
+            
+            .card {
+                padding: 20px;
+            }
+            
+            .card h2 {
+                font-size: 22px;
+            }
+            
+            .header-stats {
+                flex-direction: column;
+                gap: 16px;
+            }
+        }
+
+        /* High contrast mode support */
+        @media (prefers-contrast: high) {
+            .card {
+                border-width: 2px;
+            }
+            
+            .info-item {
+                border-left-width: 6px;
+            }
+        }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+            .card:hover,
+            .btn:hover,
+            .help-category:hover {
+                transform: none;
+            }
+            
+            .loading {
+                animation: none;
+            }
+            
+            .modal-content {
+                animation: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Enhanced Header -->
+        <div class="header">
+            <div class="header-content">
+                <div class="header-left">
+                    <h1>POS<span class="brand-accent">Pal</span> Account</h1>
+                    <div class="header-subtitle">Your restaurant management hub</div>
+                    <div id="subscriptionStatus" class="subscription-status status-active">
+                        <i class="fas fa-check-circle" style="margin-right: 8px;"></i>
+                        Active
+                    </div>
+                </div>
+                <div class="header-right">
+                    <p id="customerWelcome" style="margin-bottom: 16px; font-size: 18px; opacity: 0.9;">Welcome back!</p>
+                    <div class="header-stats">
+                        <div class="header-stat">
+                            <div class="header-stat-value" id="headerOrders">0</div>
+                            <div class="header-stat-label">Orders This Month</div>
+                        </div>
+                        <div class="header-stat">
+                            <div class="header-stat-value" id="headerRevenue">€0</div>
+                            <div class="header-stat-label">Revenue Tracked</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progressive Disclosure Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-button active" onclick="switchTab('dashboard')">
+                <i class="fas fa-tachometer-alt"></i>
+                Dashboard
+            </button>
+            <button class="tab-button" onclick="switchTab('subscription')">
+                <i class="fas fa-credit-card"></i>
+                Subscription
+            </button>
+            <button class="tab-button" onclick="switchTab('billing')">
+                <i class="fas fa-file-invoice"></i>
+                Billing
+            </button>
+            <button class="tab-button" onclick="switchTab('analytics')">
+                <i class="fas fa-chart-line"></i>
+                Analytics
+            </button>
+            <button class="tab-button" onclick="switchTab('settings')">
+                <i class="fas fa-cog"></i>
+                Settings
+            </button>
+            <button class="tab-button" onclick="switchTab('support')">
+                <i class="fas fa-life-ring"></i>
+                Help
+            </button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <div class="dashboard-grid">
+                <div class="card">
+                    <h2>
+                        <div class="card-icon">
+                            <i class="fas fa-chart-pie"></i>
+                        </div>
+                        Account Overview
+                    </h2>
+                    
+                    <div class="billing-info">
+                        <div class="info-item highlight">
+                            <div class="info-label">Subscription Status</div>
+                            <div class="info-value" id="dashboardStatus">Active & Healthy</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Next Billing Date</div>
+                            <div class="info-value" id="dashboardNextBill">Loading...</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Monthly Investment</div>
+                            <div class="info-value">€20.00</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Days Until Renewal</div>
+                            <div class="info-value" id="dashboardDaysLeft">--</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h2>
+                        <div class="card-icon">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        Quick Actions
+                    </h2>
+                    
+                    <div class="quick-actions">
+                        <button class="btn btn-primary" onclick="updatePaymentMethod()">
+                            <i class="fas fa-credit-card"></i>
+                            Update Payment Method
+                        </button>
+                        <button class="btn btn-secondary" onclick="switchTab('billing')">
+                            <i class="fas fa-download"></i>
+                            Download Latest Invoice
+                        </button>
+                        <button class="btn btn-secondary" onclick="pauseSubscription()">
+                            <i class="fas fa-pause"></i>
+                            Pause Subscription
+                        </button>
+                        <button class="btn btn-secondary" onclick="switchTab('support')">
+                            <i class="fas fa-question-circle"></i>
+                            Get Help
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Restaurant Success Metrics -->
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-trophy"></i>
+                    </div>
+                    Your Restaurant's Success with POSPal
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 32px; font-size: 18px;">See how POSPal is helping your business grow and succeed</p>
+                
+                <div class="analytics-overview">
+                    <div class="analytics-card">
+                        <div class="analytics-value" id="totalOrders">0</div>
+                        <div class="analytics-label">Orders Processed</div>
+                        <div class="analytics-trend trend-up">
+                            <i class="fas fa-arrow-up"></i> +12% this month
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-value" id="totalRevenue">€0</div>
+                        <div class="analytics-label">Revenue Tracked</div>
+                        <div class="analytics-trend trend-up">
+                            <i class="fas fa-arrow-up"></i> +8% this month
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-value" id="avgOrderValue">€0</div>
+                        <div class="analytics-label">Average Order Value</div>
+                        <div class="analytics-trend trend-up">
+                            <i class="fas fa-arrow-up"></i> +3% this month
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-value" id="busyHours">--</div>
+                        <div class="analytics-label">Peak Hour</div>
+                        <div class="analytics-trend" style="color: #6b7280;">
+                            <i class="fas fa-clock"></i> Lunch rush
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Subscription Management Tab -->
+        <div id="subscription" class="tab-content">
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-credit-card"></i>
+                    </div>
+                    Subscription Management
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 32px; font-size: 18px;">You're in complete control. Make changes that work for your restaurant.</p>
+                
+                <div class="billing-info">
+                    <div class="info-item">
+                        <div class="info-label">Current Plan</div>
+                        <div class="info-value" id="planName">POSPal Professional</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Monthly Price</div>
+                        <div class="info-value" id="planPrice">€20.00/month</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Next Payment</div>
+                        <div class="info-value" id="nextPayment">Loading...</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Subscription Status</div>
+                        <div class="info-value" id="subscriptionStatusText">Active</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 40px;">
+                    <h3 style="color: #111827; margin-bottom: 20px; font-weight: 600; font-size: 22px;">Subscription Actions</h3>
+                    
+                    <div style="display: grid; gap: 16px;">
+                        <button class="btn btn-primary" onclick="updatePaymentMethod()">
+                            <i class="fas fa-credit-card"></i>
+                            Update Payment Method
+                        </button>
+                        <button class="btn btn-secondary" onclick="pauseSubscription()">
+                            <i class="fas fa-pause"></i>
+                            Pause Subscription (Keep Your Data)
+                        </button>
+                        <button class="btn btn-danger" onclick="showCancelModal()">
+                            <i class="fas fa-times"></i>
+                            Cancel Subscription
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Billing Management Tab -->
+        <div id="billing" class="tab-content">
+            <!-- Payment Methods -->
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-wallet"></i>
+                    </div>
+                    Payment Methods
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 32px; font-size: 18px;">Secure payment processing by Stripe. Your card details are encrypted and never stored on our servers.</p>
+                
+                <div id="paymentMethods">
+                    <div class="payment-method">
+                        <div class="card-info">
+                            <div class="card-brand" id="cardBrand">VISA</div>
+                            <div>
+                                <div style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">•••• •••• •••• <span id="cardLast4">4242</span></div>
+                                <div style="font-size: 14px; color: #6b7280;">Expires <span id="cardExpiry">12/25</span></div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="updatePaymentMethod()">
+                            <i class="fas fa-edit"></i>
+                            Update Card
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="security-notice">
+                    <div class="security-notice-content">
+                        <div class="security-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div>
+                            <strong style="color: #0c4a6e; margin-bottom: 4px; display: block;">Bank-Level Security</strong>
+                            <p style="color: #075985; margin: 0; font-size: 14px;">256-bit SSL encryption • PCI DSS compliant • No cancellation fees • Cancel anytime</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Billing History -->
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-file-invoice-dollar"></i>
+                    </div>
+                    Billing History & Invoices
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 32px; font-size: 18px;">Download invoices for your business records and tax purposes</p>
+                
+                <table class="invoice-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Invoice</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="billingHistory">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: #6b7280; padding: 40px;">
+                                <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 16px; display: block;"></i>
+                                Loading your billing history...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Financial Analytics Tab -->
+        <div id="analytics" class="tab-content">
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    Cost Analysis & ROI
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 32px; font-size: 18px;">Understand your POSPal investment and restaurant performance metrics</p>
+                
+                <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); height: 240px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 32px; border: 1px solid #e5e7eb;">
+                    <div style="text-align: center; color: #6b7280;">
+                        <i class="fas fa-chart-bar" style="font-size: 48px; margin-bottom: 16px; display: block;"></i>
+                        <p style="font-size: 18px; margin-bottom: 8px;">Advanced Analytics Coming Soon</p>
+                        <p style="font-size: 14px;">Track ROI, cost per order, and revenue attribution</p>
+                    </div>
+                </div>
+                
+                <div class="analytics-overview">
+                    <div class="analytics-card">
+                        <div class="analytics-value">€20.00</div>
+                        <div class="analytics-label">Monthly Cost</div>
+                        <div class="analytics-trend" style="color: #6b7280;">
+                            <i class="fas fa-calendar"></i> Fixed pricing
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-value">€240</div>
+                        <div class="analytics-label">Annual Investment</div>
+                        <div class="analytics-trend trend-down">
+                            <i class="fas fa-arrow-down"></i> vs competitors
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-value">€0.12</div>
+                        <div class="analytics-label">Cost per Order</div>
+                        <div class="analytics-trend trend-down">
+                            <i class="fas fa-arrow-down"></i> Decreasing
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-value">0.8%</div>
+                        <div class="analytics-label">% of Revenue</div>
+                        <div class="analytics-trend trend-down">
+                            <i class="fas fa-arrow-down"></i> Minimal impact
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Account Settings Tab -->
+        <div id="settings" class="tab-content">
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-cog"></i>
+                    </div>
+                    Account Settings
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 32px; font-size: 18px;">Manage your profile information and communication preferences</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                    <div>
+                        <h3 style="margin-bottom: 20px; color: #111827; font-size: 20px;">Business Information</h3>
+                        <div style="space-y: 20px;">
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Restaurant Name</label>
+                                <input type="text" id="restaurantName" class="form-input" placeholder="Your restaurant name" readonly>
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Contact Email</label>
+                                <input type="email" id="contactEmail" class="form-input" placeholder="your@email.com" readonly>
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Phone Number</label>
+                                <input type="tel" id="contactPhone" class="form-input" placeholder="+30 XXX XXX XXXX" readonly>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 style="margin-bottom: 20px; color: #111827; font-size: 20px;">Communication Preferences</h3>
+                        <div style="space-y: 16px;">
+                            <label style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; cursor: pointer; padding: 12px; background: #f8fafc; border-radius: 8px;">
+                                <input type="checkbox" id="emailBilling" checked style="width: 18px; height: 18px;">
+                                <div>
+                                    <div style="font-weight: 600;">Billing notifications</div>
+                                    <div style="font-size: 14px; color: #6b7280;">Invoices, payment confirmations</div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; cursor: pointer; padding: 12px; background: #f8fafc; border-radius: 8px;">
+                                <input type="checkbox" id="emailUpdates" checked style="width: 18px; height: 18px;">
+                                <div>
+                                    <div style="font-weight: 600;">Product updates</div>
+                                    <div style="font-size: 14px; color: #6b7280;">New features, improvements</div>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; cursor: pointer; padding: 12px; background: #f8fafc; border-radius: 8px;">
+                                <input type="checkbox" id="emailMarketing" style="width: 18px; height: 18px;">
+                                <div>
+                                    <div style="font-weight: 600;">Tips & promotions</div>
+                                    <div style="font-size: 14px; color: #6b7280;">Restaurant tips, special offers</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Help & Support Tab -->
+        <div id="support" class="tab-content">
+            <div class="card">
+                <h2>
+                    <div class="card-icon">
+                        <i class="fas fa-life-ring"></i>
+                    </div>
+                    Help & Support
+                </h2>
+                <p style="color: #6b7280; margin-bottom: 40px; font-size: 18px;">We're here to help your restaurant succeed with POSPal. Choose the type of help you need:</p>
+                
+                <div class="help-categories">
+                    <div class="help-category" onclick="contactSupport('billing')">
+                        <h3>
+                            <div class="help-icon">
+                                <i class="fas fa-euro-sign"></i>
+                            </div>
+                            Billing & Payments
+                        </h3>
+                        <p style="color: #6b7280; margin: 0; font-size: 16px;">Questions about charges, invoices, payment methods, or refund requests</p>
+                    </div>
+                    
+                    <div class="help-category" onclick="contactSupport('technical')">
+                        <h3>
+                            <div class="help-icon">
+                                <i class="fas fa-tools"></i>
+                            </div>
+                            Technical Support
+                        </h3>
+                        <p style="color: #6b7280; margin: 0; font-size: 16px;">Printer setup, software issues, troubleshooting, or system configuration</p>
+                    </div>
+                    
+                    <div class="help-category" onclick="requestRefund()">
+                        <h3>
+                            <div class="help-icon">
+                                <i class="fas fa-undo"></i>
+                            </div>
+                            Request Refund
+                        </h3>
+                        <p style="color: #6b7280; margin: 0; font-size: 16px;">Submit a refund request for your recent payment with our hassle-free process</p>
+                    </div>
+                    
+                    <div class="help-category" onclick="exportData()">
+                        <h3>
+                            <div class="help-icon">
+                                <i class="fas fa-download"></i>
+                            </div>
+                            Export Your Data
+                        </h3>
+                        <p style="color: #6b7280; margin: 0; font-size: 16px;">Download all your restaurant data, orders, and settings as a backup</p>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 40px; text-align: center; padding: 32px; background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-radius: 20px; border: 1px solid #e5e7eb;">
+                    <h3 style="margin-bottom: 16px; color: #111827; font-size: 24px;">Need Immediate Help?</h3>
+                    <p style="color: #6b7280; margin-bottom: 24px; font-size: 16px;">Our support team typically responds within 2 hours during business hours (9 AM - 6 PM CET)</p>
+                    <button class="btn btn-primary" onclick="contactSupport('urgent')" style="font-size: 18px; padding: 16px 32px;">
+                        <i class="fas fa-envelope"></i>
+                        Email Support Team Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Modals -->
+    
+    <!-- Cancellation Modal -->
+    <div id="cancelModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeCancelModal()">&times;</span>
+            <div style="text-align: center; margin-bottom: 32px;">
+                <div style="width: 80px; height: 80px; background: #fef2f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #ef4444; font-size: 32px;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <h2 style="margin-bottom: 16px; font-size: 28px; color: #111827;">Wait! Before You Cancel...</h2>
+                <p style="color: #6b7280; font-size: 16px;">We'd hate to see you go. Let's see if we can help with a better solution.</p>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #fef3c7, #fbbf24); padding: 24px; border-radius: 16px; margin-bottom: 24px; text-align: center;">
+                <h3 style="color: #92400e; margin-bottom: 12px; font-size: 22px;">Special Retention Offer</h3>
+                <p style="color: #a16207; margin-bottom: 16px;">Would 50% off for the next 3 months help?</p>
+                <button class="btn btn-success" onclick="acceptRetentionOffer()" style="font-size: 18px;">
+                    <i class="fas fa-gift"></i>
+                    Yes, Give Me 50% Off!
+                </button>
+            </div>
+
+            <div style="margin: 24px 0;">
+                <p style="font-weight: 600; margin-bottom: 12px;">If you still decide to cancel:</p>
+                <ul style="margin: 0 0 16px 20px; color: #6b7280;">
+                    <li>You'll keep full access until <span id="periodEnd" style="font-weight: 600; color: #111827;">--</span></li>
+                    <li>No more charges after that date</li>
+                    <li>All your data will be safely stored for 90 days</li>
+                    <li>You can reactivate anytime with one click</li>
+                </ul>
+            </div>
+
+            <div style="margin: 24px 0;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600;">Why are you canceling? (Help us improve)</label>
+                <select id="cancelReason" class="form-input" style="margin-bottom: 12px;">
+                    <option value="">Select a reason...</option>
+                    <option value="too_expensive">Too expensive for my budget</option>
+                    <option value="not_using">Not using POSPal enough</option>
+                    <option value="found_alternative">Found a different solution</option>
+                    <option value="technical_issues">Having technical problems</option>
+                    <option value="temporary">Taking a temporary break</option>
+                    <option value="other">Other reason</option>
+                </select>
+                <textarea id="cancelFeedback" placeholder="Any additional feedback? (Optional)" class="form-input" rows="3" style="resize: vertical;"></textarea>
+            </div>
+
+            <div class="message error hidden" id="cancelError"></div>
+            <div class="message success hidden" id="cancelSuccess"></div>
+
+            <div style="display: flex; gap: 12px; margin-top: 32px;">
+                <button class="btn btn-secondary" onclick="closeCancelModal()" style="flex: 1;">
+                    <i class="fas fa-arrow-left"></i>
+                    Keep My Subscription
+                </button>
+                <button class="btn btn-danger" onclick="confirmCancellation()" id="confirmCancelBtn" style="flex: 1;">
+                    <span class="loading hidden" id="cancelLoading"></span>
+                    <i class="fas fa-times"></i>
+                    Proceed with Cancellation
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refund Request Modal -->
+    <div id="refundModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeRefundModal()">&times;</span>
+            <div style="text-align: center; margin-bottom: 32px;">
+                <div style="width: 80px; height: 80px; background: #ecfdf5; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #10b981; font-size: 32px;">
+                    <i class="fas fa-undo"></i>
+                </div>
+                <h2 style="margin-bottom: 16px; font-size: 28px; color: #111827;">Request a Refund</h2>
+                <p style="color: #6b7280; font-size: 16px;">We offer full refunds within 30 days of payment. Tell us what happened.</p>
+            </div>
+            
+            <div style="margin: 24px 0;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600;">Reason for refund request:</label>
+                <select id="refundReason" class="form-input" style="margin-bottom: 16px;">
+                    <option value="">Select a reason...</option>
+                    <option value="not_satisfied">Not satisfied with the service</option>
+                    <option value="technical_issues">Unresolved technical problems</option>
+                    <option value="billing_error">Billing error or duplicate charge</option>
+                    <option value="unauthorized">Unauthorized or accidental charge</option>
+                    <option value="business_closed">Restaurant closed or sold</option>
+                    <option value="other">Other reason</option>
+                </select>
+                <label style="display: block; margin-bottom: 8px; font-weight: 600;">Please describe your situation in detail:</label>
+                <textarea id="refundDetails" placeholder="Help us understand what happened so we can process your refund quickly..." class="form-input" rows="4" required style="resize: vertical;"></textarea>
+            </div>
+
+            <div class="message error hidden" id="refundError"></div>
+            <div class="message success hidden" id="refundSuccess"></div>
+
+            <div style="display: flex; gap: 12px; margin-top: 32px;">
+                <button class="btn btn-secondary" onclick="closeRefundModal()" style="flex: 1;">
+                    Cancel
+                </button>
+                <button class="btn btn-primary" onclick="submitRefundRequest()" id="submitRefundBtn" style="flex: 1;">
+                    <span class="loading hidden" id="refundLoading"></span>
+                    <i class="fas fa-paper-plane"></i>
+                    Submit Refund Request
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        let customerData = null;
+        let subscriptionData = null;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCustomerData();
+            loadDashboardData();
+            
+            // Set up tab switching
+            setupTabSwitching();
+        });
+
+        // Tab switching functionality
+        function switchTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            const buttons = document.querySelectorAll('.tab-button');
+            
+            tabs.forEach(tab => tab.classList.remove('active'));
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            document.querySelector(`[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            
+            // Load tab-specific data
+            switch(tabName) {
+                case 'dashboard':
+                    loadDashboardData();
+                    break;
+                case 'analytics':
+                    loadAnalyticsData();
+                    break;
+                case 'billing':
+                    loadBillingHistory();
+                    break;
+            }
+        }
+
+        // Setup responsive tab switching
+        function setupTabSwitching() {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const tabName = this.getAttribute('onclick').match(/'([^']+)'/)[1];
+                    switchTab(tabName);
+                });
+            });
+        }
+
+        // Get customer email from URL params or localStorage
+        function getCustomerEmail() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const emailFromUrl = urlParams.get('email');
+            const emailFromStorage = localStorage.getItem('pospal_customer_email');
+            return emailFromUrl || emailFromStorage;
+        }
+
+        // Get unlock token from URL params or localStorage
+        function getUnlockToken() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const tokenFromUrl = urlParams.get('token');
+            const tokenFromStorage = localStorage.getItem('pospal_unlock_token');
+            return tokenFromUrl || tokenFromStorage;
+        }
+
+        // Load customer data
+        async function loadCustomerData() {
+            try {
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                if (!email || !token) {
+                    throw new Error('Missing authentication information');
+                }
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/customer-portal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load customer data');
+                }
+
+                const data = await response.json();
+                customerData = data.customer;
+                subscriptionData = data.subscription;
+
+                updateUI();
+                loadDashboardData();
+
+            } catch (error) {
+                console.error('Error loading customer data:', error);
+                showError('Failed to load subscription details. Please try again.');
+            }
+        }
+
+        // Update UI with customer data
+        function updateUI() {
+            if (!customerData || !subscriptionData) return;
+
+            document.getElementById('customerWelcome').textContent = `Welcome back, ${customerData.name}!`;
+            
+            // Update subscription status
+            const status = subscriptionData.status;
+            const statusElement = document.getElementById('subscriptionStatus');
+            const statusTextElement = document.getElementById('subscriptionStatusText');
+            
+            statusElement.className = `subscription-status status-${status}`;
+            statusElement.innerHTML = `<i class="fas fa-check-circle" style="margin-right: 8px;"></i>${status.charAt(0).toUpperCase() + status.slice(1)}`;
+            statusTextElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+
+            // Update next payment date
+            if (subscriptionData.current_period_end) {
+                const nextPayment = new Date(subscriptionData.current_period_end * 1000);
+                document.getElementById('nextPayment').textContent = nextPayment.toLocaleDateString();
+                document.getElementById('periodEnd').textContent = nextPayment.toLocaleDateString();
+                
+                // Calculate days until renewal
+                const now = new Date();
+                const daysLeft = Math.ceil((nextPayment - now) / (1000 * 60 * 60 * 24));
+                document.getElementById('dashboardDaysLeft').textContent = daysLeft;
+                document.getElementById('dashboardNextBill').textContent = nextPayment.toLocaleDateString();
+            }
+
+            // Update payment method info
+            if (subscriptionData.default_payment_method) {
+                const pm = subscriptionData.default_payment_method;
+                if (pm.card) {
+                    document.getElementById('cardBrand').textContent = pm.card.brand.toUpperCase();
+                    document.getElementById('cardLast4').textContent = pm.card.last4;
+                    document.getElementById('cardExpiry').textContent = `${pm.card.exp_month}/${pm.card.exp_year}`;
+                }
+            }
+
+            // Update profile fields
+            if (customerData.name) {
+                document.getElementById('restaurantName').value = customerData.name;
+            }
+            if (customerData.email) {
+                document.getElementById('contactEmail').value = customerData.email;
+            }
+        }
+
+        // Load dashboard data
+        function loadDashboardData() {
+            if (!subscriptionData) return;
+            
+            // Update dashboard status with more descriptive text
+            const status = subscriptionData.status;
+            let statusText = 'Active & Healthy';
+            if (status === 'cancelled') statusText = 'Cancelled';
+            if (status === 'past_due') statusText = 'Payment Issue';
+            if (status === 'paused') statusText = 'Paused';
+            
+            document.getElementById('dashboardStatus').textContent = statusText;
+            
+            // Load usage statistics (placeholder data)
+            document.getElementById('totalOrders').textContent = '1,247';
+            document.getElementById('totalRevenue').textContent = '€18,450';
+            document.getElementById('avgOrderValue').textContent = '€14.80';
+            document.getElementById('busyHours').textContent = '12:30';
+            
+            // Update header stats
+            document.getElementById('headerOrders').textContent = '156';
+            document.getElementById('headerRevenue').textContent = '€2,340';
+        }
+
+        // Load analytics data
+        function loadAnalyticsData() {
+            // This would connect to your restaurant analytics
+            // For now, showing placeholder data
+            console.log('Loading analytics data...');
+        }
+
+        // Load billing history
+        async function loadBillingHistory() {
+            try {
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/billing-history', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load billing history');
+                }
+
+                const data = await response.json();
+                displayBillingHistory(data.invoices);
+
+            } catch (error) {
+                console.error('Error loading billing history:', error);
+                document.getElementById('billingHistory').innerHTML = 
+                    '<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 40px;">Failed to load billing history</td></tr>';
+            }
+        }
+
+        // Display billing history
+        function displayBillingHistory(invoices) {
+            const tbody = document.getElementById('billingHistory');
+            
+            if (!invoices || invoices.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280; padding: 40px;">No billing history yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = invoices.map(invoice => {
+                const date = new Date(invoice.created * 1000).toLocaleDateString();
+                const amount = (invoice.amount_paid / 100).toFixed(2);
+                const status = invoice.status;
+                const statusClass = status === 'paid' ? 'color: #10b981; font-weight: 600;' : 
+                                  status === 'open' ? 'color: #f59e0b; font-weight: 600;' : 
+                                  'color: #ef4444; font-weight: 600;';
+                
+                return `
+                    <tr>
+                        <td style="font-weight: 500;">${date}</td>
+                        <td style="font-weight: 600; font-size: 16px;">€${amount}</td>
+                        <td style="${statusClass}">${status.charAt(0).toUpperCase() + status.slice(1)}</td>
+                        <td>
+                            ${invoice.hosted_invoice_url ? 
+                                `<a href="${invoice.hosted_invoice_url}" target="_blank" style="color: #3b82f6; font-weight: 500; text-decoration: none;">
+                                    <i class="fas fa-external-link-alt" style="margin-right: 4px;"></i>View
+                                </a>` : 
+                                'N/A'
+                            }
+                        </td>
+                        <td>
+                            ${invoice.status === 'paid' ? 
+                                `<button class="btn btn-secondary" onclick="requestInvoiceRefund('${invoice.id}')" style="padding: 8px 16px; font-size: 12px;">
+                                    <i class="fas fa-undo" style="margin-right: 4px;"></i>Refund
+                                </button>` : 
+                                ''
+                            }
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Contact support with categories
+        function contactSupport(category = 'general') {
+            const email = getCustomerEmail();
+            const subjects = {
+                billing: 'POSPal Billing Question',
+                technical: 'POSPal Technical Support',
+                urgent: 'POSPal Urgent Support Request',
+                general: 'POSPal Support Request'
+            };
+            
+            const bodies = {
+                billing: `Hi POSPal Support Team,
+
+I have a question about my POSPal billing.
+
+Customer Email: ${email}
+Issue: [Please describe your billing question here]
+
+Thank you for your help!`,
+                technical: `Hi POSPal Support Team,
+
+I need technical help with POSPal.
+
+Customer Email: ${email}
+Issue: [Please describe the technical issue in detail]
+Operating System: [Windows/Mac/Linux]
+Browser: [Chrome/Firefox/Safari/Edge]
+Error Messages: [Copy any error messages here]
+
+Thank you for your assistance!`,
+                urgent: `Hi POSPal Support Team,
+
+I have an urgent issue with my POSPal system that's affecting my restaurant operations.
+
+Customer Email: ${email}
+Urgent Issue: [Please describe the urgent problem]
+Business Impact: [How is this affecting your restaurant?]
+When did this start: [Date/time the issue began]
+
+I need immediate assistance. Thank you!`,
+                general: `Hi POSPal Support Team,
+
+I need help with my POSPal account.
+
+Customer Email: ${email}
+Question/Issue: [Please describe your question or issue]
+
+Thank you for your help!`
+            };
+            
+            const subject = encodeURIComponent(subjects[category]);
+            const body = encodeURIComponent(bodies[category]);
+            
+            window.location.href = `mailto:support@pospal.gr?subject=${subject}&body=${body}`;
+        }
+
+        // Show cancellation modal
+        function showCancelModal() {
+            document.getElementById('cancelModal').style.display = 'block';
+        }
+
+        // Close cancellation modal
+        function closeCancelModal() {
+            document.getElementById('cancelModal').style.display = 'none';
+        }
+
+        // Accept retention offer
+        async function acceptRetentionOffer() {
+            try {
+                showLoading('confirmCancelBtn', 'cancelLoading');
+                
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/retention-offer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token,
+                        offerType: '50_percent_3_months'
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to apply retention offer');
+                }
+
+                showMessage('cancelSuccess', 'Great! Your 50% discount has been applied for the next 3 months.', 'success');
+                setTimeout(() => {
+                    closeCancelModal();
+                    loadCustomerData(); // Reload to show updated pricing
+                }, 2000);
+
+            } catch (error) {
+                showMessage('cancelError', error.message, 'error');
+            } finally {
+                hideLoading('confirmCancelBtn', 'cancelLoading', 'Proceed with Cancellation');
+            }
+        }
+
+        // Confirm cancellation
+        async function confirmCancellation() {
+            try {
+                showLoading('confirmCancelBtn', 'cancelLoading');
+                
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+                const reason = document.getElementById('cancelReason').value;
+                const feedback = document.getElementById('cancelFeedback').value;
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/cancel-subscription', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token,
+                        reason: reason,
+                        feedback: feedback
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to cancel subscription');
+                }
+
+                showMessage('cancelSuccess', 'Your subscription has been cancelled. You\'ll keep access until the end of your current billing period.', 'success');
+                setTimeout(() => {
+                    closeCancelModal();
+                    loadCustomerData(); // Reload to show updated status
+                }, 2000);
+
+            } catch (error) {
+                showMessage('cancelError', error.message, 'error');
+            } finally {
+                hideLoading('confirmCancelBtn', 'cancelLoading', 'Proceed with Cancellation');
+            }
+        }
+
+        // Pause subscription
+        async function pauseSubscription() {
+            if (!confirm('Pause your subscription? You won\'t be charged during the pause, but you\'ll lose access to premium features.')) {
+                return;
+            }
+
+            try {
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/pause-subscription', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to pause subscription');
+                }
+
+                alert('Your subscription has been paused. You can resume it anytime from this page.');
+                loadCustomerData();
+
+            } catch (error) {
+                alert('Failed to pause subscription: ' + error.message);
+            }
+        }
+
+        // Update payment method
+        function updatePaymentMethod() {
+            // Redirect to Stripe customer portal for payment method updates
+            if (subscriptionData && subscriptionData.customer_portal_url) {
+                window.location.href = subscriptionData.customer_portal_url;
+            } else {
+                window.location.href = 'https://billing.stripe.com/p/login/test_00000000000000';
+            }
+        }
+
+        // Request refund
+        function requestRefund() {
+            document.getElementById('refundModal').style.display = 'block';
+        }
+
+        // Close refund modal
+        function closeRefundModal() {
+            document.getElementById('refundModal').style.display = 'none';
+        }
+
+        // Submit refund request
+        async function submitRefundRequest() {
+            try {
+                const reason = document.getElementById('refundReason').value;
+                const details = document.getElementById('refundDetails').value;
+
+                if (!reason || !details.trim()) {
+                    throw new Error('Please provide a reason and details for your refund request');
+                }
+
+                showLoading('submitRefundBtn', 'refundLoading');
+                
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/refund-request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token,
+                        reason: reason,
+                        details: details
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to submit refund request');
+                }
+
+                showMessage('refundSuccess', 'Your refund request has been submitted successfully. We\'ll review it within 24 hours and contact you via email.', 'success');
+                setTimeout(() => {
+                    closeRefundModal();
+                }, 3000);
+
+            } catch (error) {
+                showMessage('refundError', error.message, 'error');
+            } finally {
+                hideLoading('submitRefundBtn', 'refundLoading', 'Submit Refund Request');
+            }
+        }
+
+        // Request invoice refund
+        async function requestInvoiceRefund(invoiceId) {
+            if (!confirm('Request a refund for this specific payment? We\'ll review your request within 24 hours.')) {
+                return;
+            }
+
+            try {
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/invoice-refund', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token,
+                        invoiceId: invoiceId
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to request refund');
+                }
+
+                alert('Refund request submitted successfully. We\'ll contact you via email within 24 hours.');
+
+            } catch (error) {
+                alert('Failed to request refund: ' + error.message);
+            }
+        }
+
+        // Export data
+        async function exportData() {
+            try {
+                const email = getCustomerEmail();
+                const token = getUnlockToken();
+
+                const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/export-data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlockToken: token
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to export data');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `pospal-data-export-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+
+            } catch (error) {
+                alert('Failed to export data: ' + error.message);
+            }
+        }
+
+        // Utility functions
+        function showMessage(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<i class="fas fa-${type === 'error' ? 'exclamation-triangle' : 'check-circle'}"></i> ${message}`;
+            element.className = `message ${type}`;
+            element.style.display = 'flex';
+            setTimeout(() => element.style.display = 'none', 5000);
+        }
+
+        function showLoading(buttonId, spinnerId) {
+            const button = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            button.disabled = true;
+            spinner.classList.remove('hidden');
+        }
+
+        function hideLoading(buttonId, spinnerId, originalText) {
+            const button = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            button.disabled = false;
+            spinner.classList.add('hidden');
+            
+            // Update button text if needed
+            const textSpan = button.querySelector('span:not(.loading)');
+            if (textSpan) {
+                textSpan.textContent = originalText;
+            }
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const cancelModal = document.getElementById('cancelModal');
+            const refundModal = document.getElementById('refundModal');
+            
+            if (event.target === cancelModal) {
+                closeCancelModal();
+            } else if (event.target === refundModal) {
+                closeRefundModal();
+            }
+        };
+
+        // Handle escape key for modals
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeCancelModal();
+                closeRefundModal();
+            }
+        });
+    </script>
+
+    <script src="enhanced-error-handler.js"></script>
+    <script src="enhanced-license-validator.js"></script>
+    <script src="enhanced-ux-manager.js"></script>
+</body>
+</html>

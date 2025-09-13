@@ -82,3 +82,7 @@ node_modules/
 # License files (should not be in repo)
 *.pospal
 *.license
+
+# API Keys and sensitive configuration - NEVER COMMIT
+API_KEYS_REFERENCE.md
+**/API_KEYS_REFERENCE.md

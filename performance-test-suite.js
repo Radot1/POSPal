@@ -4,7 +4,7 @@
  */
 
 const FLASK_BASE_URL = 'http://localhost:5000';
-const WORKERS_BASE_URL = 'http://127.0.0.1:8787';
+const WORKERS_BASE_URL = 'https://pospal-licensing-v2-production.bzoumboulis.workers.dev';
 
 class PerformanceTester {
     constructor() {
