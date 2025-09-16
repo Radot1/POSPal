@@ -11,6 +11,7 @@ import {
   createValidationResponse,
   createOfflineResponse,
   handleCORS, 
+  getCORSHeaders,
   logAuditEvent,
   logEmailDelivery,
   updateEmailStatus,
@@ -24,9 +25,6 @@ import {
   performHealthCheck,
   dbCircuitBreaker,
   retryOperation,
-  checkRateLimit,
-  logRecoveryAttempt,
-  analyzeSecurityIndicators
 } from './utils.js';
 
 import { 
@@ -35,9 +33,35 @@ import {
   getImmediateSuspensionEmailTemplate,
   getImmediateReactivationEmailTemplate,
   getRenewalReminderEmailTemplate,
-  getMachineSwitchEmailTemplate,
-  getLicenseRecoveryEmailTemplate
+  getMachineSwitchEmailTemplate
 } from './email-templates.js';
+
+/**
+ * Create Stripe API helper for webhook handlers
+ */
+function createStripeHelper(env) {
+  return {
+    async get(url) {
+      const response = await fetch(`https://api.stripe.com/v1${url}`, {
+        headers: {
+          'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+        }
+      });
+      return response.json();
+    },
+    async post(url, data) {
+      const response = await fetch(`https://api.stripe.com/v1${url}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(data).toString(),
+      });
+      return response.json();
+    }
+  };
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -52,14 +76,14 @@ export default {
     switch (url.pathname) {
       case '/webhook':
         return handleStripeWebhook(request, env);
+      case '/validate-unified':
+        return handleUnifiedValidation(request, env);
       case '/validate':
         return handleLicenseValidation(request, env);
-      case '/batch-validate':
-        return handleBatchValidation(request, env);
       case '/instant-validate':
         return handleInstantValidation(request, env);
-      case '/validate-status':
-        return handleValidationStatus(request, env);
+      case '/fix-billing-dates':
+        return await fixCustomerBillingDates(env);
       case '/session/start':
         return handleSessionStart(request, env);
       case '/session/heartbeat':
@@ -68,38 +92,12 @@ export default {
         return handleSessionEnd(request, env);
       case '/session/takeover':
         return handleSessionTakeover(request, env);
-      case '/create-checkout':
-        return handleCreateCheckout(request, env);
       case '/create-checkout-session':
         return handleCreateCheckoutSession(request, env);
-      case '/check-duplicate':
-        return handleCheckDuplicate(request, env);
       case '/customer-portal':
         return handleCustomerPortal(request, env);
-      case '/billing-history':
-        return handleBillingHistory(request, env);
-      case '/cancel-subscription':
-        return handleCancelSubscription(request, env);
-      case '/pause-subscription':
-        return handlePauseSubscription(request, env);
-      case '/retention-offer':
-        return handleRetentionOffer(request, env);
-      case '/refund-request':
-        return handleRefundRequest(request, env);
-      case '/invoice-refund':
-        return handleInvoiceRefund(request, env);
-      case '/export-data':
-        return handleExportData(request, env);
       case '/create-portal-session':
         return handleCreatePortalSession(request, env);
-      case '/manual-license-creation':
-        return handleManualLicenseCreation(request, env);
-      case '/customer-lookup':
-        return handleCustomerLookup(request, env);
-      case '/resend-license-email':
-        return handleResendLicenseEmail(request, env);
-      case '/recover-license':
-        return handleLicenseRecovery(request, env);
       case '/health':
         return handleHealthCheck(request, env);
       default:
@@ -107,6 +105,716 @@ export default {
     }
   }
 };
+
+/**
+ * Handle unified validation requests (consolidates /validate, /instant-validate, /session/*)
+ */
+async function handleUnifiedValidation(request, env) {
+  const startTime = Date.now();
+  let requestData;
+  
+  try {
+    requestData = await request.json();
+    
+    // Validate request structure
+    const validationResult = validateUnifiedRequestStructure(requestData);
+    if (!validationResult.valid) {
+      return createUnifiedErrorResponse('INVALID_REQUEST_FORMAT', validationResult.errors, 400, {
+        responseTime: Date.now() - startTime
+      });
+    }
+    
+    // Route based on operation type
+    switch (requestData.operation) {
+      case 'validate':
+        return await handleUnifiedStandardValidation(requestData, env, startTime);
+      case 'instant':
+        return await handleUnifiedInstantValidation(requestData, env, startTime);
+      case 'session':
+        return await handleUnifiedSessionOperation(requestData, env, startTime);
+      default:
+        return createUnifiedErrorResponse('UNSUPPORTED_OPERATION', `Operation '${requestData.operation}' not supported`, 400, {
+          responseTime: Date.now() - startTime
+        });
+    }
+    
+  } catch (error) {
+    console.error('Unified validation error:', error);
+    return createUnifiedErrorResponse('REQUEST_PROCESSING_ERROR', error.message, 500, {
+      responseTime: Date.now() - startTime,
+      errorDetails: error.stack
+    });
+  }
+}
+
+/**
+ * Validate unified request structure
+ */
+function validateUnifiedRequestStructure(requestData) {
+  const errors = [];
+  
+  if (!requestData.operation) {
+    errors.push('Missing required field: operation');
+  } else if (!['validate', 'instant', 'session'].includes(requestData.operation)) {
+    errors.push('Invalid operation type. Must be: validate, instant, or session');
+  }
+  
+  if (!requestData.credentials) {
+    errors.push('Missing required field: credentials');
+  } else {
+    if (!requestData.credentials.email) {
+      errors.push('Missing required field: credentials.email');
+    }
+    if (!requestData.credentials.token && requestData.operation !== 'instant') {
+      errors.push('Missing required field: credentials.token');
+    }
+  }
+  
+  if (requestData.operation === 'session' && !requestData.action) {
+    errors.push('Missing required field: action for session operation');
+  }
+  
+  if (requestData.operation === 'instant' && !requestData.credentials.stripeSessionId) {
+    errors.push('Missing required field: credentials.stripeSessionId for instant validation');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Handle unified standard validation
+ */
+async function handleUnifiedStandardValidation(requestData, env, startTime) {
+  const { credentials, device, options = {} } = requestData;
+  
+  try {
+    // Performance-optimized customer lookup with circuit breaker protection
+    const customer = await dbCircuitBreaker.execute(async () => {
+      return await getCustomerForValidation(env.DB, credentials.email, credentials.token);
+    });
+    
+    if (!customer) {
+      return createUnifiedErrorResponse('INVALID_CREDENTIALS', 'Invalid email or unlock token', 401, {
+        responseTime: Date.now() - startTime,
+        validationType: 'standard'
+      });
+    }
+    
+    // Get detailed subscription status
+    const subscriptionStatus = getDetailedSubscriptionStatus(customer);
+    
+    if (!subscriptionStatus.isActive) {
+      // Log validation attempt for inactive subscription
+      await logValidationEvent(env.DB, customer.id, 'inactive_validation_unified', {
+        responseTime: Date.now() - startTime,
+        operation: 'validate'
+      }, {
+        subscriptionStatus: customer.subscription_status,
+        daysSinceLastSeen: subscriptionStatus.daysSinceLastSeen
+      });
+      
+      return createUnifiedErrorResponse('SUBSCRIPTION_INACTIVE', 'Subscription is not active', 403, {
+        responseTime: Date.now() - startTime,
+        subscriptionInfo: subscriptionStatus,
+        supportActions: {
+          portalUrl: await generateCustomerPortalUrl(customer.stripe_customer_id, env),
+          contactSupport: true
+        }
+      });
+    }
+    
+    let sessionInfo = { allowed: true, sessionId: null, machineChanged: false };
+    
+    // Handle machine fingerprint and session management
+    if (device && device.machineFingerprint && !device.skipMachineUpdate) {
+      const hashedFingerprint = await hashMachineFingerprint(device.machineFingerprint);
+      const machineChanged = customer.machine_fingerprint && 
+                            customer.machine_fingerprint !== hashedFingerprint;
+      
+      // Update customer with new machine fingerprint and validation timestamp
+      await dbCircuitBreaker.execute(async () => {
+        return await env.DB.prepare(`
+          UPDATE customers 
+          SET machine_fingerprint = ?, last_seen = datetime('now'), last_validation = datetime('now')
+          WHERE id = ?
+        `).bind(hashedFingerprint, customer.id).run();
+      });
+      
+      sessionInfo.machineChanged = machineChanged;
+      sessionInfo.deviceInfo = {
+        current: device.deviceInfo?.hostname || 'Unknown Device',
+        registered: new Date().toISOString()
+      };
+      
+      // Send machine switch notification if needed
+      if (machineChanged) {
+        await sendMachineSwitchEmail(env, customer.id, customer.email, customer.name || 'Customer');
+      }
+    } else {
+      // Just update validation timestamp
+      await env.DB.prepare(`
+        UPDATE customers 
+        SET last_seen = datetime('now'), last_validation = datetime('now')
+        WHERE id = ?
+      `).bind(customer.id).run();
+    }
+    
+    // Determine caching strategy
+    const cacheStrategy = determineUnifiedCacheStrategy(customer, subscriptionStatus);
+    
+    // Log successful validation
+    await logValidationEvent(env.DB, customer.id, 'successful_validation_unified', {
+      responseTime: Date.now() - startTime,
+      operation: 'validate',
+      machineChanged: sessionInfo.machineChanged,
+      cacheStrategy: cacheStrategy.strategy
+    }, {
+      machineChanged: sessionInfo.machineChanged,
+      validationRecommendation: subscriptionStatus.validationRecommendation
+    });
+    
+    console.log(`Unified validation successful for ${credentials.email} in ${Date.now() - startTime}ms`);
+    
+    return createUnifiedResponse({
+      validation: {
+        valid: true,
+        status: 'active',
+        validationType: 'standard',
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          name: customer.name || customer.email.split('@')[0]
+        }
+      },
+      subscription: {
+        status: subscriptionStatus.status,
+        id: customer.subscription_id,
+        isActive: subscriptionStatus.isActive,
+        currentPeriodEnd: subscriptionStatus.currentPeriodEnd,
+        nextBillingDate: subscriptionStatus.nextBillingDate,
+        daysRemaining: subscriptionStatus.daysRemaining
+      },
+      session: sessionInfo,
+      caching: cacheStrategy,
+      performance: {
+        responseTime: Date.now() - startTime,
+        databaseQueries: 2,
+        cacheHit: false,
+        circuitBreakerState: dbCircuitBreaker.getState().state
+      }
+    }, cacheStrategy.duration);
+    
+  } catch (error) {
+    console.error('Unified standard validation error:', error);
+    return createUnifiedErrorResponse('VALIDATION_ERROR', 'Validation failed', 500, {
+      responseTime: Date.now() - startTime,
+      operation: 'validate'
+    });
+  }
+}
+
+/**
+ * Handle unified instant validation (post-payment)
+ */
+async function handleUnifiedInstantValidation(requestData, env, startTime) {
+  const { credentials, device, options = {} } = requestData;
+  
+  try {
+    if (!credentials.email || !credentials.stripeSessionId || !device?.machineFingerprint) {
+      return createUnifiedErrorResponse('MISSING_REQUIRED_FIELDS', 'Email, stripeSessionId, and machineFingerprint are required', 400, {
+        responseTime: Date.now() - startTime
+      });
+    }
+    
+    // Look up customer by email and verify recent payment
+    const customer = await env.DB.prepare(`
+      SELECT * FROM customers 
+      WHERE email = ? AND stripe_session_id = ? AND subscription_status = 'active'
+    `).bind(credentials.email, credentials.stripeSessionId).first();
+    
+    if (!customer) {
+      return createUnifiedErrorResponse('NO_VALID_SUBSCRIPTION', 'No valid subscription found for this payment session', 404, {
+        responseTime: Date.now() - startTime,
+        validationType: 'instant'
+      });
+    }
+    
+    // Get detailed subscription status
+    const subscriptionStatus = getDetailedSubscriptionStatus(customer);
+    
+    // Hash and update machine fingerprint
+    const hashedFingerprint = await hashMachineFingerprint(device.machineFingerprint);
+    
+    await env.DB.prepare(`
+      UPDATE customers 
+      SET machine_fingerprint = ?, last_seen = datetime('now'), last_validation = datetime('now')
+      WHERE id = ?
+    `).bind(hashedFingerprint, customer.id).run();
+    
+    // Create session info
+    const sessionInfo = {
+      allowed: true,
+      sessionId: credentials.stripeSessionId,
+      status: 'active',
+      deviceInfo: {
+        current: device.deviceInfo?.hostname || 'New Device',
+        registered: new Date().toISOString()
+      },
+      machineChanged: false // New activation, no previous machine
+    };
+    
+    // Determine caching strategy for new activation
+    const cacheStrategy = {
+      strategy: 'aggressive',
+      duration: 3600, // 1 hour for fresh activations
+      validUntil: new Date(Date.now() + 3600000).toISOString(),
+      recommendation: 'cache_locally',
+      nextCheck: new Date(Date.now() + 2880000).toISOString() // 48 minutes
+    };
+    
+    // Log successful instant validation
+    await logValidationEvent(env.DB, customer.id, 'instant_validation_unified', {
+      responseTime: Date.now() - startTime,
+      operation: 'instant',
+      sessionId: credentials.stripeSessionId
+    }, {
+      sessionId: credentials.stripeSessionId,
+      machineFingerprint: hashedFingerprint,
+      paymentFlow: 'embedded'
+    });
+    
+    console.log(`Unified instant validation successful for ${credentials.email} in ${Date.now() - startTime}ms`);
+    
+    return createUnifiedResponse({
+      validation: {
+        valid: true,
+        status: 'active',
+        validationType: 'instant',
+        customer: {
+          id: customer.id,
+          email: customer.email,
+          name: customer.name
+        }
+      },
+      subscription: {
+        status: subscriptionStatus.status,
+        id: customer.subscription_id,
+        isActive: subscriptionStatus.isActive,
+        unlockToken: customer.unlock_token
+      },
+      session: sessionInfo,
+      caching: cacheStrategy,
+      performance: {
+        responseTime: Date.now() - startTime,
+        databaseQueries: 2,
+        instant: true,
+        circuitBreakerState: dbCircuitBreaker.getState().state
+      }
+    }, cacheStrategy.duration);
+    
+  } catch (error) {
+    console.error('Unified instant validation error:', error);
+    return createUnifiedErrorResponse('INSTANT_VALIDATION_ERROR', 'Instant validation failed', 500, {
+      responseTime: Date.now() - startTime,
+      operation: 'instant'
+    });
+  }
+}
+
+/**
+ * Handle unified session operations
+ */
+async function handleUnifiedSessionOperation(requestData, env, startTime) {
+  const { credentials, device, action } = requestData;
+  
+  try {
+    // First validate the license for session operations
+    const customer = await env.DB.prepare(`
+      SELECT * FROM customers 
+      WHERE email = ? AND unlock_token = ?
+    `).bind(credentials.email, credentials.token).first();
+    
+    if (!customer || !isSubscriptionActive(customer)) {
+      return createUnifiedErrorResponse('INVALID_CREDENTIALS_OR_SUBSCRIPTION', 'Invalid credentials or inactive subscription', 401, {
+        responseTime: Date.now() - startTime,
+        operation: 'session',
+        action
+      });
+    }
+    
+    switch (action) {
+      case 'start':
+        return await handleUnifiedSessionStart(customer, device, credentials.sessionId, env, startTime);
+      case 'heartbeat':
+        return await handleUnifiedSessionHeartbeat(credentials.sessionId, env, startTime);
+      case 'end':
+        return await handleUnifiedSessionEnd(credentials.sessionId, env, startTime);
+      case 'takeover':
+        return await handleUnifiedSessionTakeover(customer, device, credentials.sessionId, env, startTime);
+      default:
+        return createUnifiedErrorResponse('INVALID_SESSION_ACTION', `Session action '${action}' not supported`, 400, {
+          responseTime: Date.now() - startTime
+        });
+    }
+    
+  } catch (error) {
+    console.error('Unified session operation error:', error);
+    return createUnifiedErrorResponse('SESSION_OPERATION_ERROR', 'Session operation failed', 500, {
+      responseTime: Date.now() - startTime,
+      operation: 'session',
+      action
+    });
+  }
+}
+
+/**
+ * Determine unified caching strategy
+ */
+function determineUnifiedCacheStrategy(customer, subscriptionStatus) {
+  const now = Date.now();
+  const lastValidation = customer.last_validation ? new Date(customer.last_validation).getTime() : 0;
+  const timeSinceLastValidation = now - lastValidation;
+  
+  let cacheDuration, strategy, recommendation, nextCheck;
+  
+  if (subscriptionStatus.status === 'active') {
+    if (timeSinceLastValidation < 3600000) { // Less than 1 hour ago
+      cacheDuration = 3600; // 1 hour
+      strategy = 'aggressive';
+      recommendation = 'cache_locally';
+      nextCheck = new Date(now + 2880000).toISOString(); // 48 minutes
+    } else if (timeSinceLastValidation < 86400000) { // Less than 24 hours ago
+      cacheDuration = 1800; // 30 minutes
+      strategy = 'moderate';
+      recommendation = 'periodic_check';
+      nextCheck = new Date(now + 1440000).toISOString(); // 24 minutes
+    } else {
+      cacheDuration = 900; // 15 minutes
+      strategy = 'conservative';
+      recommendation = 'frequent_validation';
+      nextCheck = new Date(now + 720000).toISOString(); // 12 minutes
+    }
+  } else {
+    cacheDuration = 300; // 5 minutes
+    strategy = 'minimal';
+    recommendation = 'frequent_validation';
+    nextCheck = new Date(now + 240000).toISOString(); // 4 minutes
+  }
+  
+  return {
+    strategy,
+    duration: cacheDuration,
+    validUntil: new Date(now + cacheDuration * 1000).toISOString(),
+    recommendation,
+    nextCheck
+  };
+}
+
+/**
+ * Create unified response format
+ */
+function createUnifiedResponse(data, cacheSeconds = 300) {
+  const response = {
+    success: true,
+    timestamp: new Date().toISOString(),
+    requestId: generateRequestId(),
+    ...data,
+    metadata: {
+      apiVersion: '2.0',
+      operation: data.operation || 'unified',
+      endpoint: '/validate-unified'
+    }
+  };
+  
+  const headers = {
+    ...getCORSHeaders(),
+    'Cache-Control': `private, max-age=${cacheSeconds}`,
+    'X-API-Version': '2.0',
+    'X-Response-Time': data.performance?.responseTime?.toString() || '0',
+    'X-Cache-Strategy': data.caching?.strategy || 'none',
+    'X-Validation-Timestamp': new Date().toISOString()
+  };
+  
+  return new Response(JSON.stringify(response), {
+    status: 200,
+    headers
+  });
+}
+
+/**
+ * Create unified error response format
+ */
+function createUnifiedErrorResponse(code, message, status = 500, details = {}) {
+  const response = {
+    success: false,
+    timestamp: new Date().toISOString(),
+    requestId: generateRequestId(),
+    error: {
+      code,
+      message,
+      category: getErrorCategory(code),
+      severity: getErrorSeverity(code),
+      retryable: isRetryableError(code)
+    },
+    ...details,
+    metadata: {
+      apiVersion: '2.0',
+      endpoint: '/validate-unified'
+    }
+  };
+  
+  return new Response(JSON.stringify(response), {
+    status,
+    headers: getCORSHeaders()
+  });
+}
+
+/**
+ * Generate unique request ID
+ */
+function generateRequestId() {
+  return 'req_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+}
+
+/**
+ * Get error category for classification
+ */
+function getErrorCategory(code) {
+  if (code.includes('CREDENTIALS') || code.includes('INVALID')) return 'authentication';
+  if (code.includes('SUBSCRIPTION')) return 'subscription';
+  if (code.includes('SESSION')) return 'session';
+  if (code.includes('SYSTEM') || code.includes('ERROR')) return 'system';
+  return 'general';
+}
+
+/**
+ * Get error severity level
+ */
+function getErrorSeverity(code) {
+  if (code.includes('SUBSCRIPTION_INACTIVE') || code.includes('INVALID_CREDENTIALS')) return 'high';
+  if (code.includes('SESSION') || code.includes('TIMEOUT')) return 'medium';
+  return 'low';
+}
+
+/**
+ * Check if error is retryable
+ */
+function isRetryableError(code) {
+  const retryableCodes = ['TIMEOUT_ERROR', 'SERVICE_UNAVAILABLE', 'DATABASE_ERROR', 'CIRCUIT_BREAKER_OPEN'];
+  return retryableCodes.some(retryable => code.includes(retryable));
+}
+
+/**
+ * Generate customer portal URL (helper function)
+ */
+async function generateCustomerPortalUrl(stripeCustomerId, env) {
+  // This would integrate with Stripe to generate portal URL
+  // For now, return a placeholder
+  return `https://billing.stripe.com/p/login/customer_portal`;
+}
+
+/**
+ * Handle unified session start
+ */
+async function handleUnifiedSessionStart(customer, device, sessionId, env, startTime) {
+  if (!device?.machineFingerprint || !sessionId || !device.deviceInfo) {
+    return createUnifiedErrorResponse('MISSING_SESSION_DATA', 'Machine fingerprint, session ID, and device info are required', 400, {
+      responseTime: Date.now() - startTime
+    });
+  }
+  
+  // Check for existing active sessions
+  const existingSession = await env.DB.prepare(`
+    SELECT * FROM active_sessions 
+    WHERE customer_id = ? AND status = 'active' 
+    AND last_heartbeat > datetime('now', '-2 minutes')
+  `).bind(customer.id).first();
+  
+  if (existingSession && existingSession.session_id !== sessionId) {
+    return createUnifiedErrorResponse('SESSION_CONFLICT', 'Another device is currently using this license', 409, {
+      responseTime: Date.now() - startTime,
+      conflict: true,
+      conflictInfo: {
+        deviceInfo: existingSession.device_info ? JSON.parse(existingSession.device_info) : null,
+        lastSeen: existingSession.last_heartbeat
+      }
+    });
+  }
+  
+  // Create or update session
+  await env.DB.prepare(`
+    INSERT OR REPLACE INTO active_sessions 
+    (customer_id, session_id, machine_fingerprint, device_info, ip_address, user_agent, session_started, last_heartbeat, status)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), 'active')
+  `).bind(
+    customer.id,
+    sessionId,
+    await hashMachineFingerprint(device.machineFingerprint),
+    JSON.stringify(device.deviceInfo || {}),
+    'unknown', // IP would be available from request in real implementation
+    'POSPal-Client'
+  ).run();
+  
+  // Log session start
+  await logAuditEvent(env.DB, customer.id, 'SESSION_START_UNIFIED', {
+    sessionId,
+    deviceInfo: device.deviceInfo,
+    responseTime: Date.now() - startTime
+  });
+  
+  return createUnifiedResponse({
+    validation: {
+      valid: true,
+      status: 'active',
+      validationType: 'session_start'
+    },
+    session: {
+      allowed: true,
+      sessionId: sessionId,
+      status: 'active',
+      deviceInfo: {
+        current: device.deviceInfo.hostname || 'Unknown Device',
+        registered: new Date().toISOString()
+      }
+    },
+    performance: {
+      responseTime: Date.now() - startTime,
+      databaseQueries: 2
+    }
+  });
+}
+
+/**
+ * Handle unified session heartbeat
+ */
+async function handleUnifiedSessionHeartbeat(sessionId, env, startTime) {
+  if (!sessionId) {
+    return createUnifiedErrorResponse('MISSING_SESSION_ID', 'Session ID is required', 400, {
+      responseTime: Date.now() - startTime
+    });
+  }
+  
+  // Update heartbeat timestamp
+  const result = await env.DB.prepare(`
+    UPDATE active_sessions 
+    SET last_heartbeat = datetime('now')
+    WHERE session_id = ? AND status = 'active'
+  `).bind(sessionId).run();
+  
+  if (result.changes === 0) {
+    return createUnifiedErrorResponse('SESSION_NOT_FOUND', 'Session not found or expired', 404, {
+      responseTime: Date.now() - startTime
+    });
+  }
+  
+  return createUnifiedResponse({
+    session: {
+      allowed: true,
+      sessionId: sessionId,
+      status: 'active',
+      lastHeartbeat: new Date().toISOString()
+    },
+    performance: {
+      responseTime: Date.now() - startTime,
+      databaseQueries: 1
+    }
+  });
+}
+
+/**
+ * Handle unified session end
+ */
+async function handleUnifiedSessionEnd(sessionId, env, startTime) {
+  if (!sessionId) {
+    return createUnifiedErrorResponse('MISSING_SESSION_ID', 'Session ID is required', 400, {
+      responseTime: Date.now() - startTime
+    });
+  }
+  
+  // Mark session as ended
+  await env.DB.prepare(`
+    UPDATE active_sessions 
+    SET status = 'ended', ended_at = datetime('now')
+    WHERE session_id = ? AND status = 'active'
+  `).bind(sessionId).run();
+  
+  return createUnifiedResponse({
+    session: {
+      allowed: false,
+      sessionId: sessionId,
+      status: 'ended',
+      endedAt: new Date().toISOString()
+    },
+    performance: {
+      responseTime: Date.now() - startTime,
+      databaseQueries: 1
+    }
+  });
+}
+
+/**
+ * Handle unified session takeover
+ */
+async function handleUnifiedSessionTakeover(customer, device, sessionId, env, startTime) {
+  if (!device?.machineFingerprint || !sessionId || !device.deviceInfo) {
+    return createUnifiedErrorResponse('MISSING_SESSION_DATA', 'Machine fingerprint, session ID, and device info are required', 400, {
+      responseTime: Date.now() - startTime
+    });
+  }
+  
+  // Mark all existing sessions as 'kicked'
+  await env.DB.prepare(`
+    UPDATE active_sessions 
+    SET status = 'kicked', ended_at = datetime('now')
+    WHERE customer_id = ? AND status = 'active'
+  `).bind(customer.id).run();
+  
+  // Create new session
+  await env.DB.prepare(`
+    INSERT INTO active_sessions 
+    (customer_id, session_id, machine_fingerprint, device_info, ip_address, user_agent, session_started, last_heartbeat, status)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), 'active')
+  `).bind(
+    customer.id,
+    sessionId,
+    await hashMachineFingerprint(device.machineFingerprint),
+    JSON.stringify(device.deviceInfo || {}),
+    'unknown',
+    'POSPal-Client'
+  ).run();
+  
+  // Log session takeover
+  await logAuditEvent(env.DB, customer.id, 'SESSION_TAKEOVER_UNIFIED', {
+    newSessionId: sessionId,
+    deviceInfo: device.deviceInfo,
+    responseTime: Date.now() - startTime
+  });
+  
+  return createUnifiedResponse({
+    validation: {
+      valid: true,
+      status: 'active',
+      validationType: 'session_takeover'
+    },
+    session: {
+      allowed: true,
+      sessionId: sessionId,
+      status: 'active',
+      deviceInfo: {
+        current: device.deviceInfo.hostname || 'Unknown Device',
+        registered: new Date().toISOString()
+      },
+      takeover: true
+    },
+    performance: {
+      responseTime: Date.now() - startTime,
+      databaseQueries: 2
+    }
+  });
+}
 
 /**
  * Handle Stripe webhook events
@@ -155,7 +863,7 @@ async function handleCheckoutCompleted(event, env) {
   const customerEmail = session.customer_details?.email;
   const customerName = session.customer_details?.name || 'Customer';
   const subscriptionId = session.subscription;
-  
+
   // Debug logging for payment method investigation
   console.log('Checkout completed debug info:', {
     sessionId: session.id,
@@ -165,12 +873,34 @@ async function handleCheckoutCompleted(event, env) {
     paymentMethodTypes: session.payment_method_types,
     setupIntentId: session.setup_intent || 'none'
   });
-  
+
   if (!customerEmail || !subscriptionId) {
     console.error('Missing customer email or subscription ID');
     return createResponse({ error: 'Invalid session data' }, 400);
   }
-  
+
+  // Fetch subscription details from Stripe to get billing dates
+  let billingData = {};
+  if (subscriptionId) {
+    try {
+      const stripe = createStripeHelper(env);
+      const subscription = await stripe.get(`/subscriptions/${subscriptionId}`);
+
+      if (!subscription.error) {
+        billingData = {
+          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          next_billing_date: new Date(subscription.current_period_end * 1000).toISOString()
+        };
+
+        console.log('Billing data captured:', billingData);
+      }
+    } catch (error) {
+      console.error('Failed to fetch subscription billing data:', error);
+      // Continue without billing data - it can be backfilled later
+    }
+  }
+
   try {
     // First check if customer already exists
     const existingCustomer = await env.DB.prepare(`
@@ -197,10 +927,14 @@ async function handleCheckoutCompleted(event, env) {
         
         // Update with new subscription data (they might have upgraded or changed plans)
         await env.DB.prepare(`
-          UPDATE customers 
-          SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?, last_seen = datetime('now')
+          UPDATE customers
+          SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?,
+              current_period_start = ?, current_period_end = ?, next_billing_date = ?,
+              last_seen = datetime('now')
           WHERE id = ?
-        `).bind(subscriptionId, session.customer, session.id, customerId).run();
+        `).bind(subscriptionId, session.customer, session.id,
+                billingData.current_period_start, billingData.current_period_end, billingData.next_billing_date,
+                customerId).run();
         
         // Don't send another welcome email, just log the event
         console.log(`Updated existing customer ${customerEmail} with new subscription ${subscriptionId}`);
@@ -208,11 +942,15 @@ async function handleCheckoutCompleted(event, env) {
       } else {
         // Customer exists but no active subscription - reactivate them
         await env.DB.prepare(`
-          UPDATE customers 
-          SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?, 
-              subscription_status = 'active', payment_failures = 0, last_seen = datetime('now')
+          UPDATE customers
+          SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?,
+              subscription_status = 'active', payment_failures = 0,
+              current_period_start = ?, current_period_end = ?, next_billing_date = ?,
+              last_seen = datetime('now')
           WHERE id = ?
-        `).bind(subscriptionId, session.customer, session.id, customerId).run();
+        `).bind(subscriptionId, session.customer, session.id,
+                billingData.current_period_start, billingData.current_period_end, billingData.next_billing_date,
+                customerId).run();
         
         console.log(`Reactivated customer ${customerEmail} with subscription ${subscriptionId}`);
       }
@@ -221,16 +959,21 @@ async function handleCheckoutCompleted(event, env) {
       unlockToken = generateUnlockToken();
       
       const insertResult = await env.DB.prepare(`
-        INSERT INTO customers 
-        (email, name, stripe_customer_id, stripe_session_id, unlock_token, subscription_id, subscription_status, created_at, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+        INSERT INTO customers
+        (email, name, stripe_customer_id, stripe_session_id, unlock_token, subscription_id,
+         subscription_status, current_period_start, current_period_end, next_billing_date,
+         created_at, last_seen)
+        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, datetime('now'), datetime('now'))
       `).bind(
         customerEmail,
         customerName,
         session.customer,
         session.id,
         unlockToken,
-        subscriptionId
+        subscriptionId,
+        billingData.current_period_start,
+        billingData.current_period_end,
+        billingData.next_billing_date
       ).run();
       
       customerId = insertResult.meta.last_row_id;
@@ -298,30 +1041,52 @@ async function handleCheckoutCompleted(event, env) {
 async function handlePaymentSucceeded(event, env) {
   const invoice = event.data.object;
   const subscriptionId = invoice.subscription;
-  
+
   if (!subscriptionId) {
     return createResponse({ received: true });
   }
-  
+
+  // Fetch subscription details from Stripe to get updated billing dates
+  let billingData = {};
+  try {
+    const stripe = createStripeHelper(env);
+    const subscription = await stripe.get(`/subscriptions/${subscriptionId}`);
+
+    if (!subscription.error) {
+      billingData = {
+        current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+        current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+        next_billing_date: new Date(subscription.current_period_end * 1000).toISOString()
+      };
+
+      console.log('Payment renewal - billing data updated:', billingData);
+    }
+  } catch (error) {
+    console.error('Failed to fetch subscription billing data on renewal:', error);
+    // Continue without billing data update
+  }
+
   try {
     // Get customer details first to check if this is a reactivation
     const customer = await env.DB.prepare(`
       SELECT id, email, name, subscription_status FROM customers WHERE subscription_id = ?
     `).bind(subscriptionId).first();
-    
+
     if (!customer) {
       console.error(`Customer not found for subscription: ${subscriptionId}`);
       return createResponse({ error: 'Customer not found' }, 404);
     }
-    
+
     const wasInactive = customer.subscription_status !== 'active';
-    
-    // IMMEDIATE REACTIVATION - clear any inactive status
+
+    // IMMEDIATE REACTIVATION - clear any inactive status and update billing dates
     await env.DB.prepare(`
-      UPDATE customers 
-      SET subscription_status = 'active', last_seen = datetime('now')
+      UPDATE customers
+      SET subscription_status = 'active',
+          current_period_start = ?, current_period_end = ?, next_billing_date = ?,
+          last_seen = datetime('now')
       WHERE subscription_id = ?
-    `).bind(subscriptionId).run();
+    `).bind(billingData.current_period_start, billingData.current_period_end, billingData.next_billing_date, subscriptionId).run();
     
     // Log audit event
     await logAuditEvent(env.DB, customer.id, wasInactive ? 'payment_succeeded_immediate_reactivation' : 'payment_succeeded_renewal', {
@@ -544,142 +1309,7 @@ async function handleLicenseValidation(request, env) {
   }
 }
 
-/**
- * Handle batch validation for multiple licenses
- */
-async function handleBatchValidation(request, env) {
-  const startTime = Date.now();
-  
-  try {
-    const { validations, options = {} } = await request.json();
-    
-    if (!validations || !Array.isArray(validations)) {
-      return createErrorResponse('Missing or invalid validations array', 400, {
-        code: 'INVALID_VALIDATIONS_ARRAY'
-      });
-    }
-    
-    if (validations.length > 50) {
-      return createErrorResponse('Too many validations requested (max 50)', 400, {
-        code: 'TOO_MANY_VALIDATIONS'
-      });
-    }
-    
-    // Validate request format
-    for (let i = 0; i < validations.length; i++) {
-      const validation = validations[i];
-      if (!validation.email || !validation.token) {
-        return createErrorResponse(`Invalid validation at index ${i}: missing email or token`, 400, {
-          code: 'INVALID_VALIDATION_FORMAT',
-          index: i
-        });
-      }
-      
-      if (!isValidEmail(validation.email)) {
-        return createErrorResponse(`Invalid email format at index ${i}`, 400, {
-          code: 'INVALID_EMAIL_FORMAT',
-          index: i
-        });
-      }
-    }
-    
-    // Process batch validation
-    const batchResult = await validateMultipleLicenses(env.DB, validations);
-    
-    // Log batch validation event
-    const sampleCustomerId = batchResult.results.find(r => r.valid && r.customer)?.customer?.id;
-    if (sampleCustomerId) {
-      await logValidationEvent(env.DB, sampleCustomerId, 'batch_validation', {
-        ...batchResult.metadata,
-        totalRequests: validations.length
-      }, {
-        batchSize: validations.length,
-        successRate: batchResult.results.filter(r => r.valid).length / validations.length
-      });
-    }
-    
-    console.log(`Batch validation completed: ${validations.length} requests in ${Date.now() - startTime}ms`);
-    
-    return createValidationResponse({
-      success: batchResult.success,
-      results: batchResult.results,
-      metadata: {
-        ...batchResult.metadata,
-        processedAt: new Date().toISOString(),
-        totalProcessingTime: Date.now() - startTime
-      }
-    }, 300); // Cache batch results for 5 minutes
-    
-  } catch (error) {
-    console.error('Batch validation error:', error);
-    return createErrorResponse('Batch validation failed', 500, {
-      code: 'BATCH_VALIDATION_ERROR',
-      responseTime: Date.now() - startTime
-    });
-  }
-}
 
-/**
- * Handle validation status check (lightweight endpoint for status polling)
- */
-async function handleValidationStatus(request, env) {
-  const startTime = Date.now();
-  
-  try {
-    const { email, token } = await request.json();
-    
-    if (!email || !token) {
-      return createErrorResponse('Missing required fields: email, token', 400, {
-        code: 'MISSING_REQUIRED_FIELDS'
-      });
-    }
-    
-    if (!isValidEmail(email)) {
-      return createErrorResponse('Invalid email format', 400, {
-        code: 'INVALID_EMAIL_FORMAT'
-      });
-    }
-    
-    // Lightweight customer lookup (no machine fingerprint updates)
-    const customer = await getCustomerForValidation(env.DB, email, token);
-    
-    if (!customer) {
-      return createValidationResponse({ 
-        valid: false, 
-        error: 'Invalid email or unlock token',
-        errorCode: 'INVALID_CREDENTIALS'
-      }, 300); // Cache negative results for 5 minutes
-    }
-    
-    // Get detailed subscription status
-    const detailedStatus = getDetailedSubscriptionStatus(customer);
-    
-    // Log lightweight validation
-    await logValidationEvent(env.DB, customer.id, 'status_check', {
-      responseTime: Date.now() - startTime,
-      lightweight: true
-    });
-    
-    console.log(`Status check for ${email} in ${Date.now() - startTime}ms`);
-    
-    return createValidationResponse({
-      valid: detailedStatus.isActive,
-      subscriptionInfo: detailedStatus,
-      customerName: customer.name || customer.email.split('@')[0],
-      performance: {
-        responseTime: Date.now() - startTime,
-        lightweight: true
-      }
-    }, 600); // Cache status for 10 minutes
-    
-  } catch (error) {
-    console.error('Status check error:', error);
-    return createErrorResponse('Status check failed', 500, {
-      code: 'STATUS_CHECK_ERROR',
-      responseTime: Date.now() - startTime
-    });
-  }
-}
 
 /**
  * Handle instant validation after payment (Enhanced for embedded flow)
@@ -704,7 +1334,7 @@ async function handleInstantValidation(request, env) {
     
     // Look up customer by email and verify they have a recent payment
     const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
+      SELECT * FROM customers
       WHERE email = ? AND stripe_session_id = ? AND subscription_status = 'active'
     `).bind(email, stripeSessionId).first();
     
@@ -764,96 +1394,6 @@ async function handleInstantValidation(request, env) {
 /**
  * Handle checkout session creation
  */
-async function handleCreateCheckout(request, env) {
-  try {
-    const { email, name, paymentMethodId } = await request.json();
-    
-    if (!email || !name || !paymentMethodId) {
-      return createResponse({ error: 'Missing required fields: email, name, paymentMethodId' }, 400);
-    }
-    
-    if (!isValidEmail(email)) {
-      return createResponse({ error: 'Invalid email' }, 400);
-    }
-    
-    // Create Stripe API helper
-    const stripe = {
-      async post(url, data) {
-        const response = await fetch(`https://api.stripe.com/v1${url}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams(data).toString(),
-        });
-        return response.json();
-      }
-    };
-
-    // Step 1: Create Stripe Customer
-    const stripeCustomer = await stripe.post('/customers', {
-      email: email,
-      name: name,
-      payment_method: paymentMethodId,
-      'invoice_settings[default_payment_method]': paymentMethodId
-    });
-
-    if (stripeCustomer.error) {
-      console.error('Stripe customer error:', stripeCustomer.error);
-      return createResponse({ error: stripeCustomer.error.message }, 400);
-    }
-
-    // Step 2: Create Subscription
-    const subscription = await stripe.post('/subscriptions', {
-      customer: stripeCustomer.id,
-      'items[0][price]': env.STRIPE_PRICE_ID,
-      default_payment_method: paymentMethodId,
-      'expand[0]': 'latest_invoice.payment_intent'
-    });
-
-    if (subscription.error) {
-      console.error('Stripe subscription error:', subscription.error);
-      return createResponse({ error: subscription.error.message }, 400);
-    }
-
-    // Generate session ID for tracking
-    const sessionId = `cs_embedded_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-    
-    // Create unlock token
-    const unlockToken = generateUnlockToken();
-
-    try {
-      await env.DB.prepare(`
-        INSERT INTO customers (email, name, unlock_token, stripe_session_id, stripe_customer_id, subscription_id, subscription_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).bind(email, name, unlockToken, sessionId, stripeCustomer.id, subscription.id, subscription.status).run();
-
-      console.log('Customer created with embedded payment:', {
-        sessionId,
-        customerId: stripeCustomer.id,
-        subscriptionId: subscription.id,
-        status: subscription.status
-      });
-
-    } catch (dbError) {
-      console.error('Database error:', dbError);
-      return createResponse({ error: 'Failed to create customer record' }, 500);
-    }
-
-    return createResponse({
-      id: sessionId,
-      subscription_id: subscription.id,
-      customer_id: stripeCustomer.id,
-      status: subscription.status,
-      unlock_token: unlockToken
-    });
-    
-  } catch (error) {
-    console.error('Checkout creation error:', error);
-    return createResponse({ error: 'Failed to create checkout' }, 500);
-  }
-}
 
 /**
  * Send welcome email with unlock token
@@ -1003,59 +1543,6 @@ async function sendImmediateReactivationEmail(env, customerId, email, name) {
     
   } catch (error) {
     console.error('Immediate reactivation email error:', error);
-  }
-}
-
-/**
- * Send license recovery email with enhanced security template
- */
-async function sendLicenseRecoveryEmail(env, customerId, email, name, unlockToken, securityFlags = {}) {
-  try {
-    const { subject, html } = getLicenseRecoveryEmailTemplate(name, unlockToken, email, securityFlags);
-    
-    // Log email attempt
-    const emailLogId = await logEmailDelivery(env.DB, customerId, 'license_recovery', email, subject);
-    
-    // Send email via Resend
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'POSPal License Recovery <recovery@pospal.gr>',
-        to: [email],
-        subject: subject,
-        html: html,
-      }),
-    });
-    
-    if (response.ok) {
-      const result = await response.json();
-      await updateEmailStatus(env.DB, emailLogId, 'delivered');
-      console.log(`License recovery email sent to ${email}, ID: ${result.id}`);
-      
-      // Log successful email delivery
-      await logAuditEvent(env.DB, customerId, 'license_recovery_email_sent', {
-        emailId: result.id,
-        securityLevel: securityFlags.securityLevel || 'normal',
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      const error = await response.text();
-      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
-      console.error(`Failed to send license recovery email to ${email}:`, error);
-      
-      // Log failed email delivery
-      await logAuditEvent(env.DB, customerId, 'license_recovery_email_failed', {
-        error: error,
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-  } catch (error) {
-    console.error('License recovery email error:', error);
   }
 }
 
@@ -1432,586 +1919,7 @@ async function handleCustomerPortal(request, env) {
   }
 }
 
-/**
- * Handle billing history request
- */
-async function handleBillingHistory(request, env) {
-  try {
-    const { email, unlockToken } = await request.json();
-    
-    if (!email || !unlockToken) {
-      return createResponse({ error: 'Missing email or unlock token' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    if (!customer.stripe_customer_id) {
-      return createResponse({ invoices: [] });
-    }
-    
-    // Create Stripe API helper
-    const stripe = {
-      async get(url) {
-        const response = await fetch(`https://api.stripe.com/v1${url}`, {
-          headers: {
-            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-          }
-        });
-        return response.json();
-      }
-    };
-    
-    // Get invoices from Stripe
-    const invoices = await stripe.get(`/invoices?customer=${customer.stripe_customer_id}&limit=50`);
-    
-    if (invoices.error) {
-      console.error('Failed to fetch invoices:', invoices.error);
-      return createResponse({ error: 'Failed to load billing history' }, 500);
-    }
-    
-    return createResponse({
-      invoices: invoices.data || []
-    });
-    
-  } catch (error) {
-    console.error('Billing history error:', error);
-    return createResponse({ error: 'Failed to load billing history' }, 500);
-  }
-}
 
-/**
- * Handle subscription cancellation
- */
-async function handleCancelSubscription(request, env) {
-  try {
-    const { email, unlockToken, reason, feedback } = await request.json();
-    
-    if (!email || !unlockToken) {
-      return createResponse({ error: 'Missing email or unlock token' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    if (!customer.subscription_id) {
-      return createResponse({ error: 'No active subscription found' }, 400);
-    }
-    
-    // Create Stripe API helper
-    const stripe = {
-      async post(url, data) {
-        const response = await fetch(`https://api.stripe.com/v1${url}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams(data).toString(),
-        });
-        return response.json();
-      }
-    };
-    
-    // Cancel subscription at period end
-    const cancelledSubscription = await stripe.post(`/subscriptions/${customer.subscription_id}`, {
-      cancel_at_period_end: 'true'
-    });
-    
-    if (cancelledSubscription.error) {
-      console.error('Failed to cancel subscription:', cancelledSubscription.error);
-      return createResponse({ error: 'Failed to cancel subscription' }, 500);
-    }
-    
-    // Update customer status
-    await env.DB.prepare(`
-      UPDATE customers 
-      SET subscription_status = 'cancelled', last_seen = datetime('now')
-      WHERE id = ?
-    `).bind(customer.id).run();
-    
-    // Log cancellation with feedback
-    await logAuditEvent(env.DB, customer.id, 'subscription_cancelled', {
-      reason: reason || 'not_specified',
-      feedback: feedback || '',
-      cancel_at_period_end: true,
-      period_end: new Date(cancelledSubscription.current_period_end * 1000)
-    });
-    
-    // Send cancellation confirmation email
-    await sendCancellationEmail(env, customer.id, customer.email, customer.name, cancelledSubscription.current_period_end);
-    
-    return createResponse({
-      success: true,
-      message: 'Subscription cancelled successfully',
-      access_until: new Date(cancelledSubscription.current_period_end * 1000)
-    });
-    
-  } catch (error) {
-    console.error('Cancel subscription error:', error);
-    return createResponse({ error: 'Failed to cancel subscription' }, 500);
-  }
-}
-
-/**
- * Handle subscription pause
- */
-async function handlePauseSubscription(request, env) {
-  try {
-    const { email, unlockToken } = await request.json();
-    
-    if (!email || !unlockToken) {
-      return createResponse({ error: 'Missing email or unlock token' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    if (!customer.subscription_id) {
-      return createResponse({ error: 'No active subscription found' }, 400);
-    }
-    
-    // Create Stripe API helper
-    const stripe = {
-      async post(url, data) {
-        const response = await fetch(`https://api.stripe.com/v1${url}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams(data).toString(),
-        });
-        return response.json();
-      }
-    };
-    
-    // Pause subscription
-    const pausedSubscription = await stripe.post(`/subscriptions/${customer.subscription_id}`, {
-      'pause_collection[behavior]': 'void'
-    });
-    
-    if (pausedSubscription.error) {
-      console.error('Failed to pause subscription:', pausedSubscription.error);
-      return createResponse({ error: 'Failed to pause subscription' }, 500);
-    }
-    
-    // Update customer status
-    await env.DB.prepare(`
-      UPDATE customers 
-      SET subscription_status = 'paused', last_seen = datetime('now')
-      WHERE id = ?
-    `).bind(customer.id).run();
-    
-    // Log pause event
-    await logAuditEvent(env.DB, customer.id, 'subscription_paused', {
-      pause_behavior: 'void'
-    });
-    
-    return createResponse({
-      success: true,
-      message: 'Subscription paused successfully'
-    });
-    
-  } catch (error) {
-    console.error('Pause subscription error:', error);
-    return createResponse({ error: 'Failed to pause subscription' }, 500);
-  }
-}
-
-/**
- * Handle retention offer acceptance
- */
-async function handleRetentionOffer(request, env) {
-  try {
-    const { email, unlockToken, offerType } = await request.json();
-    
-    if (!email || !unlockToken || !offerType) {
-      return createResponse({ error: 'Missing required fields' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    if (!customer.subscription_id) {
-      return createResponse({ error: 'No active subscription found' }, 400);
-    }
-    
-    // Create Stripe API helper
-    const stripe = {
-      async post(url, data) {
-        const response = await fetch(`https://api.stripe.com/v1${url}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams(data).toString(),
-        });
-        return response.json();
-      }
-    };
-    
-    // Apply 50% discount for 3 months
-    if (offerType === '50_percent_3_months') {
-      // Create coupon
-      const coupon = await stripe.post('/coupons', {
-        percent_off: '50',
-        duration: 'repeating',
-        duration_in_months: '3',
-        name: 'Retention Offer - 50% Off for 3 Months'
-      });
-      
-      if (coupon.error) {
-        console.error('Failed to create retention coupon:', coupon.error);
-        return createResponse({ error: 'Failed to create discount' }, 500);
-      }
-      
-      // Apply coupon to subscription
-      const updatedSubscription = await stripe.post(`/subscriptions/${customer.subscription_id}`, {
-        coupon: coupon.id,
-        cancel_at_period_end: 'false'
-      });
-      
-      if (updatedSubscription.error) {
-        console.error('Failed to apply retention coupon:', updatedSubscription.error);
-        return createResponse({ error: 'Failed to apply discount' }, 500);
-      }
-      
-      // Update customer status (uncancel if was cancelled)
-      await env.DB.prepare(`
-        UPDATE customers 
-        SET subscription_status = 'active', last_seen = datetime('now')
-        WHERE id = ?
-      `).bind(customer.id).run();
-      
-      // Log retention offer acceptance
-      await logAuditEvent(env.DB, customer.id, 'retention_offer_accepted', {
-        offerType: offerType,
-        couponId: coupon.id,
-        discount: '50% for 3 months'
-      });
-      
-      return createResponse({
-        success: true,
-        message: '50% discount applied for the next 3 months!'
-      });
-    }
-    
-    return createResponse({ error: 'Invalid offer type' }, 400);
-    
-  } catch (error) {
-    console.error('Retention offer error:', error);
-    return createResponse({ error: 'Failed to apply retention offer' }, 500);
-  }
-}
-
-/**
- * Handle refund request
- */
-async function handleRefundRequest(request, env) {
-  try {
-    const { email, unlockToken, reason, details } = await request.json();
-    
-    if (!email || !unlockToken || !reason || !details) {
-      return createResponse({ error: 'Missing required fields' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    // Store refund request in database (you'd need to create this table)
-    await env.DB.prepare(`
-      INSERT INTO refund_requests 
-      (customer_id, reason, details, status, created_at)
-      VALUES (?, ?, ?, 'pending', datetime('now'))
-    `).bind(customer.id, reason, details).run();
-    
-    // Log refund request
-    await logAuditEvent(env.DB, customer.id, 'refund_requested', {
-      reason,
-      details
-    });
-    
-    // Send notification email to support team
-    await sendRefundRequestNotification(env, customer, reason, details);
-    
-    return createResponse({
-      success: true,
-      message: 'Refund request submitted successfully'
-    });
-    
-  } catch (error) {
-    console.error('Refund request error:', error);
-    return createResponse({ error: 'Failed to submit refund request' }, 500);
-  }
-}
-
-/**
- * Handle specific invoice refund
- */
-async function handleInvoiceRefund(request, env) {
-  try {
-    const { email, unlockToken, invoiceId } = await request.json();
-    
-    if (!email || !unlockToken || !invoiceId) {
-      return createResponse({ error: 'Missing required fields' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    // Store invoice refund request
-    await env.DB.prepare(`
-      INSERT INTO refund_requests 
-      (customer_id, invoice_id, reason, details, status, created_at)
-      VALUES (?, ?, 'invoice_refund', 'Refund request for specific invoice', 'pending', datetime('now'))
-    `).bind(customer.id, invoiceId).run();
-    
-    // Log refund request
-    await logAuditEvent(env.DB, customer.id, 'invoice_refund_requested', {
-      invoiceId
-    });
-    
-    return createResponse({
-      success: true,
-      message: 'Invoice refund request submitted successfully'
-    });
-    
-  } catch (error) {
-    console.error('Invoice refund error:', error);
-    return createResponse({ error: 'Failed to submit refund request' }, 500);
-  }
-}
-
-/**
- * Handle customer data export
- */
-async function handleExportData(request, env) {
-  try {
-    const { email, unlockToken } = await request.json();
-    
-    if (!email || !unlockToken) {
-      return createResponse({ error: 'Missing email or unlock token' }, 400);
-    }
-    
-    // Verify customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers 
-      WHERE email = ? AND unlock_token = ?
-    `).bind(email, unlockToken).first();
-    
-    if (!customer) {
-      return createResponse({ error: 'Invalid credentials' }, 401);
-    }
-    
-    // Get audit log
-    const auditLogs = await env.DB.prepare(`
-      SELECT * FROM audit_log 
-      WHERE customer_id = ?
-      ORDER BY created_at DESC
-    `).bind(customer.id).all();
-    
-    // Get email logs
-    const emailLogs = await env.DB.prepare(`
-      SELECT * FROM email_log 
-      WHERE customer_id = ?
-      ORDER BY created_at DESC
-    `).bind(customer.id).all();
-    
-    // Get session history
-    const sessions = await env.DB.prepare(`
-      SELECT session_id, device_info, ip_address, session_started, last_heartbeat, status
-      FROM active_sessions 
-      WHERE customer_id = ?
-      ORDER BY session_started DESC
-    `).bind(customer.id).all();
-    
-    const exportData = {
-      customer: {
-        email: customer.email,
-        name: customer.name,
-        created_at: customer.created_at,
-        subscription_status: customer.subscription_status,
-        last_seen: customer.last_seen
-      },
-      audit_logs: auditLogs.results || [],
-      email_logs: emailLogs.results || [],
-      sessions: sessions.results || [],
-      exported_at: new Date().toISOString()
-    };
-    
-    // Log export
-    await logAuditEvent(env.DB, customer.id, 'data_exported', {
-      export_timestamp: new Date().toISOString()
-    });
-    
-    return new Response(JSON.stringify(exportData, null, 2), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Disposition': 'attachment; filename="pospal-data-export.json"',
-        'Access-Control-Allow-Origin': '*'
-      }
-    });
-    
-  } catch (error) {
-    console.error('Data export error:', error);
-    return createResponse({ error: 'Failed to export data' }, 500);
-  }
-}
-
-/**
- * Send cancellation confirmation email
- */
-async function sendCancellationEmail(env, customerId, email, name, periodEndTimestamp) {
-  try {
-    const periodEndDate = new Date(periodEndTimestamp * 1000).toLocaleDateString();
-    
-    const subject = 'Subscription Cancelled - POSPal';
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Subscription Cancelled</h2>
-        <p>Hi ${name},</p>
-        <p>Your POSPal Pro subscription has been cancelled as requested.</p>
-        
-        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 20px 0;">
-          <h3>What happens next:</h3>
-          <ul>
-            <li>You'll keep access to POSPal Pro until <strong>${periodEndDate}</strong></li>
-            <li>No more charges will be made after that date</li>
-            <li>You can reactivate your subscription anytime before then</li>
-          </ul>
-        </div>
-        
-        <p>We're sorry to see you go! If you change your mind, you can always resubscribe.</p>
-        
-        <p>Questions? Reply to this email or contact us at support@pospal.gr</p>
-        
-        <p>Thanks,<br>The POSPal Team</p>
-      </div>
-    `;
-    
-    await logEmailDelivery(env.DB, customerId, 'cancellation', email, subject);
-    
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'POSPal <noreply@pospal.gr>',
-        to: [email],
-        subject: subject,
-        html: html,
-      }),
-    });
-    
-    if (response.ok) {
-      console.log(`Cancellation email sent to ${email}`);
-    } else {
-      console.error('Failed to send cancellation email:', await response.text());
-    }
-    
-  } catch (error) {
-    console.error('Cancellation email error:', error);
-  }
-}
-
-/**
- * Send refund request notification to support team
- */
-async function sendRefundRequestNotification(env, customer, reason, details) {
-  try {
-    const subject = `Refund Request - ${customer.email}`;
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>New Refund Request</h2>
-        
-        <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 20px 0;">
-          <h3>Customer Information:</h3>
-          <p><strong>Email:</strong> ${customer.email}</p>
-          <p><strong>Name:</strong> ${customer.name}</p>
-          <p><strong>Customer ID:</strong> ${customer.id}</p>
-          <p><strong>Subscription ID:</strong> ${customer.subscription_id}</p>
-        </div>
-        
-        <div style="background: #fff3cd; padding: 16px; border-radius: 8px; margin: 20px 0;">
-          <h3>Refund Details:</h3>
-          <p><strong>Reason:</strong> ${reason}</p>
-          <p><strong>Details:</strong> ${details}</p>
-        </div>
-        
-        <p>Please review and process this refund request within 24 hours.</p>
-      </div>
-    `;
-    
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'POSPal System <system@pospal.gr>',
-        to: ['system@send.pospal.gr'],
-        subject: subject,
-        html: html,
-      }),
-    });
-    
-    if (response.ok) {
-      console.log('Refund request notification sent to support team');
-    } else {
-      console.error('Failed to send refund notification:', await response.text());
-    }
-    
-  } catch (error) {
-    console.error('Refund notification error:', error);
-  }
-}
 
 /**
  * Handle Stripe Customer Portal session creation
@@ -2132,315 +2040,6 @@ async function handleCreatePortalSession(request, env) {
   }
 }
 
-/**
- * Handle duplicate email checking for frontend
- */
-async function handleCheckDuplicate(request, env) {
-  try {
-    const { email } = await request.json();
-    
-    if (!email) {
-      return createResponse({ error: 'Missing email field' }, 400);
-    }
-    
-    if (!isValidEmail(email)) {
-      return createResponse({ error: 'Invalid email format' }, 400);
-    }
-    
-    // Check if customer already has an active subscription
-    const activeCustomer = await env.DB.prepare(`
-      SELECT email, subscription_status, created_at, subscription_id FROM customers 
-      WHERE email = ? AND subscription_status = 'active'
-    `).bind(email).first();
-    
-    if (activeCustomer) {
-      console.log(`Duplicate check: ${email} has active subscription`);
-      
-      return createResponse({ 
-        isDuplicate: true,
-        status: 'active',
-        message: 'This email already has an active POSPal Pro subscription',
-        subscriptionInfo: {
-          email: activeCustomer.email,
-          status: activeCustomer.subscription_status,
-          createdAt: activeCustomer.created_at
-        },
-        actionRequired: 'redirect_to_portal'
-      });
-    }
-    
-    // Check if customer exists with cancelled/paused subscription
-    const inactiveCustomer = await env.DB.prepare(`
-      SELECT email, subscription_status, created_at, subscription_id FROM customers 
-      WHERE email = ? AND subscription_status IN ('cancelled', 'paused', 'inactive')
-    `).bind(email).first();
-    
-    if (inactiveCustomer) {
-      console.log(`Duplicate check: ${email} has inactive subscription (${inactiveCustomer.subscription_status})`);
-      
-      return createResponse({ 
-        isDuplicate: false,
-        isReturningCustomer: true,
-        status: inactiveCustomer.subscription_status,
-        message: `Welcome back! You previously had a ${inactiveCustomer.subscription_status} subscription`,
-        subscriptionInfo: {
-          email: inactiveCustomer.email,
-          status: inactiveCustomer.subscription_status,
-          createdAt: inactiveCustomer.created_at
-        },
-        actionRequired: 'allow_subscription'
-      });
-    }
-    
-    // No existing customer - new subscription allowed
-    console.log(`Duplicate check: ${email} is new customer`);
-    
-    return createResponse({ 
-      isDuplicate: false,
-      isReturningCustomer: false,
-      message: 'Email is available for new subscription',
-      actionRequired: 'allow_subscription'
-    });
-    
-  } catch (error) {
-    console.error('Duplicate check error:', error);
-    return createResponse({ 
-      error: 'Failed to check for duplicates' 
-    }, 500);
-  }
-}
-
-/**
- * Handle manual license creation for users who paid but didn't receive license
- * SECURITY: This should be protected with an admin key in production
- */
-async function handleManualLicenseCreation(request, env) {
-  try {
-    const { email, name, adminKey, subscriptionId } = await request.json();
-    
-    // Simple admin key check (in production, use a secure admin key)
-    if (adminKey !== 'pospal-admin-2024') {
-      return createResponse({ error: 'Unauthorized' }, 401);
-    }
-    
-    if (!email || !name) {
-      return createResponse({ error: 'Missing required fields: email, name' }, 400);
-    }
-    
-    if (!isValidEmail(email)) {
-      return createResponse({ error: 'Invalid email format' }, 400);
-    }
-    
-    // Check if customer already exists
-    const existingCustomer = await env.DB.prepare(`
-      SELECT * FROM customers WHERE email = ?
-    `).bind(email).first();
-    
-    if (existingCustomer) {
-      // Resend the existing license
-      await sendWelcomeEmail(env, existingCustomer.id, existingCustomer.email, existingCustomer.name, existingCustomer.unlock_token);
-      
-      return createResponse({
-        success: true,
-        message: 'License email resent to existing customer',
-        customer_id: existingCustomer.id,
-        unlock_token: existingCustomer.unlock_token
-      });
-    }
-    
-    // Create new customer
-    const unlockToken = generateUnlockToken();
-    const insertResult = await env.DB.prepare(`
-      INSERT INTO customers 
-      (email, name, unlock_token, subscription_id, subscription_status, created_at, last_seen)
-      VALUES (?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
-    `).bind(
-      email,
-      name,
-      unlockToken,
-      subscriptionId || `manual_${Date.now()}`
-    ).run();
-    
-    const customerId = insertResult.meta.last_row_id;
-    
-    // Log the manual creation
-    await logAuditEvent(env.DB, customerId, 'manual_license_created', {
-      adminCreated: true,
-      subscriptionId: subscriptionId || 'manual',
-      timestamp: new Date().toISOString()
-    });
-    
-    // Send welcome email
-    await sendWelcomeEmail(env, customerId, email, name, unlockToken);
-    
-    console.log(`Manual license created for ${email}: ${unlockToken}`);
-    
-    return createResponse({
-      success: true,
-      message: 'License created and email sent successfully',
-      customer_id: customerId,
-      unlock_token: unlockToken
-    });
-    
-  } catch (error) {
-    console.error('Manual license creation error:', error);
-    return createResponse({ error: 'Failed to create license' }, 500);
-  }
-}
-
-/**
- * Handle customer lookup by email
- */
-async function handleCustomerLookup(request, env) {
-  try {
-    const { email } = await request.json();
-    
-    if (!email) {
-      return createResponse({ error: 'Missing email field' }, 400);
-    }
-    
-    if (!isValidEmail(email)) {
-      return createResponse({ error: 'Invalid email format' }, 400);
-    }
-    
-    // Look up customer
-    const customer = await env.DB.prepare(`
-      SELECT id, email, name, unlock_token, subscription_status, created_at, last_seen 
-      FROM customers WHERE email = ?
-    `).bind(email).first();
-    
-    if (!customer) {
-      return createResponse({ 
-        found: false, 
-        message: 'No account found with this email address. If you recently made a payment, please contact support.' 
-      });
-    }
-    
-    // Update last seen
-    await env.DB.prepare(`
-      UPDATE customers SET last_seen = datetime('now') WHERE id = ?
-    `).bind(customer.id).run();
-    
-    return createResponse({
-      found: true,
-      customer: {
-        email: customer.email,
-        name: customer.name,
-        unlock_token: customer.unlock_token,
-        subscription_status: customer.subscription_status,
-        created_at: customer.created_at
-      }
-    });
-    
-  } catch (error) {
-    console.error('Customer lookup error:', error);
-    return createResponse({ error: 'Failed to lookup customer' }, 500);
-  }
-}
-
-/**
- * Handle license key recovery with enhanced security and rate limiting
- * This is the main endpoint for license recovery with full security features
- */
-async function handleLicenseRecovery(request, env) {
-  try {
-    const { email } = await request.json();
-    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-    const userAgent = request.headers.get('user-agent') || 'unknown';
-    
-    if (!email) {
-      return createResponse({ error: 'Missing email field' }, 400);
-    }
-    
-    if (!isValidEmail(email)) {
-      return createResponse({ error: 'Invalid email format' }, 400);
-    }
-    
-    // Check rate limits first
-    const rateLimitResult = await checkRateLimit(env.DB, ip, email);
-    if (!rateLimitResult.allowed) {
-      // Log the blocked attempt
-      await logRecoveryAttempt(env.DB, email, ip, userAgent, false, null, {
-        blocked: true,
-        reason: rateLimitResult.reason,
-        message: rateLimitResult.message
-      });
-      
-      return createResponse({ 
-        error: rateLimitResult.message,
-        rateLimited: true,
-        reason: rateLimitResult.reason,
-        blockedUntil: rateLimitResult.blockedUntil
-      }, 429);
-    }
-    
-    // Look up customer
-    const customer = await env.DB.prepare(`
-      SELECT * FROM customers WHERE email = ?
-    `).bind(email).first();
-    
-    // Analyze security indicators
-    const securityFlags = analyzeSecurityIndicators(request, email, customer);
-    
-    if (!customer) {
-      // Log failed attempt for non-existent customer
-      await logRecoveryAttempt(env.DB, email, ip, userAgent, false, null, securityFlags);
-      
-      // Return generic error to prevent email enumeration
-      return createResponse({ 
-        error: 'If this email has a POSPal account, a recovery email will be sent within a few minutes.'
-      });
-    }
-    
-    // For inactive subscriptions, still send the email but include subscription status info
-    const isActive = isSubscriptionActive(customer);
-    
-    // Send license recovery email (using dedicated template)
-    await sendLicenseRecoveryEmail(env, customer.id, customer.email, customer.name, customer.unlock_token, securityFlags);
-    
-    // Log successful recovery attempt
-    await logRecoveryAttempt(env.DB, email, ip, userAgent, true, customer.id, securityFlags);
-    
-    // Log audit event
-    await logAuditEvent(env.DB, customer.id, 'license_recovery_requested', {
-      timestamp: new Date().toISOString(),
-      ip: ip,
-      userAgent: userAgent,
-      subscriptionActive: isActive,
-      securityLevel: securityFlags.securityLevel,
-      securityReason: securityFlags.reason || 'normal'
-    });
-    
-    // Generic success message to prevent information leakage
-    return createResponse({
-      success: true,
-      message: 'If this email has a POSPal account, a recovery email will be sent within a few minutes.',
-      // Only include customer info if this is a successful recovery
-      ...(customer && {
-        customerInfo: {
-          subscriptionStatus: customer.subscription_status,
-          accountCreated: customer.created_at
-        }
-      })
-    });
-    
-  } catch (error) {
-    console.error('License recovery error:', error);
-    return createResponse({ error: 'Failed to process recovery request' }, 500);
-  }
-}
-
-/**
- * Handle resending license email for existing customers
- * DEPRECATED: This endpoint is kept for backward compatibility
- * Use /recover-license for new implementations
- */
-async function handleResendLicenseEmail(request, env) {
-  console.warn('DEPRECATED ENDPOINT: /resend-license-email is deprecated. Use /recover-license instead.');
-  
-  // Forward to the new secure recovery handler
-  return handleLicenseRecovery(request, env);
-}
 
 /**
  * Handle payment method attachment to customer

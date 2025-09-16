@@ -251,27 +251,23 @@
         
         /**
          * Generate machine fingerprint for license validation
+         * Uses consistent backend hardware ID to prevent security email issues
          */
         async function generateMachineFingerprint() {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.textBaseline = 'top';
-            ctx.font = '14px Arial';
-            ctx.fillText('POSPal fingerprint', 2, 2);
-            
-            const fingerprint = [
-                navigator.userAgent,
-                navigator.language,
-                screen.width + 'x' + screen.height,
-                new Date().getTimezoneOffset(),
-                canvas.toDataURL()
-            ].join('|');
-            
-            const encoder = new TextEncoder();
-            const data = encoder.encode(fingerprint);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+            try {
+                // Use backend hardware ID for consistency
+                const response = await fetch('/api/hardware_id');
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.hardware_id || 'fallback-fingerprint';
+                }
+                throw new Error('Failed to fetch hardware ID from backend');
+            } catch (error) {
+                console.error('Error generating machine fingerprint:', error);
+                // Fallback - should be avoided
+                console.warn('Using timestamp fallback fingerprint - may cause security email issues');
+                return 'fallback-' + Date.now();
+            }
         }
         
         /**

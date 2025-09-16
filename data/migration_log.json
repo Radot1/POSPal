@@ -1,0 +1,52 @@
+[
+  {
+    "timestamp": "2025-09-14T00:38:39.094718",
+    "status": "completed",
+    "steps": [
+      {
+        "step": "cache_validation",
+        "result": {
+          "success": true,
+          "message": "No existing cache to validate",
+          "dry_run": false
+        }
+      },
+      {
+        "step": "post_validation",
+        "result": {
+          "success": true,
+          "message": "Post-migration validation passed",
+          "validation_state": {
+            "licensed": false,
+            "active": true,
+            "status": "trial",
+            "source": "trial_system",
+            "subscription": false,
+            "subscription_id": null,
+            "subscription_status": null,
+            "valid_until": null,
+            "customer": null,
+            "customer_email": null,
+            "hardware_id": null,
+            "last_validation": null,
+            "cloud_validation_attempted": false,
+            "cloud_validation_successful": false,
+            "days_offline": 0,
+            "grace_period_active": false,
+            "grace_period_expired": false,
+            "grace_period_warning_level": 0,
+            "trial_days_left": 30,
+            "trial_expired": false,
+            "error_message": null,
+            "validation_errors": [],
+            "user_message": "Trial: 30 days remaining",
+            "requires_internet": false,
+            "metadata": {}
+          },
+          "dry_run": false
+        }
+      }
+    ],
+    "version": "1.0"
+  }
+]

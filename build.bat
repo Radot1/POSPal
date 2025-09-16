@@ -120,6 +120,13 @@ pyinstaller ^
     --noupx ^
     --hidden-import dotenv ^
     --hidden-import python-dotenv ^
+    --hidden-import cryptography ^
+    --hidden-import cryptography.fernet ^
+    --hidden-import cryptography.hazmat ^
+    --hidden-import cryptography.hazmat.primitives ^
+    --hidden-import cryptography.hazmat.primitives.kdf ^
+    --hidden-import cryptography.hazmat.primitives.kdf.pbkdf2 ^
+    --hidden-import cryptography.hazmat.backends ^
     --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
     --add-data "..\POSPalDesktop.html;." ^
@@ -157,6 +164,13 @@ if defined BUILD_ONEDIR (
         --noupx ^
         --hidden-import dotenv ^
     --hidden-import python-dotenv ^
+    --hidden-import cryptography ^
+    --hidden-import cryptography.fernet ^
+    --hidden-import cryptography.hazmat ^
+    --hidden-import cryptography.hazmat.primitives ^
+    --hidden-import cryptography.hazmat.primitives.kdf ^
+    --hidden-import cryptography.hazmat.primitives.kdf.pbkdf2 ^
+    --hidden-import cryptography.hazmat.backends ^
         --add-data "..\UISelect.html;." ^
         --add-data "..\POSPal.html;." ^
         --add-data "..\POSPalDesktop.html;." ^

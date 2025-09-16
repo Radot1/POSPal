@@ -183,7 +183,18 @@ export function getDetailedSubscriptionStatus(customer) {
   const now = new Date();
   const lastSeen = customer.last_seen ? new Date(customer.last_seen) : null;
   const lastValidation = customer.last_validation ? new Date(customer.last_validation) : null;
-  
+
+  // Process billing dates
+  const currentPeriodEnd = customer.current_period_end ? new Date(customer.current_period_end) : null;
+  const nextBillingDate = customer.next_billing_date ? new Date(customer.next_billing_date) : null;
+  const currentPeriodStart = customer.current_period_start ? new Date(customer.current_period_start) : null;
+
+  // Calculate days until renewal
+  let daysUntilRenewal = null;
+  if (nextBillingDate) {
+    daysUntilRenewal = Math.ceil((nextBillingDate - now) / (1000 * 60 * 60 * 24));
+  }
+
   return {
     isActive: customer.subscription_status === 'active',
     status: customer.subscription_status,
@@ -192,7 +203,13 @@ export function getDetailedSubscriptionStatus(customer) {
     lastValidation: lastValidation ? lastValidation.toISOString() : null,
     daysSinceLastSeen: lastSeen ? Math.floor((now - lastSeen) / (1000 * 60 * 60 * 24)) : null,
     hoursSinceLastValidation: lastValidation ? Math.floor((now - lastValidation) / (1000 * 60 * 60)) : null,
-    validationRecommendation: getValidationRecommendation(customer, now)
+    validationRecommendation: getValidationRecommendation(customer, now),
+    // Billing information
+    currentPeriodStart: currentPeriodStart ? currentPeriodStart.toISOString() : null,
+    currentPeriodEnd: currentPeriodEnd ? currentPeriodEnd.toISOString() : null,
+    nextBillingDate: nextBillingDate ? nextBillingDate.toISOString() : null,
+    daysUntilRenewal: daysUntilRenewal,
+    daysRemaining: daysUntilRenewal // Alias for backward compatibility
   };
 }
 
@@ -250,13 +267,14 @@ export async function getCustomerForValidation(db, email, token) {
   try {
     // Use indexed lookup with minimal field selection for performance
     const customer = await db.prepare(`
-      SELECT id, email, unlock_token, subscription_status, subscription_id, 
-             machine_fingerprint, last_seen, last_validation, created_at
-      FROM customers 
+      SELECT id, email, unlock_token, subscription_status, subscription_id,
+             machine_fingerprint, last_seen, last_validation, created_at,
+             current_period_start, current_period_end, next_billing_date
+      FROM customers
       WHERE email = ? AND unlock_token = ?
       LIMIT 1
     `).bind(email, token).first();
-    
+
     return customer;
   } catch (error) {
     console.error('Customer lookup error:', error);

@@ -65,6 +65,8 @@ def _cleanup_on_exit():
     """Cleanup function called when the process exits normally or abnormally"""
     try:
         _sse_subscribers.clear()
+        # Ensure lock is released during cleanup
+        release_single_instance_lock()
         app.logger.info("Application cleanup completed")
     except Exception:
         pass  # Don't raise exceptions during cleanup
@@ -149,11 +151,127 @@ PUBLISH_MARKER_FILE = os.path.join(PERSIST_DIR, 'published_site.json')
 
 APP_SECRET_KEY = 0x8F3A2B1C9D4E5F6A  # Use a strong secret key
 
+# --- License Integration System ---
+# Initialize unified license controller integration
+try:
+    from license_integration import initialize_license_integration, get_license_status_integrated, validate_license_integrated
+    # Global flag to track integration status
+    UNIFIED_LICENSES_ENABLED = True
+    app.logger.info("License integration system available")
+except ImportError as e:
+    app.logger.warning(f"Unified license system not available: {e}")
+    UNIFIED_LICENSES_ENABLED = False
+    # Fallback functions
+    def get_license_status_integrated(force_refresh=False):
+        return check_trial_status_legacy()
+    def validate_license_integrated(customer_email, unlock_token, hardware_id=None):
+        return {"licensed": False, "message": "Unified system not available"}
+
 # License cache constants for hybrid cloud-first validation
 LICENSE_CACHE_FILE = os.path.join(DATA_DIR, 'license_cache.enc')
 LICENSE_CACHE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'license_cache.enc')
 GRACE_PERIOD_DAYS = 10  # Days allowed offline after last successful validation
 CLOUD_VALIDATION_TIMEOUT = 3  # Seconds to wait for cloud validation response
+
+# --- Migration Controller for Backend Systems ---
+# Environment variable to control migration rollout
+ENABLE_BACKEND_MIGRATION = os.environ.get('POSPAL_ENABLE_BACKEND_MIGRATION', 'true').lower() == 'true'
+
+def get_license_status_safe(force_refresh=False, context="general"):
+    """
+    Safe license status getter with migration support
+    
+    This function provides a seamless transition from legacy check_trial_status()
+    to the unified license controller system with automatic fallback protection.
+    
+    Args:
+        force_refresh: Force refresh of license data
+        context: Context for logging/debugging purposes
+        
+    Returns:
+        Dict containing license status in legacy-compatible format
+    """
+    try:
+        # Log context for migration tracking
+        if context != "general":
+            app.logger.debug(f"License check from context: {context}")
+        
+        # Use unified system if migration enabled and available
+        if ENABLE_BACKEND_MIGRATION and UNIFIED_LICENSES_ENABLED:
+            try:
+                unified_status = get_license_status_integrated(force_refresh)
+                
+                # Add migration metadata for monitoring
+                if isinstance(unified_status, dict):
+                    unified_status['_migration_path'] = 'unified'
+                    unified_status['_context'] = context
+                
+                return unified_status
+                
+            except Exception as e:
+                app.logger.error(f"Unified system error in context '{context}': {e}")
+                # Fallback to legacy system
+                app.logger.info(f"Falling back to legacy system for context: {context}")
+        
+        # Use legacy system (either by choice or fallback)
+        legacy_status = check_trial_status_legacy()
+        
+        # Add migration metadata
+        if isinstance(legacy_status, dict):
+            legacy_status['_migration_path'] = 'legacy'
+            legacy_status['_context'] = context
+            legacy_status['_fallback_reason'] = 'migration_disabled' if not ENABLE_BACKEND_MIGRATION else 'unified_unavailable'
+        
+        return legacy_status
+        
+    except Exception as e:
+        app.logger.error(f"Critical license system error in context '{context}': {e}")
+        
+        # Emergency fallback - return safe inactive state
+        return {
+            'licensed': False,
+            'active': False,
+            'expired': True,
+            'source': 'emergency_fallback',
+            'message': f'License system critical error: {str(e)}',
+            '_migration_path': 'emergency',
+            '_context': context,
+            '_error': str(e)
+        }
+
+# --- Unified License Status Function ---
+def get_license_status_unified(force_refresh=False, use_legacy=None):
+    """
+    Get license status using unified system with fallback to legacy
+    
+    Args:
+        force_refresh: Force refresh of license data
+        use_legacy: Override system selection (None = auto-detect, True = legacy, False = unified)
+        
+    Returns:
+        Dict containing license status in legacy format
+    """
+    if UNIFIED_LICENSES_ENABLED and use_legacy is not True:
+        try:
+            return get_license_status_integrated(force_refresh)
+        except Exception as e:
+            app.logger.error(f"Unified license system error: {e}")
+            # Fallback to legacy if unified fails
+            if use_legacy is not False:
+                app.logger.info("Falling back to legacy license system")
+                return check_trial_status_legacy()
+            else:
+                # Return error state if legacy not allowed
+                return {
+                    'licensed': False,
+                    'active': False,
+                    'expired': True,
+                    'source': 'unified_system_error',
+                    'message': f'License system error: {str(e)}'
+                }
+    else:
+        # Use legacy system
+        return check_trial_status_legacy()
 
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
@@ -1312,30 +1430,7 @@ def publish_menu_cloudflare():
         app.logger.error(f"Publish to Cloudflare error: {type(e).__name__}: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
     
-def store_trial_in_registry(first_run_date, signature):
-    """Store trial data in Windows Registry"""
-    try:
-        import winreg
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\POSPal\Trial")
-        winreg.SetValueEx(key, "FirstRunDate", 0, winreg.REG_SZ, first_run_date)
-        winreg.SetValueEx(key, "Signature", 0, winreg.REG_SZ, signature)
-        winreg.CloseKey(key)
-        return True
-    except Exception as e:
-        app.logger.warning(f"Could not store trial in registry: {e}")
-        return False
-
-def get_trial_from_registry():
-    """Get trial data from Windows Registry"""
-    try:
-        import winreg
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\POSPal\Trial")
-        first_run_date = winreg.QueryValueEx(key, "FirstRunDate")[0]
-        signature = winreg.QueryValueEx(key, "Signature")[0]
-        winreg.CloseKey(key)
-        return {"first_run_date": first_run_date, "signature": signature}
-    except:
-        return None
+# Registry functions removed - consolidated to 2 storage locations (file + ProgramData)
 
 def store_trial_in_programdata(first_run_date: str, signature: str) -> bool:
     """Store trial data under ProgramData for additional persistence."""
@@ -1396,13 +1491,7 @@ def _persist_trial_everywhere(earliest_first_run_date: str, signature: str):
     except Exception as e:
         app.logger.warning(f"Failed persisting trial to primary file: {e}")
 
-    # Registry
-    try:
-        reg = _validate_and_parse_trial(get_trial_from_registry())
-        if (not reg) or (reg['date_obj'] > datetime.strptime(earliest_first_run_date, "%Y-%m-%d")):
-            store_trial_in_registry(earliest_first_run_date, signature)
-    except Exception as e:
-        app.logger.warning(f"Failed persisting trial to registry: {e}")
+    # Registry storage removed - consolidated to 2 locations only
 
     # ProgramData file
     try:
@@ -1431,8 +1520,7 @@ def initialize_trial():
         except Exception:
             candidates.append(None)
 
-        # Registry
-        candidates.append(_validate_and_parse_trial(get_trial_from_registry()))
+        # Registry removed - using 2 storage locations only
 
         # ProgramData
         candidates.append(_validate_and_parse_trial(get_trial_from_programdata()))
@@ -1568,9 +1656,16 @@ def get_next_daily_order_number():
 
 @app.route('/api/config')
 def get_frontend_config():
-    """Provide configuration data to frontend (non-sensitive only)"""
+    """
+    Provide configuration data to frontend (non-sensitive only)
+    
+    Updated to include unified license state for comprehensive frontend integration
+    """
     try:
-        return jsonify({
+        # Get license status using unified system
+        license_status = get_license_status_safe(force_refresh=False, context="api_config")
+        
+        config = {
             'stripe': {
                 'publishable_key': Config.STRIPE_PUBLISHABLE_KEY
             },
@@ -1584,11 +1679,55 @@ def get_frontend_config():
                 'subscription_management': Config.ENABLE_SUBSCRIPTION_MANAGEMENT,
                 'refund_processing': Config.ENABLE_REFUND_PROCESSING,
                 'email_notifications': Config.ENABLE_EMAIL_NOTIFICATIONS
+            },
+            'license': {
+                'active': license_status.get('active', False),
+                'licensed': license_status.get('licensed', False),
+                'subscription': license_status.get('subscription', False),
+                'source': license_status.get('source', 'unknown'),
+                'migration_status': {
+                    'backend_migration_enabled': ENABLE_BACKEND_MIGRATION,
+                    'unified_system_available': UNIFIED_LICENSES_ENABLED,
+                    'migration_path': license_status.get('_migration_path', 'unknown')
+                }
             }
-        })
+        }
+        
+        # Add subscription details if available (non-sensitive only)
+        if license_status.get('subscription') and license_status.get('valid_until'):
+            config['license']['subscription_active'] = True
+            config['license']['subscription_status'] = license_status.get('subscription_status', 'unknown')
+        
+        # Add grace period info if relevant
+        if license_status.get('grace_period_active'):
+            config['license']['grace_period_active'] = True
+            config['license']['grace_period_warning'] = license_status.get('grace_period_warning_level', 'none')
+        
+        return jsonify(config)
+        
     except Exception as e:
         app.logger.error(f"Config endpoint error: {e}")
-        return jsonify({'error': 'Configuration not available'}), 500
+        
+        # Return safe fallback config
+        return jsonify({
+            'stripe': {'publishable_key': Config.STRIPE_PUBLISHABLE_KEY},
+            'app': {'base_url': Config.APP_BASE_URL, 'version': CURRENT_VERSION},
+            'features': {
+                'test_mode': Config.ENABLE_TEST_MODE,
+                'new_checkout': Config.ENABLE_NEW_CHECKOUT,
+                'subscription_management': Config.ENABLE_SUBSCRIPTION_MANAGEMENT,
+                'refund_processing': Config.ENABLE_REFUND_PROCESSING,
+                'email_notifications': Config.ENABLE_EMAIL_NOTIFICATIONS
+            },
+            'license': {
+                'active': False,
+                'licensed': False,
+                'subscription': False,
+                'source': 'config_error',
+                'migration_status': {'error': str(e)}
+            },
+            'error': 'Configuration partially available'
+        }), 200  # Return 200 to avoid breaking frontend
 
 
 @app.route('/')
@@ -2152,16 +2291,24 @@ def shutdown_server():
         # Step 5: Cancel/stop all active timers and background threads
         app.logger.info("Stopping background threads and timers...")
         try:
-            # Kill all non-daemon threads
             import threading
             current_thread = threading.current_thread()
+            threads_to_join = []
+
             for thread in threading.enumerate():
                 if thread != current_thread and thread.is_alive() and not thread.daemon:
-                    try:
-                        app.logger.info(f"Found active non-daemon thread: {thread.name}")
-                        # For most threads we can only log them, but some specific ones we can interrupt
-                    except Exception as e:
-                        app.logger.warning(f"Error checking thread {thread}: {e}")
+                    app.logger.info(f"Found active non-daemon thread: {thread.name}")
+                    threads_to_join.append(thread)
+
+            # Give threads a chance to finish gracefully
+            for thread in threads_to_join:
+                try:
+                    thread.join(timeout=2.0)  # Wait up to 2 seconds per thread
+                    if thread.is_alive():
+                        app.logger.warning(f"Thread {thread.name} did not terminate gracefully")
+                except Exception as e:
+                    app.logger.warning(f"Error joining thread {thread.name}: {e}")
+
             app.logger.info("Background thread cleanup completed")
         except Exception as e:
             app.logger.error(f"Error during background thread cleanup: {e}")
@@ -2169,25 +2316,38 @@ def shutdown_server():
         # Step 6: Give time for cleanup to complete
         app.logger.info("Waiting for cleanup to complete...")
         time.sleep(1.0)
-        
+
+        # Step 6.5: Gracefully shutdown Waitress server
+        if _server_instance:
+            try:
+                app.logger.info("Shutting down Waitress server...")
+                _server_instance.close()
+                app.logger.info("Waitress server shutdown completed")
+                time.sleep(1.0)  # Allow server to fully close
+            except Exception as e:
+                app.logger.error(f"Error shutting down Waitress server: {e}")
+
         # Step 7: Attempt graceful shutdown using multiple methods
         app.logger.info("Initiating process termination...")
         
         # For Windows, try multiple termination methods for reliability
         if os.name == 'nt':  # Windows
             try:
-                # Method 1: Use taskkill to forcefully terminate the process tree
-                # This ensures all child processes are also terminated
-                app.logger.info("Using taskkill to terminate process tree...")
-                result = subprocess.run(['taskkill', '/F', '/T', '/PID', str(os.getpid())], 
-                                      capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-                app.logger.info(f"Taskkill result: {result.returncode}")
-                if result.returncode == 0:
-                    return  # Successful termination
+                # Method 1: Kill the specific process and its children
+                app.logger.info("Terminating POSPal process tree...")
+                subprocess.run([
+                    'taskkill', '/F', '/T', '/PID', str(os.getpid())
+                ], capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS)
+
+                # If we reach here, taskkill didn't work immediately
+                app.logger.info("Primary termination method completed")
+                time.sleep(1.0)
+
             except subprocess.TimeoutExpired:
-                app.logger.warning("Taskkill timeout, proceeding with alternative methods")
+                app.logger.warning("Process termination timeout, using fallback")
             except Exception as e:
-                app.logger.error(f"Taskkill failed: {e}")
+                app.logger.error(f"Process termination failed: {e}")
         
         # Method 2: Try SIGTERM for graceful shutdown
         try:
@@ -2884,10 +3044,13 @@ def diagnose_license_failure(license_file_path):
     app.logger.info("=== LICENSE DIAGNOSIS END ===")
     return True
     
-def check_trial_status():
+def check_trial_status_legacy():
     """
-    Hybrid cloud-first license validation with encrypted local cache and grace period
+    LEGACY: Hybrid cloud-first license validation with encrypted local cache and grace period
     Priority: Cloud validation -> Encrypted cache (with grace period) -> Legacy license.key -> Trial
+    
+    NOTE: This function is being phased out in favor of the unified license controller.
+    New code should use get_license_status_safe() or get_license_status_unified() instead.
     """
     
     # Step 1: Check for legacy license.key file (backward compatibility)
@@ -3103,8 +3266,7 @@ def check_trial_status():
         except Exception:
             candidates.append(None)
 
-        # Registry
-        candidates.append(_validate_and_parse_trial(get_trial_from_registry()))
+        # Registry removed - using 2 storage locations only
 
         # ProgramData
         candidates.append(_validate_and_parse_trial(get_trial_from_programdata()))
@@ -3134,6 +3296,20 @@ def check_trial_status():
     except Exception as e:
         app.logger.error(f"Trial check failed: {e}")
         return {"licensed": False, "active": False, "expired": True, "source": "trial_error"}
+
+# --- Migration Wrapper Functions ---
+def check_trial_status():
+    """
+    Migration wrapper for check_trial_status() function
+    
+    This function provides backward compatibility during the migration from legacy
+    license system to unified license controller. It automatically routes calls
+    to the appropriate system based on migration settings.
+    
+    Returns:
+        Dict containing license status in legacy-compatible format
+    """
+    return get_license_status_safe(force_refresh=False, context="check_trial_status")
 
 # --- Usage Analytics Functions ---
 def track_order_analytics(order_data):
@@ -3227,7 +3403,104 @@ def get_trial_usage_summary():
 # Add API endpoint
 @app.route('/api/trial_status')
 def get_trial_status():
-    return jsonify(check_trial_status())
+    """
+    Get trial/license status for frontend
+    
+    This endpoint has been migrated to use the unified license controller
+    while maintaining full backward compatibility with existing frontend code.
+    """
+    try:
+        # Force refresh if requested
+        force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+        
+        # Get status using migration-safe wrapper
+        status = get_license_status_safe(force_refresh=force_refresh, context="api_trial_status")
+        
+        # Add API metadata for debugging
+        status['_api_endpoint'] = 'trial_status'
+        status['_timestamp'] = datetime.now().isoformat()
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        app.logger.error(f"Trial status API error: {e}")
+        
+        # Return safe fallback response
+        return jsonify({
+            'licensed': False,
+            'active': False,
+            'expired': True,
+            'source': 'api_error',
+            'message': f'API error: {str(e)}',
+            '_api_endpoint': 'trial_status',
+            '_error': str(e),
+            '_timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/license_status_unified')
+def get_license_status_unified_endpoint():
+    """Get license status using unified system"""
+    force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+    return jsonify(get_license_status_unified(force_refresh))
+
+@app.route('/api/license_system_info')
+def get_license_system_info():
+    """Get comprehensive license system information"""
+    try:
+        if UNIFIED_LICENSES_ENABLED:
+            from license_integration import license_integration
+            if license_integration:
+                return jsonify(license_integration.get_system_info())
+        
+        # Fallback info
+        return jsonify({
+            "integration": {
+                "unified_available": UNIFIED_LICENSES_ENABLED,
+                "unified_enabled": UNIFIED_LICENSES_ENABLED,
+                "current_system": "legacy",
+                "migration_completed": False
+            },
+            "legacy": {"active": True},
+            "message": "Using legacy license system"
+        })
+        
+    except Exception as e:
+        app.logger.error(f"License system info error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/license_migration', methods=['POST'])
+def trigger_license_migration():
+    """Trigger license system migration"""
+    try:
+        if not UNIFIED_LICENSES_ENABLED:
+            return jsonify({
+                "success": False,
+                "message": "Unified license system not available"
+            }), 400
+        
+        from license_integration import license_integration
+        if not license_integration:
+            return jsonify({
+                "success": False,
+                "message": "License integration not initialized"
+            }), 500
+        
+        data = request.get_json() or {}
+        dry_run = data.get('dry_run', True)
+        
+        result = license_integration.force_migration(dry_run)
+        
+        if result["success"]:
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        app.logger.error(f"License migration error: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Migration failed: {str(e)}"
+        }), 500
 
 @app.route('/api/usage_analytics')
 def get_usage_analytics_endpoint():
@@ -3438,14 +3711,19 @@ def create_subscription_session():
 
 @app.route('/api/validate-license', methods=['POST'])
 def validate_license_api():
-    """Validate license with Cloudflare Worker (real-time check)"""
+    """
+    Validate license using unified controller system
+
+    MIGRATED: This endpoint now uses the unified license controller for all validation,
+    providing consistent behavior and improved reliability across all license operations.
+    """
     try:
         # Rate limiting - more lenient for license validation
         client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
         if not check_rate_limit(client_ip, 'validate-license', max_requests=20, window_seconds=300):
             app.logger.warning(f"Rate limit exceeded for validate-license from {client_ip}")
             return jsonify({"error": "Too many requests. Please try again later.", "code": "RATE_LIMIT"}), 429
-        
+
         # Parse and validate request
         try:
             data = request.get_json() or {}
@@ -3454,14 +3732,14 @@ def validate_license_api():
         except (json.JSONDecodeError, UnicodeDecodeError):
             app.logger.warning("Invalid JSON in license validation request, using empty data")
             data = {}
-        
+
         # Get hardware ID (use provided or generate)
         hardware_id = data.get('hardwareId')
         if hardware_id:
             hardware_id = sanitize_string_input(hardware_id, 128)
             if not validate_hardware_id(hardware_id):
                 hardware_id = None
-                
+
         if not hardware_id:
             try:
                 hardware_id = get_enhanced_hardware_id()
@@ -3471,24 +3749,24 @@ def validate_license_api():
                     "error": "Unable to generate hardware ID",
                     "code": "HARDWARE_ID_ERROR"
                 }), 500
-        
+
         # Get customer email and unlock token with validation
         customer_email = data.get('customerEmail')
         unlock_token = data.get('unlockToken')
-        
+
         # Sanitize inputs
         if customer_email:
             customer_email = sanitize_string_input(customer_email, 254)
             if not validate_email(customer_email):
                 customer_email = None
-                
+
         if unlock_token:
             unlock_token = sanitize_string_input(unlock_token, 512)  # Tokens can be longer
             if not unlock_token:
                 unlock_token = None
-        
+
+        # Try to get credentials from license file if not provided
         if not customer_email or not unlock_token:
-            # Try to get from license file
             try:
                 license_data = get_license_data()
                 if license_data:
@@ -3498,7 +3776,7 @@ def validate_license_api():
                             file_email = sanitize_string_input(file_email, 254)
                             if validate_email(file_email):
                                 customer_email = file_email
-                    
+
                     if not unlock_token:
                         file_token = license_data.get('unlock_token')
                         if file_token:
@@ -3507,105 +3785,73 @@ def validate_license_api():
                                 unlock_token = file_token
             except Exception as e:
                 app.logger.warning(f"Error reading license data for validation: {e}")
-        
-        if not customer_email or not unlock_token:
-            # Fall back to file-based validation
-            app.logger.info("No valid cloud credentials found, using file-based validation")
-            try:
-                trial_status = check_trial_status()
-                trial_status['cloud_validation'] = False
-                trial_status['validation_method'] = 'file_based'
-                return jsonify(trial_status)
-            except Exception as e:
-                app.logger.error(f"File-based validation failed: {e}")
-                return jsonify({
-                    "licensed": False,
-                    "subscription": False,
-                    "status": "error",
-                    "message": "License validation failed",
-                    "cloud_validation": False,
-                    "code": "VALIDATION_ERROR"
-                }), 500
-        
-        # Call Cloudflare Worker for validation
-        app.logger.info(f"Validating license for: {customer_email[:5]}*** via cloud")
-        response = call_cloudflare_api('/validate', {
-            'email': customer_email,
-            'unlockToken': unlock_token,
-            'machineFingerprint': hardware_id
-        })
-        
-        if response and response.get('success'):
-            # Save successful validation to encrypted cache
-            license_data = response.get('licenseData', {})
-            if license_data:
-                # Add the credentials to cache for future use
-                license_data.update({
-                    'customer_email': customer_email,
-                    'unlock_token': unlock_token,
-                    'hardware_id': hardware_id
-                })
-                _save_license_cache(license_data)
-                app.logger.info("License validation successful - saved to cache")
-            
-            return jsonify({
-                "licensed": True,
-                "subscription": True,
-                "status": "active",
-                "message": "License validated successfully",
-                "cloud_validation": True,
-                "validation_method": "cloud",
-                "code": "SUCCESS"
-            })
-            
-        elif response and response.get('error'):
-            error_msg = sanitize_string_input(str(response.get('error')), 200)
-            return jsonify({
-                "licensed": False,
-                "subscription": False, 
-                "status": "invalid",
-                "message": error_msg or "License validation failed",
-                "cloud_validation": True,
-                "validation_method": "cloud",
-                "code": "INVALID_LICENSE"
-            })
-            
+
+        # Use unified license controller for validation
+        app.logger.info("Using unified license controller for license validation")
+
+        if customer_email and unlock_token:
+            # Validate with cloud using unified controller
+            app.logger.info(f"Validating license for: {customer_email[:5]}*** via unified controller")
+            result = validate_license_integrated(customer_email, unlock_token, hardware_id)
+
+            # Add API metadata
+            result['_api_endpoint'] = 'validate_license'
+            result['_unified_system'] = True
+            result['_timestamp'] = datetime.now().isoformat()
+
+            # Return appropriate HTTP status
+            if result.get('licensed') and result.get('active'):
+                return jsonify(result), 200
+            elif 'error' in result:
+                return jsonify(result), 400
+            else:
+                return jsonify(result), 200
+
         else:
-            # Fallback to file-based validation
-            app.logger.warning("Cloud validation returned no clear response, falling back to file-based")
-            try:
-                trial_status = check_trial_status()
-                trial_status['cloud_validation'] = False
-                trial_status['validation_method'] = 'file_based_fallback'
-                return jsonify(trial_status)
-            except Exception as e:
-                app.logger.error(f"File-based fallback validation failed: {e}")
-                return jsonify({
-                    "licensed": False,
-                    "subscription": False,
-                    "status": "error",
-                    "message": "All validation methods failed",
-                    "cloud_validation": False,
-                    "code": "FALLBACK_ERROR"
-                }), 500
-        
+            # No credentials available - use unified system for file-based validation
+            app.logger.info("No cloud credentials found, using unified system for file-based validation")
+            result = get_license_status_safe(force_refresh=True, context="api_validate_license_no_credentials")
+
+            # Add API metadata
+            result['cloud_validation'] = False
+            result['validation_method'] = 'file_based_unified'
+            result['_api_endpoint'] = 'validate_license'
+            result['_unified_system'] = True
+            result['_timestamp'] = datetime.now().isoformat()
+
+            return jsonify(result), 200
+
     except Exception as e:
-        app.logger.error(f"License validation error: {e}")
-        # Always fallback to file-based validation on error
+        app.logger.error(f"Unified license validation error: {e}")
+
+        # Emergency fallback using unified system
         try:
-            trial_status = check_trial_status()
-            trial_status['cloud_validation'] = False
-            trial_status['validation_method'] = 'file_based_error_fallback'
-            return jsonify(trial_status)
+            result = get_license_status_safe(force_refresh=True, context="api_validate_license_error")
+            result['cloud_validation'] = False
+            result['validation_method'] = 'unified_error_fallback'
+            result['_api_endpoint'] = 'validate_license'
+            result['_unified_system'] = True
+            result['_error'] = str(e)
+            result['_timestamp'] = datetime.now().isoformat()
+
+            return jsonify(result), 500
+
         except Exception as fallback_error:
-            app.logger.error(f"Emergency fallback validation failed: {fallback_error}")
+            app.logger.critical(f"Critical: Unified system emergency fallback failed: {fallback_error}")
             return jsonify({
                 "licensed": False,
+                "active": False,
                 "subscription": False,
-                "status": "error", 
-                "message": "License validation system error",
+                "status": "error",
+                "message": "License validation system unavailable",
                 "cloud_validation": False,
-                "code": "SYSTEM_ERROR"
+                "validation_method": "critical_error",
+                "_api_endpoint": "validate_license",
+                "_unified_system": False,
+                "_error": str(e),
+                "_fallback_error": str(fallback_error),
+                "_timestamp": datetime.now().isoformat(),
+                "code": "CRITICAL_SYSTEM_ERROR"
             }), 500
 
 @app.route('/api/system_status')
@@ -3662,51 +3908,69 @@ def get_system_status():
     return jsonify(status)
 
 def get_enhanced_hardware_id():
-    """Get enhanced hardware fingerprint using multiple identifiers - EXACT MATCH to license generator"""
+    """
+    Get enhanced hardware fingerprint using multiple identifiers - STANDARDIZED VERSION
+    This function has been standardized to match the unified algorithm from license_controller
+    to eliminate false "Computer Changed" emails after application rebuilds.
+
+    Returns the full 64-character SHA256 hash (not truncated) for consistency.
+    """
     import subprocess
     import platform
-    
-    # Get MAC address (FIXED - correct bit shifting)
-    mac_node = uuid.getnode()
-    mac = ':'.join(f'{(mac_node >> (8 * (5-i))) & 0xff:02x}' for i in range(6))
-    
-    # Get CPU info (EXACT match to license generator)
+
     try:
-        cpu_info = platform.processor()
-        if not cpu_info:
-            cpu_info = platform.machine()
-    except:
-        cpu_info = "UNKNOWN"
-    
-    # Get disk serial (EXACT match to license generator)
-    disk_serial = "UNKNOWN"
-    try:
-        result = subprocess.run(['wmic', 'diskdrive', 'where', 'index=0', 'get', 'serialnumber'], 
-                              capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-        if result.returncode == 0:
-            lines = result.stdout.strip().split('\n')
-            if len(lines) > 1:
-                disk_serial = lines[1].strip()
+        # Get MAC address (unified algorithm - primary identifier)
+        mac = ':'.join(['{:02x}'.format((uuid.getnode() >> i) & 0xff) for i in range(0, 8*6, 8)][::-1])
+
+        # Get CPU info (EXACT match to unified algorithm)
+        try:
+            cpu_info = platform.processor()
+            if not cpu_info:
+                result = subprocess.run(['wmic', 'cpu', 'get', 'name'],
+                                      capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+                cpu_info = result.stdout.split('\n')[1].strip() if result.stdout else 'Unknown'
+        except:
+            cpu_info = 'Unknown'
+
+        # Get disk serial (EXACT match to unified algorithm)
+        disk_serial = 'Unknown'
+        try:
+            result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'],
+                                  capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+            if result.stdout:
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and line != 'SerialNumber':
+                        disk_serial = line
+                        break
+        except:
+            pass
+
+        # Get Windows ID (EXACT match to unified algorithm)
+        windows_id = 'Unknown'
+        try:
+            result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'],
+                                  capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+            if result.stdout:
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line and line != 'UUID':
+                        windows_id = line
+                        break
+        except:
+            pass
+
+        # Combine all identifiers and hash (EXACT same as unified algorithm)
+        combined = f"{mac}|{cpu_info}|{disk_serial}|{windows_id}"
+        hardware_id = hashlib.sha256(combined.encode()).hexdigest()  # Full 64-char hash, not truncated
+
+        return hardware_id
+
     except Exception as e:
-        pass
-    
-    # Get Windows ID (EXACT match to license generator)
-    win_id = "UNKNOWN"
-    try:
-        result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'], 
-                              capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
-        if result.returncode == 0:
-            lines = result.stdout.strip().split('\n')
-            if len(lines) > 1:
-                win_id = lines[1].strip()
-    except Exception as e:
-        pass
-    
-    # Combine all identifiers and hash (EXACT same as license generator)
-    combined = f"{mac}|{cpu_info}|{disk_serial}|{win_id}"
-    enhanced_id = hashlib.sha256(combined.encode()).hexdigest()[:16]
-    
-    return enhanced_id
+        app.logger.error(f"Error generating hardware ID: {e}")
+        return "hardware_id_generation_failed"
 
 # --- License Cache Encryption Utilities ---
 def _get_license_encryption_key():
@@ -3768,8 +4032,8 @@ def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, time
         # Prepare validation data
         validation_data = {
             'email': customer_email,
-            'unlockToken': unlock_token,
-            'hardwareId': hardware_id
+            'token': unlock_token,
+            'machineFingerprint': hardware_id
         }
         
         # Call cloud validation with timeout
@@ -3778,13 +4042,27 @@ def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, time
         if not response:
             return False, None, "No response from cloud validation service"
             
-        if response.get('success'):
-            license_data = response.get('licenseData', {})
-            if license_data:
-                app.logger.info(f"Cloud validation successful for {customer_email[:5]}***")
-                return True, license_data, None
-            else:
-                return False, None, "Cloud validation succeeded but no license data returned"
+        if response.get('valid'):
+            # The worker returns the license data directly in the response
+            license_data = {
+                'customer_email': customer_email,
+                'unlock_token': unlock_token,
+                'hardware_id': hardware_id,
+                'customer_name': response.get('customerName', ''),
+                'customer_id': response.get('customerId', ''),
+                'subscription_info': response.get('subscriptionInfo', {}),
+                'validated_at': response.get('validatedAt', '')
+            }
+            
+            # Extract subscription details if available
+            subscription_info = response.get('subscriptionInfo', {})
+            if subscription_info:
+                license_data['valid_until'] = subscription_info.get('validUntil')
+                license_data['subscription_id'] = subscription_info.get('subscriptionId')
+                license_data['subscription_status'] = subscription_info.get('status')
+                
+            app.logger.info(f"Cloud validation successful for {customer_email[:5]}***")
+            return True, license_data, None
         else:
             error_msg = response.get('error', 'Unknown cloud validation error')
             app.logger.warning(f"Cloud validation failed: {error_msg}")
@@ -3867,8 +4145,23 @@ def _load_license_cache():
             
         # Verify hardware ID matches (cache is machine-specific)
         current_hw_id = get_enhanced_hardware_id()
-        if cache_data['hardware_id'] != current_hw_id:
-            app.logger.warning("License cache hardware ID mismatch - cache invalid")
+        cached_hw_id = cache_data['hardware_id']
+
+        if cached_hw_id != current_hw_id:
+            # Enhanced logging for fingerprint mismatch debugging
+            app.logger.warning(f"License cache hardware ID mismatch - cache invalid")
+            app.logger.warning(f"Cached hardware ID: {cached_hw_id}")
+            app.logger.warning(f"Current hardware ID: {current_hw_id}")
+            app.logger.warning(f"Cached ID length: {len(cached_hw_id)}, Current ID length: {len(current_hw_id)}")
+
+            # Check if this might be a legacy vs unified algorithm mismatch
+            if len(cached_hw_id) == 16 and len(current_hw_id) == 64:
+                app.logger.warning("Detected legacy (16-char) vs unified (64-char) hardware ID mismatch")
+                app.logger.warning("This indicates the cache was created with the old algorithm")
+            elif len(cached_hw_id) == 64 and len(current_hw_id) == 16:
+                app.logger.warning("Detected unified (64-char) vs legacy (16-char) hardware ID mismatch")
+                app.logger.warning("This should not happen with the standardized implementation")
+
             return None
             
         app.logger.info("License cache loaded successfully")
@@ -3938,6 +4231,9 @@ def get_hardware_id():
     # Return enhanced hardware ID
     hw_id = get_enhanced_hardware_id()
     return jsonify({"hardware_id": hw_id})
+
+# Alias for backward compatibility
+get_hardware_fingerprint = get_enhanced_hardware_id
     
 
 # --- NEW ENDPOINTS FOR REPRINT ---
@@ -4926,6 +5222,22 @@ if __name__ == '__main__':
                     sys.exit(1)
 
             initialize_trial()
+            
+            # Initialize license integration system
+            if UNIFIED_LICENSES_ENABLED:
+                try:
+                    license_init_success = initialize_license_integration(
+                        app, app.logger, DATA_DIR, PROGRAM_DATA_DIR, 
+                        BASE_DIR, str(APP_SECRET_KEY), call_cloudflare_api
+                    )
+                    if license_init_success:
+                        app.logger.info("License integration system initialized successfully")
+                    else:
+                        app.logger.warning("License integration system failed to initialize")
+                except Exception as e:
+                    app.logger.error(f"License integration initialization error: {e}")
+                    UNIFIED_LICENSES_ENABLED = False
+            
             # Log the data directory that was found
             app.logger.info(f"POSPal startup: Using data directory: {DATA_DIR}")
             app.logger.info(f"POSPal startup: Menu file path: {MENU_FILE}")
@@ -5032,10 +5344,14 @@ if __name__ == '__main__':
     if getattr(sys, 'frozen', False):
         threading.Thread(target=_open_browser_when_ready, daemon=True).start()
     
-    # Start Waitress server with graceful shutdown capability
+    # Start Waitress server with proper instance management
     try:
+        from waitress.server import create_server
+
         app.logger.info("Starting Waitress server with graceful shutdown support...")
-        serve(app, host='0.0.0.0', port=config.get('port', 5000))
+        _server_instance = create_server(app, host='0.0.0.0', port=config.get('port', 5000))
+        app.logger.info(f"Server created on port {config.get('port', 5000)}")
+        _server_instance.run()  # This blocks until shutdown
     except KeyboardInterrupt:
         app.logger.info("KeyboardInterrupt received, shutting down gracefully...")
         shutdown_server()
