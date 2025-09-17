@@ -78,7 +78,9 @@
       "Bash(npm run:*)",
       "Bash(del test_algorithm_comparison.py)",
       "Bash(netstat:*)",
-      "Bash(do echo \"Test $i:\")"
+      "Bash(do echo \"Test $i:\")",
+      "Bash(npm init:*)",
+      "Bash(cmd //c:*)"
     ],
     "deny": [],
     "ask": []

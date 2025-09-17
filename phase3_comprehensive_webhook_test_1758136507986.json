@@ -1,0 +1,139 @@
+{
+  "timestamp": "2025-09-17T19:14:52.267Z",
+  "testSuite": "Phase 3 Webhook Idempotency Protection",
+  "tests": {
+    "duplicatePrevention": {
+      "passed": true,
+      "details": {
+        "eventId": "evt_duplicate_1758136492287",
+        "firstResponseTime": 552,
+        "avgIdempotentTime": 4,
+        "speedImprovement": true,
+        "duplicatesDetected": 4,
+        "totalAttempts": 5,
+        "responseStatuses": [
+          500,
+          200,
+          200,
+          200,
+          200
+        ]
+      },
+      "timestamp": "2025-09-17T19:14:53.913Z"
+    },
+    "concurrentProtection": {
+      "passed": false,
+      "details": {
+        "eventId": "evt_concurrent_1758136492288",
+        "totalRequests": 8,
+        "successfulResponses": 7,
+        "processingResponses": 1,
+        "duplicateResponses": 7,
+        "totalTime": 541,
+        "avgResponseTime": 162,
+        "responseStatuses": [
+          {
+            "status": 500,
+            "duplicate": false
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          },
+          {
+            "status": 200,
+            "duplicate": true
+          }
+        ]
+      },
+      "timestamp": "2025-09-17T19:14:52.829Z"
+    },
+    "eventTracking": {
+      "passed": true,
+      "details": {
+        "eventId": "evt_tracking_1758136492290",
+        "initialResponse": {
+          "status": 500,
+          "responseTime": 552
+        },
+        "duplicateResponse": {
+          "status": 200,
+          "idempotent": true,
+          "hasTimestamp": true,
+          "responseTime": 4
+        }
+      },
+      "timestamp": "2025-09-17T19:14:53.856Z"
+    },
+    "errorRecovery": {
+      "passed": true,
+      "details": {
+        "scenarios": 2,
+        "allHandled": true,
+        "results": [
+          {
+            "scenario": "missing_customer_details",
+            "errorHandled": true,
+            "retryIdempotent": true,
+            "errorStatus": 400,
+            "retryStatus": 200
+          },
+          {
+            "scenario": "invalid_event_type",
+            "errorHandled": true,
+            "retryIdempotent": true,
+            "errorStatus": 200,
+            "retryStatus": 200
+          }
+        ]
+      },
+      "timestamp": "2025-09-17T19:14:53.455Z"
+    },
+    "performanceImpact": {
+      "passed": false,
+      "details": {
+        "iterations": 50,
+        "avgNewEventTime": 273,
+        "avgDuplicateTime": 3,
+        "overhead": 270,
+        "maxAcceptableOverhead": 100,
+        "newEventStats": {
+          "min": 247,
+          "max": 554,
+          "median": 265
+        },
+        "duplicateStats": {
+          "min": 2,
+          "max": 10,
+          "median": 3
+        }
+      },
+      "timestamp": "2025-09-17T19:15:07.986Z"
+    }
+  },
+  "summary": {
+    "total": 5,
+    "passed": 3,
+    "failed": 2
+  }
+}

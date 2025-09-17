@@ -1,0 +1,16 @@
+{
+  "type": "checkout.session.completed",
+  "data": {
+    "object": {
+      "id": "cs_test_phase2_billing_1234567890",
+      "customer": "cus_test_phase2_customer",
+      "subscription": "sub_test_phase2_subscription",
+      "customer_details": {
+        "email": "phase2test@pospal.test",
+        "name": "Phase 2 Test Customer"
+      },
+      "mode": "subscription",
+      "payment_method_types": ["card"]
+    }
+  }
+}

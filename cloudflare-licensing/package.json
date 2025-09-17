@@ -10,7 +10,21 @@
     "db:create": "wrangler d1 create pospal-subscriptions",
     "db:execute": "wrangler d1 execute pospal-subscriptions --env production --file=schema.sql",
     "db:execute-dev": "wrangler d1 execute pospal-subscriptions-dev --env development --file=schema.sql",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:webhooks": "node test-webhook-idempotency.js",
+    "test:webhooks:prod": "node test-webhook-idempotency.js production",
+    "monitor": "node webhook-monitoring.js",
+    "monitor:prod": "node webhook-monitoring.js --prod",
+    "monitor:recent": "node webhook-monitoring.js recent",
+    "monitor:failed": "node webhook-monitoring.js failed",
+    "monitor:stuck": "node webhook-monitoring.js stuck",
+    "monitor:stats": "node webhook-monitoring.js stats",
+    "cleanup": "node webhook-cleanup.js",
+    "cleanup:prod": "node webhook-cleanup.js --prod",
+    "cleanup:stuck": "node webhook-cleanup.js stuck",
+    "cleanup:duplicates": "node webhook-cleanup.js duplicates",
+    "db:query:dev": "wrangler d1 execute pospal-subscriptions-dev",
+    "db:query:prod": "wrangler d1 execute pospal-subscriptions --remote"
   },
   "keywords": [
     "cloudflare",

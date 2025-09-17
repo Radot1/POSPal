@@ -1,0 +1,9 @@
+{
+  "type": "invoice.payment_succeeded",
+  "data": {
+    "object": {
+      "subscription": "sub_test_phase2_subscription",
+      "customer_email": "phase2test@pospal.test"
+    }
+  }
+}

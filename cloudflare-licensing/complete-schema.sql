@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS customers (
   machine_fingerprint TEXT,
   subscription_status TEXT NOT NULL DEFAULT 'active' CHECK (subscription_status IN ('active', 'inactive', 'cancelled')),
   subscription_id TEXT, -- Stripe subscription ID
+  next_billing_date TEXT, -- Next billing date from Stripe
+  current_period_start TEXT, -- Current billing period start
+  current_period_end TEXT, -- Current billing period end
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
   last_validation DATETIME,
@@ -29,6 +32,8 @@ CREATE INDEX IF NOT EXISTS idx_customers_machine ON customers(machine_fingerprin
 CREATE INDEX IF NOT EXISTS idx_customers_status ON customers(subscription_status);
 CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers(created_at);
 CREATE INDEX IF NOT EXISTS idx_customers_last_seen ON customers(last_seen);
+CREATE INDEX IF NOT EXISTS idx_customers_next_billing ON customers(next_billing_date);
+CREATE INDEX IF NOT EXISTS idx_customers_period_end ON customers(current_period_end);
 
 -- ==============================================
 -- AUDIT LOG TABLE
@@ -194,6 +199,32 @@ CREATE TABLE IF NOT EXISTS schema_version (
   applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ==============================================
+-- WEBHOOK EVENTS TABLE (Phase 3)
+-- ==============================================
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stripe_event_id TEXT NOT NULL UNIQUE,
+    event_type TEXT NOT NULL,
+    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    processing_status TEXT DEFAULT 'completed' CHECK (processing_status IN ('processing', 'completed', 'failed')),
+    customer_id INTEGER,
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+);
+
+-- Indexes for webhook events table
+CREATE INDEX IF NOT EXISTS idx_webhook_events_stripe_id ON webhook_events(stripe_event_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_type ON webhook_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_processed_at ON webhook_events(processed_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_customer ON webhook_events(customer_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_status ON webhook_events(processing_status);
+
 -- Insert current schema version
-INSERT OR REPLACE INTO schema_version (version, description) 
+INSERT OR REPLACE INTO schema_version (version, description)
 VALUES (1, 'Initial complete schema with all tables, indexes, and constraints');
+
+INSERT OR REPLACE INTO schema_version (version, description)
+VALUES (3, 'Phase 3: Added webhook_events table for idempotency protection');

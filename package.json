@@ -1,0 +1,24 @@
+{
+  "name": "pospal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "advanced-notification-intelligence.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Radot1/POSPal.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Radot1/POSPal/issues"
+  },
+  "homepage": "https://github.com/Radot1/POSPal#readme",
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}

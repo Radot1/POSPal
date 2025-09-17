@@ -1,0 +1,187 @@
+{
+  "timestamp": "2025-09-17T17:00:47.581Z",
+  "summary": {
+    "totalTests": 12,
+    "passedTests": 10,
+    "failedTests": 2,
+    "successRate": 83,
+    "totalErrors": 0
+  },
+  "results": [
+    {
+      "timestamp": "2025-09-17T17:00:45.306Z",
+      "test": "Health Check",
+      "success": true,
+      "responseTime": 8,
+      "statusCode": 200,
+      "message": "All services healthy",
+      "details": {
+        "status": "healthy",
+        "circuitBreaker": {
+          "state": "CLOSED",
+          "failureCount": 0,
+          "lastFailureTime": null,
+          "nextAttempt": null
+        },
+        "services": {
+          "database": {
+            "status": "healthy",
+            "responseTime": 2
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.066Z",
+      "test": "Checkout Session - test.customer.1@example.com",
+      "success": true,
+      "responseTime": 758,
+      "statusCode": 200,
+      "message": "Checkout session created successfully",
+      "details": {
+        "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_b18caP8fObCTZrjsf0LTNtmkkMECiSJIaBQRkZeFnIN0O0A5UeSl4GRHuE#fidkdWxOYHwnPyd1blpxYHZxWjA0VjdnQko1YGAzbUJ3cDRVZlRddmJrM0RzRlV0QUJ0U3JfPERwSks2MnJLNkBUdXZJS0ZWRkhpdUlGMVA2fVNEYWQyf2JJN0ExbGNnUTRRVl1rNVVPcWdJNTVnNFIycn1fUScpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8naHBpcWxabHFgaCcpJ2BrZGdpYFVpZGZgbWppYWB3dic%2FcXdwYHgl",
+        "sessionId": "cs_test_b18caP8fObCTZrjsf0LTNtmkkMECiSJIaBQRkZeFnIN0O0A5UeSl4GRHuE",
+        "duplicate": false
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.565Z",
+      "test": "Checkout Session - test.customer.2@example.com",
+      "success": true,
+      "responseTime": 499,
+      "statusCode": 200,
+      "message": "Checkout session created successfully",
+      "details": {
+        "checkoutUrl": "https://checkout.stripe.com/c/pay/cs_test_b1i8pG5VdD5ehaOe3TzgJRG25wTuEG6lDvF35nl2AhvkR538ebeZhN6g9S#fidkdWxOYHwnPyd1blpxYHZxWjA0VjdnQko1YGAzbUJ3cDRVZlRddmJrM0RzRlV0QUJ0U3JfPERwSks2MnJLNkBUdXZJS0ZWRkhpdUlGMVA2fVNEYWQyf2JJN0ExbGNnUTRRVl1rNVVPcWdJNTVnNFIycn1fUScpJ2N3amhWYHdzYHcnP3F3cGApJ2dkZm5id2pwa2FGamlqdyc%2FJyZjY2NjY2MnKSdpZHxqcHFRfHVgJz8naHBpcWxabHFgaCcpJ2BrZGdpYFVpZGZgbWppYWB3dic%2FcXdwYHgl",
+        "sessionId": "cs_test_b1i8pG5VdD5ehaOe3TzgJRG25wTuEG6lDvF35nl2AhvkR538ebeZhN6g9S",
+        "duplicate": false
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.567Z",
+      "test": "Error Handling - Missing Fields",
+      "success": "Missing required fields: restaurantName, name, email",
+      "responseTime": 2,
+      "statusCode": 400,
+      "message": "Error handled correctly",
+      "details": {
+        "expectedStatus": 400,
+        "actualStatus": 400,
+        "errorMessage": "Missing required fields: restaurantName, name, email"
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.568Z",
+      "test": "Error Handling - Invalid Email",
+      "success": "Invalid email",
+      "responseTime": 1,
+      "statusCode": 400,
+      "message": "Error handled correctly",
+      "details": {
+        "expectedStatus": 400,
+        "actualStatus": 400,
+        "errorMessage": "Invalid email"
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.570Z",
+      "test": "Error Handling - Empty Fields",
+      "success": "Missing required fields: restaurantName, name, email",
+      "responseTime": 2,
+      "statusCode": 400,
+      "message": "Error handled correctly",
+      "details": {
+        "expectedStatus": 400,
+        "actualStatus": 400,
+        "errorMessage": "Missing required fields: restaurantName, name, email"
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.814Z",
+      "test": "Webhook Simulation",
+      "success": false,
+      "responseTime": 243,
+      "statusCode": 500,
+      "message": "Webhook processing failed",
+      "details": {
+        "webhookType": "checkout.session.completed",
+        "response": {
+          "error": "Failed to process checkout"
+        }
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.819Z",
+      "test": "License Validation - Valid License",
+      "success": false,
+      "responseTime": 5,
+      "statusCode": 200,
+      "message": "Unexpected validation result",
+      "details": {
+        "expected": true,
+        "actual": false,
+        "errorCode": "INVALID_CREDENTIALS"
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.826Z",
+      "test": "License Validation - Invalid Token",
+      "success": true,
+      "responseTime": 6,
+      "statusCode": 200,
+      "message": "Validation result as expected",
+      "details": {
+        "expected": false,
+        "actual": false,
+        "errorCode": "INVALID_CREDENTIALS"
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:46.833Z",
+      "test": "License Validation - Invalid Email",
+      "success": true,
+      "responseTime": 6,
+      "statusCode": 200,
+      "message": "Validation result as expected",
+      "details": {
+        "expected": false,
+        "actual": false,
+        "errorCode": "INVALID_CREDENTIALS"
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:47.561Z",
+      "test": "Performance - Concurrent Checkout Sessions",
+      "success": true,
+      "responseTime": 728,
+      "statusCode": 200,
+      "message": "5/5 requests successful",
+      "details": {
+        "totalTime": 728,
+        "avgResponseTime": 670,
+        "successRate": 100,
+        "concurrency": 5
+      }
+    },
+    {
+      "timestamp": "2025-09-17T17:00:47.580Z",
+      "test": "Performance - Concurrent Health Checks",
+      "success": true,
+      "responseTime": 19,
+      "statusCode": 200,
+      "message": "10/10 requests successful",
+      "details": {
+        "totalTime": 19,
+        "avgResponseTime": 11,
+        "successRate": 100,
+        "concurrency": 10
+      }
+    }
+  ],
+  "errors": [],
+  "performanceMetrics": {
+    "average": 190,
+    "min": 1,
+    "max": 758
+  }
+}
