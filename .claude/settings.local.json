@@ -80,7 +80,14 @@
       "Bash(netstat:*)",
       "Bash(do echo \"Test $i:\")",
       "Bash(npm init:*)",
-      "Bash(cmd //c:*)"
+      "Bash(cmd //c:*)",
+      "WebFetch(domain:pospal.gr)",
+      "Read(//c/Users/bzoum/Downloads/**)",
+      "WebFetch(domain:bringfood.gr)",
+      "WebFetch(domain:witec.gr)",
+      "WebFetch(domain:www.servitwra.gr)",
+      "WebFetch(domain:www.simplelivepos.com)",
+      "WebFetch(domain:localhost)"
     ],
     "deny": [],
     "ask": []
