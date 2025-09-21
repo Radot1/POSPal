@@ -87,7 +87,10 @@
       "WebFetch(domain:witec.gr)",
       "WebFetch(domain:www.servitwra.gr)",
       "WebFetch(domain:www.simplelivepos.com)",
-      "WebFetch(domain:localhost)"
+      "WebFetch(domain:localhost)",
+      "WebFetch(domain:menus-5ar.pages.dev)",
+      "WebFetch(domain:menus-api.bzoumboulis.workers.dev)",
+      "Bash(unset:*)"
     ],
     "deny": [],
     "ask": []

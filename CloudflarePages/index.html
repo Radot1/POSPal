@@ -63,10 +63,31 @@
     }
 
     .content { padding-top: 16px; }
+    #content { min-height: 200px; }
     .loading, .error { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 8px; }
 
     /* Category navigation */
-    .category-nav { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .category-nav {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px;
+    }
+    .category-nav::-webkit-scrollbar {
+      height: 4px;
+    }
+    .category-nav::-webkit-scrollbar-track {
+      background: var(--rule);
+      border-radius: 2px;
+    }
+    .category-nav::-webkit-scrollbar-thumb {
+      background: var(--brand-green);
+      border-radius: 2px;
+    }
     .category-btn { 
       background: var(--card); 
       border: 1px solid var(--rule); 
@@ -82,60 +103,208 @@
     .category-btn:hover { background: rgba(22, 163, 74, 0.1); border-color: var(--brand-green); }
     .category-btn.active { background: var(--brand-green); color: white; border-color: var(--brand-green); }
 
-    /* Simple category styling */
-    .category { margin-top: 16px; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+    /* Cleaner category styling - no boxes */
+    .category {
+      margin-top: 24px;
+      padding: 0;
+    }
     .category.hidden { display: none; }
-    h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--brand-green); text-transform: uppercase; letter-spacing: .04em; }
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0 0 20px;
+      color: var(--brand-green);
+      text-transform: none;
+      letter-spacing: normal;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--brand-green);
+      display: block;
+      text-align: left;
+    }
 
-    .item { display: flex; align-items: center; gap: 10px; padding: 10px 0; transition: all 0.2s ease; }
-    .item + .item { border-top: 1px dashed var(--rule); }
-    .item-content { flex: 1; min-width: 0; }
-    .item-name { 
-      font-size: 15px; 
-      font-weight: 500; 
-      color: var(--text); 
-      margin: 0;
+    .item {
+      display: block;
+      padding: 20px;
+      margin-bottom: 48px;
+      transition: all 0.3s ease;
+      border-bottom: 1px solid var(--rule);
+      background: var(--card);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .item:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+
+    .item-main {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 12px;
+      min-height: 48px;
+    }
+
+    .item-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .item-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 6px 0;
+      line-height: 1.3;
+    }
+
+    .item-description {
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0 0 8px 0;
+    }
+
+    .item-details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .prep-time {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--muted);
+      background: none;
+      padding: 0;
+      border-radius: 0;
+      font-weight: 500;
+    }
+
+    .dietary-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .dietary-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 16px;
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .dietary-tag.vegan {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .dietary-tag.vegetarian {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .dietary-tag.gluten_free {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+
+    .dietary-tag.dairy_free {
+      background: #fce7f3;
+      color: #be185d;
+    }
+
+    .dietary-tag.popular {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .dietary-tag.spicy {
+      background: #fed7d7;
+      color: #c53030;
+    }
+
+    .allergen-section {
+      margin-top: 8px;
+    }
+
+    .allergen-warning {
       display: flex;
       align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #dc2626;
+      background: #fef2f2;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #fecaca;
+      width: fit-content;
+    }
+
+    .allergen-warning-icon {
+      font-size: 12px;
+    }
+
+    .price-section {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
       gap: 8px;
+      flex-shrink: 0;
+      min-width: 120px;
     }
-    
-    /* Clickable items with options styling */
-    .item.has-options {
-      cursor: pointer;
-      padding: 12px 16px;
-      margin: 0 -16px;
-      border-radius: var(--radius);
-      background: linear-gradient(135deg, rgba(22, 163, 74, 0.03) 0%, rgba(22, 163, 74, 0.08) 100%);
-      border-left: 3px solid var(--brand-green);
-      position: relative;
+
+    .price {
+      font-weight: 700;
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      color: var(--brand-green);
+      white-space: nowrap;
+      background: none;
+      padding: 0;
+      border-radius: 0;
+      min-width: auto;
+      text-align: right;
     }
-    .item.has-options:hover {
-      background: linear-gradient(135deg, rgba(22, 163, 74, 0.08) 0%, rgba(22, 163, 74, 0.15) 100%);
-      transform: translateX(2px);
-      box-shadow: var(--shadow);
-    }
-    
+
     .has-options-badge {
       display: inline-flex;
       align-items: center;
       background: var(--brand-green);
       color: white;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 12px;
-      box-shadow: 0 1px 3px rgba(22, 163, 74, 0.3);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 16px;
+      box-shadow: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
     }
-    .dots { flex: 1 1 auto; border-bottom: 1px dotted var(--rule); transform: translateY(-2px); opacity: .8; }
-    .price { 
-      font-weight: 700; 
-      font-size: 15px; 
-      color: var(--brand-green); 
-      white-space: nowrap;
-      background: rgba(22, 163, 74, 0.1);
-      padding: 4px 8px;
-      border-radius: 4px;
+
+    .has-options-badge:hover {
+      background: #059669;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3);
+    }
+
+    .has-options-badge:active {
+      transform: scale(0.95);
+    }
+
+    /* Ensure items with options have same styling as regular items */
+    .item.has-options {
+      /* No overrides - inherit all styling from .item */
     }
 
     /* Simple footer */
@@ -158,17 +327,11 @@
       text-decoration: underline;
     }
 
-    /* Subtle hover effects */
-    .category {
-      transition: box-shadow 0.2s ease;
-    }
-
-    .category:hover {
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    }
-
-    .item:hover {
-      background-color: rgba(22, 163, 74, 0.05);
+    /* Subtle hover effects - only on devices that support hover */
+    @media (hover: hover) {
+      .item:hover {
+        background-color: rgba(22, 163, 74, 0.02);
+      }
     }
 
     /* Modal styles */
@@ -260,6 +423,147 @@
       .item:hover { background-color: rgba(22, 163, 74, 0.1); }
       .category-btn:hover { background: rgba(22, 163, 74, 0.2); }
       .modal-option-price.negative { color: #f87171; }
+
+      /* Dark mode dietary tags */
+      .dietary-tag.vegan {
+        background: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+      }
+
+      .dietary-tag.vegetarian {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+      }
+
+      .dietary-tag.gluten_free {
+        background: rgba(99, 102, 241, 0.2);
+        color: #a5b4fc;
+      }
+
+      .dietary-tag.dairy_free {
+        background: rgba(236, 72, 153, 0.2);
+        color: #f9a8d4;
+      }
+
+      .dietary-tag.popular {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+
+      .dietary-tag.spicy {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+
+      .allergen-warning {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+        border-color: rgba(239, 68, 68, 0.3);
+      }
+
+      .prep-time {
+        background: none;
+      }
+    }
+
+    /* Mobile responsive enhancements */
+    @media (max-width: 640px) {
+      body {
+        padding: 12px;
+      }
+
+      .wrap {
+        max-width: 100%;
+      }
+
+      .header {
+        padding: 16px 0;
+      }
+
+      h1 {
+        font-size: 20px;
+      }
+
+      .category {
+        padding: 0;
+        margin-top: 20px;
+      }
+
+      .item {
+        padding: 14px 0;
+      }
+
+      .item.has-options {
+        padding: 14px 0;
+        margin: 0;
+      }
+
+      .item-main {
+        gap: 12px;
+      }
+
+      .item-name {
+        font-size: 15px;
+      }
+
+      .item-description {
+        font-size: 13px;
+      }
+
+      .price {
+        font-size: 18px;
+        padding: 0;
+        min-width: auto;
+      }
+
+      .dietary-tag {
+        font-size: 10px;
+        padding: 2px 6px;
+      }
+
+      .prep-time {
+        font-size: 11px;
+        padding: 2px 6px;
+      }
+
+      .allergen-warning {
+        font-size: 10px;
+        padding: 3px 6px;
+      }
+
+      .category-nav {
+        gap: 6px;
+        margin-top: 12px;
+      }
+
+      .category-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+
+      .modal {
+        margin: 12px;
+        padding: 20px;
+      }
+    }
+
+    /* Touch optimization */
+    @media (hover: none) and (pointer: coarse) {
+      .category-btn {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .item.has-options {
+        min-height: 44px;
+      }
+
+      .modal-close {
+        min-width: 44px;
+        min-height: 44px;
+      }
     }
   </style>
 </head>
@@ -270,26 +574,10 @@
       <h1 id="title">Menu</h1>
     </div>
     <div class="content">
-      <div id="content" class="loading">Loading...</div>
+      <div id="content"></div>
     </div>
     <div class="footer">
       <div>Powered by <a href="https://pospal.gr/" target="_blank">POSPal</a> - Modern Point of Sale System</div>
-      
-      <!-- Restaurant Owner CTA -->
-      <div style="margin-top: 20px; padding: 20px; background: linear-gradient(135deg, rgba(22, 163, 74, 0.05) 0%, rgba(22, 163, 74, 0.15) 100%); border-radius: 8px; border: 1px solid rgba(22, 163, 74, 0.2);">
-        <h3 style="margin: 0 0 10px; color: var(--brand-green); font-size: 16px;">🍽️ Restaurant Owner?</h3>
-        <p style="margin: 0 0 15px; color: var(--muted); font-size: 14px; line-height: 1.5;">
-          Get POSPal for your restaurant! Complete POS system with menu management, printing, analytics, and online ordering.
-        </p>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
-          <a href="https://pospal.gr/buy-license.html" style="background: var(--brand-green); color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.3s;" onmouseover="this.style.background='#15803d'; this.style.transform='translateY(-2px)'" onmouseout="this.style.background='var(--brand-green)'; this.style.transform='translateY(0)'">
-            <span>💳</span> Buy License - €290
-          </a>
-          <a href="https://pospal.gr/download" style="background: transparent; color: var(--brand-green); padding: 10px 20px; border: 2px solid var(--brand-green); border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; transition: all 0.3s;" onmouseover="this.style.background='rgba(22, 163, 74, 0.1)'" onmouseout="this.style.background='transparent'">
-            <span>📱</span> Free Trial
-          </a>
-        </div>
-      </div>
     </div>
   </div>
   
@@ -322,20 +610,62 @@
       title.textContent = slug ? `Menu – ${slug}` : 'Menu';
       if (!slug) { content.textContent = 'No store selected.'; return; }
 
+      // Add delay before showing loading state
+      let loadingTimer = setTimeout(() => {
+        content.className = 'loading';
+        content.textContent = 'Loading...';
+      }, 200); // Only show loading after 200ms
+
       try {
-        const res = await fetch(`${API_BASE}/v1/stores/${encodeURIComponent(slug)}/menu`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res = await fetch(`${API_BASE}/v1/stores/${encodeURIComponent(slug)}/menu`, {
+          cache: 'default'
+        });
+        clearTimeout(loadingTimer); // Cancel loading display if fetch completes quickly
+
+        if (!res.ok) {
+          content.className = 'error';
+          if (res.status === 404) {
+            content.textContent = 'Menu not found. Please check the URL.';
+          } else if (!navigator.onLine) {
+            content.textContent = 'No internet connection. Please try again.';
+          } else {
+            content.textContent = `Failed to load menu (Error ${res.status})`;
+          }
+          return;
+        }
+
         const menu = await res.json();
         render(menu);
       } catch (e) {
+        clearTimeout(loadingTimer); // Cancel loading display on error
         content.className = 'error';
-        content.textContent = 'Failed to load menu.';
+
+        // Check for network-related errors
+        console.error('Fetch error:', e.name, e.message, e);
+        if (!navigator.onLine) {
+          content.textContent = 'No internet connection. Please try again.';
+        } else if (e.name === 'TypeError' && e.message.includes('fetch')) {
+          content.textContent = `Network error: ${e.message}. Please check your connection.`;
+        } else {
+          content.textContent = `Failed to load menu: ${e.message}. Please try again.`;
+        }
       }
     }
 
     let currentCategory = null;
+    let dynamicEventListeners = []; // Store dynamic event listeners for cleanup
+
+    function cleanupEventListeners() {
+      // Remove all stored event listeners
+      dynamicEventListeners.forEach(({ element, event, handler }) => {
+        element.removeEventListener(event, handler);
+      });
+      dynamicEventListeners = [];
+    }
 
     function render(menu) {
+      // Clean up previous event listeners
+      cleanupEventListeners();
       try {
         const content = document.getElementById('content');
         content.innerHTML = '';
@@ -359,8 +689,12 @@
         cats.forEach(cat => {
           const btn = document.createElement('button');
           btn.className = `category-btn ${cat === currentCategory ? 'active' : ''}`;
-          btn.textContent = cat;
-          btn.onclick = () => showCategory(cat, menu);
+          btn.textContent = cat.replace(/_/g, ' ');
+
+          const clickHandler = () => showCategory(cat, menu);
+          btn.addEventListener('click', clickHandler);
+          dynamicEventListeners.push({ element: btn, event: 'click', handler: clickHandler });
+
           navDiv.appendChild(btn);
         });
         
@@ -374,50 +708,134 @@
         categoryDiv.dataset.category = cat;
 
         const h2 = document.createElement('h2');
-        h2.textContent = cat;
+        h2.textContent = cat.replace(/_/g, ' ');
         categoryDiv.appendChild(h2);
 
         (menu[cat]||[]).forEach(it => {
           const item = document.createElement('div');
           const hasOptions = it.hasGeneralOptions && it.generalOptions && it.generalOptions.length > 0;
           item.className = hasOptions ? 'item has-options' : 'item';
-          
-          // Create item content section
+
+          // Create main item section with name/description and price/options
+          const itemMain = document.createElement('div');
+          itemMain.className = 'item-main';
+
+          // Create item content section (left side)
           const itemContent = document.createElement('div');
           itemContent.className = 'item-content';
-          
-          // Create item name with optional badge
-          const itemName = document.createElement('div');
+
+          // Create item name
+          const itemName = document.createElement('h3');
           itemName.className = 'item-name';
-          
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = it.name || '';
-          itemName.appendChild(nameSpan);
-          
-          if (hasOptions) {
-            const badge = document.createElement('span');
-            badge.className = 'has-options-badge';
-            badge.textContent = 'Add Extras';
-            itemName.appendChild(badge);
-            
-            // Add click handler for modal
-            item.onclick = () => showOptionsModal(it);
-          }
-          
+          itemName.textContent = it.name || '';
           itemContent.appendChild(itemName);
-          
-          // Create dots
-          const dots = document.createElement('div');
-          dots.className = 'dots';
-          
-          // Create price
+
+          // Create description if available
+          if (it.description) {
+            const description = document.createElement('p');
+            description.className = 'item-description';
+            description.textContent = it.description;
+            itemContent.appendChild(description);
+          }
+
+          // Create price section (right side)
+          const priceSection = document.createElement('div');
+          priceSection.className = 'price-section';
+
           const price = document.createElement('div');
           price.className = 'price';
           price.textContent = `€${Number(it.price||0).toFixed(2)}`;
-          
-          item.appendChild(itemContent);
-          item.appendChild(dots);
-          item.appendChild(price);
+          priceSection.appendChild(price);
+
+          // Add options button directly under price if available
+          if (hasOptions) {
+            const badge = document.createElement('span');
+            badge.className = 'has-options-badge';
+            badge.textContent = '+ Add Extras';
+
+            const badgeClickHandler = () => showOptionsModal(it);
+            badge.addEventListener('click', badgeClickHandler);
+            dynamicEventListeners.push({ element: badge, event: 'click', handler: badgeClickHandler });
+
+            priceSection.appendChild(badge);
+          }
+
+          itemMain.appendChild(itemContent);
+          itemMain.appendChild(priceSection);
+          item.appendChild(itemMain);
+
+          // Create details section (dietary tags and prep time only)
+          const itemDetails = document.createElement('div');
+          itemDetails.className = 'item-details';
+
+          // Add preparation time if available
+          if (it.prep_time) {
+            const prepTime = document.createElement('span');
+            prepTime.className = 'prep-time';
+            prepTime.innerHTML = `⏱️ ${it.prep_time} min`;
+            itemDetails.appendChild(prepTime);
+          }
+
+          // Add dietary tags if available
+          if (it.dietary_tags && it.dietary_tags.length > 0) {
+            const dietaryTags = document.createElement('div');
+            dietaryTags.className = 'dietary-tags';
+
+            it.dietary_tags.forEach(tag => {
+              const tagElement = document.createElement('span');
+              tagElement.className = `dietary-tag ${tag}`;
+
+              // Add icons for different dietary tags
+              let icon = '';
+              let text = tag.replace('_', ' ');
+              switch(tag) {
+                case 'vegan':
+                  icon = '🌱';
+                  break;
+                case 'vegetarian':
+                  icon = '🥬';
+                  break;
+                case 'gluten_free':
+                  icon = '🌾';
+                  text = 'gluten free';
+                  break;
+                case 'dairy_free':
+                  icon = '🥛';
+                  text = 'dairy free';
+                  break;
+                case 'popular':
+                  icon = '⭐';
+                  break;
+                case 'spicy':
+                  icon = '🌶️';
+                  break;
+              }
+
+              tagElement.innerHTML = `${icon} ${text}`;
+              dietaryTags.appendChild(tagElement);
+            });
+
+            itemDetails.appendChild(dietaryTags);
+          }
+
+          // Add details section if it has content
+          if (itemDetails.children.length > 0) {
+            item.appendChild(itemDetails);
+          }
+
+          // Add allergen warning as separate section if available
+          if (it.allergens && it.allergens.length > 0) {
+            const allergenSection = document.createElement('div');
+            allergenSection.className = 'allergen-section';
+
+            const allergenWarning = document.createElement('div');
+            allergenWarning.className = 'allergen-warning';
+            allergenWarning.innerHTML = `<span class="allergen-warning-icon">⚠️</span> Contains: ${it.allergens.join(', ')}`;
+
+            allergenSection.appendChild(allergenWarning);
+            item.appendChild(allergenSection);
+          }
+
           categoryDiv.appendChild(item);
         });
 
@@ -435,7 +853,7 @@
       
       // Update button states
       document.querySelectorAll('.category-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.textContent === categoryName);
+        btn.classList.toggle('active', btn.textContent === categoryName.replace(/_/g, ' '));
       });
       
       // Show/hide categories
@@ -485,12 +903,12 @@
       document.body.style.overflow = '';
     }
     
-    // Close modal when clicking overlay
-    document.getElementById('optionsModal').addEventListener('click', function(e) {
-      if (e.target === this) {
-        closeModal();
-      }
-    });
+    // Store modal event listener reference for proper cleanup
+    const modal = document.getElementById('optionsModal');
+    const modalClickHandler = (e) => {
+      if (e.target === modal) closeModal();
+    };
+    modal.addEventListener('click', modalClickHandler);
 
     load();
   </script>

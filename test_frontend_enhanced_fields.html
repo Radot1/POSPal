@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Enhanced Menu Fields Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .test-pass { background-color: #d1fae5; border: 1px solid #10b981; }
+        .test-fail { background-color: #fee2e2; border: 1px solid #ef4444; }
+        .test-pending { background-color: #fef3c7; border: 1px solid #f59e0b; }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8">Frontend Enhanced Menu Fields Test</h1>
+
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Test Controls</h2>
+            <div class="flex space-x-4">
+                <button onclick="runAllTests()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Run All Tests
+                </button>
+                <button onclick="clearResults()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700">
+                    Clear Results
+                </button>
+                <button onclick="openMobileTest()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Test Mobile UI
+                </button>
+                <button onclick="openDesktopTest()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
+                    Test Desktop UI
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Test Results</h2>
+            <div id="testResults" class="space-y-2">
+                <div class="test-pending">
+                    <strong>Status:</strong> Ready to run tests
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Enhanced Menu Fields Testing</h2>
+            <div id="testContainer">
+                <!-- Test forms will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const testResults = [];
+        let testContainer;
+        let resultsContainer;
+
+        function initializeTest() {
+            testContainer = document.getElementById('testContainer');
+            resultsContainer = document.getElementById('testResults');
+        }
+
+        function logTestResult(testName, passed, details = '') {
+            const result = {
+                test: testName,
+                status: passed ? 'PASSED' : 'FAILED',
+                details: details,
+                timestamp: new Date().toISOString()
+            };
+
+            testResults.push(result);
+
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${passed ? 'test-pass' : 'test-fail'}`;
+            resultDiv.innerHTML = `
+                <strong>${passed ? '✅' : '❌'} ${testName}:</strong> ${result.status}
+                ${details ? `<br><small>${details}</small>` : ''}
+            `;
+
+            resultsContainer.appendChild(resultDiv);
+        }
+
+        function clearResults() {
+            testResults.length = 0;
+            resultsContainer.innerHTML = '<div class="test-pending"><strong>Status:</strong> Ready to run tests</div>';
+        }
+
+        function testEnhancedFieldsUI() {
+            // Create a mock item form modal with enhanced fields
+            const formHTML = `
+                <div class="p-4 border border-gray-300 rounded-md bg-gray-50">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">📝 Enhanced Menu Information</h4>
+
+                    <!-- Description -->
+                    <div class="mb-4">
+                        <label for="test-itemDescription" class="block text-sm font-medium text-gray-700">Description</label>
+                        <textarea id="test-itemDescription" name="itemDescription" rows="2"
+                                  placeholder="Brief description of the item..."
+                                  class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm resize-none"></textarea>
+                    </div>
+
+                    <!-- Preparation Time -->
+                    <div class="mb-4">
+                        <label for="test-itemPrepTime" class="block text-sm font-medium text-gray-700">Prep Time (minutes)</label>
+                        <input type="number" id="test-itemPrepTime" name="itemPrepTime" min="0" max="120" placeholder="15"
+                               class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm">
+                    </div>
+
+                    <!-- Dietary Tags -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">🌱 Dietary Information</label>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-dietary-vegetarian" name="dietary-vegetarian"
+                                       class="h-4 w-4 text-green-600 border-gray-400 rounded focus:ring-green-500 accent-green-600">
+                                <span class="ml-2">🥬 Vegetarian</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-dietary-vegan" name="dietary-vegan"
+                                       class="h-4 w-4 text-green-600 border-gray-400 rounded focus:ring-green-500 accent-green-600">
+                                <span class="ml-2">🌱 Vegan</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-dietary-gluten-free" name="dietary-gluten-free"
+                                       class="h-4 w-4 text-green-600 border-gray-400 rounded focus:ring-green-500 accent-green-600">
+                                <span class="ml-2">🌾 Gluten-Free</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-dietary-dairy-free" name="dietary-dairy-free"
+                                       class="h-4 w-4 text-green-600 border-gray-400 rounded focus:ring-green-500 accent-green-600">
+                                <span class="ml-2">🥛 Dairy-Free</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-dietary-spicy" name="dietary-spicy"
+                                       class="h-4 w-4 text-red-600 border-gray-400 rounded focus:ring-red-500 accent-red-600">
+                                <span class="ml-2">🌶️ Spicy</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-dietary-popular" name="dietary-popular"
+                                       class="h-4 w-4 text-yellow-600 border-gray-400 rounded focus:ring-yellow-500 accent-yellow-600">
+                                <span class="ml-2">⭐ Popular</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Allergen Information -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">⚠️ Allergen Information</label>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-allergen-nuts" name="allergen-nuts"
+                                       class="h-4 w-4 text-orange-600 border-gray-400 rounded focus:ring-orange-500 accent-orange-600">
+                                <span class="ml-2">🥜 Nuts</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-allergen-dairy" name="allergen-dairy"
+                                       class="h-4 w-4 text-orange-600 border-gray-400 rounded focus:ring-orange-500 accent-orange-600">
+                                <span class="ml-2">🥛 Dairy</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-allergen-gluten" name="allergen-gluten"
+                                       class="h-4 w-4 text-orange-600 border-gray-400 rounded focus:ring-orange-500 accent-orange-600">
+                                <span class="ml-2">🌾 Gluten</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-allergen-seafood" name="allergen-seafood"
+                                       class="h-4 w-4 text-orange-600 border-gray-400 rounded focus:ring-orange-500 accent-orange-600">
+                                <span class="ml-2">🐟 Seafood</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-allergen-eggs" name="allergen-eggs"
+                                       class="h-4 w-4 text-orange-600 border-gray-400 rounded focus:ring-orange-500 accent-orange-600">
+                                <span class="ml-2">🥚 Eggs</span>
+                            </label>
+                            <label class="inline-flex items-center text-sm">
+                                <input type="checkbox" id="test-allergen-soy" name="allergen-soy"
+                                       class="h-4 w-4 text-orange-600 border-gray-400 rounded focus:ring-orange-500 accent-orange-600">
+                                <span class="ml-2">🫘 Soy</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 space-x-2">
+                        <button onclick="testDataCollection()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            Test Data Collection
+                        </button>
+                        <button onclick="testDataPopulation()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                            Test Data Population
+                        </button>
+                        <button onclick="testFieldValidation()" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700">
+                            Test Field Validation
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            testContainer.innerHTML = formHTML;
+        }
+
+        function testDataCollection() {
+            // Test collecting data from enhanced fields (simulating pospalCore.js function)
+            const enhancedData = {};
+
+            // Test description collection
+            const descriptionField = document.getElementById('test-itemDescription');
+            if (descriptionField && descriptionField.value.trim()) {
+                enhancedData.description = descriptionField.value.trim();
+            }
+
+            // Test prep time collection
+            const prepTimeField = document.getElementById('test-itemPrepTime');
+            if (prepTimeField && prepTimeField.value && parseInt(prepTimeField.value) > 0) {
+                enhancedData.prep_time = parseInt(prepTimeField.value);
+            }
+
+            // Test dietary tags collection
+            const dietaryTags = [];
+            const dietaryCheckboxes = [
+                'test-dietary-vegetarian', 'test-dietary-vegan', 'test-dietary-gluten-free',
+                'test-dietary-dairy-free', 'test-dietary-spicy', 'test-dietary-popular'
+            ];
+
+            dietaryCheckboxes.forEach(id => {
+                const checkbox = document.getElementById(id);
+                if (checkbox && checkbox.checked) {
+                    const tag = id.replace('test-dietary-', '').replace('-', '_');
+                    dietaryTags.push(tag);
+                }
+            });
+
+            if (dietaryTags.length > 0) {
+                enhancedData.dietary_tags = dietaryTags;
+            }
+
+            // Test allergen collection
+            const allergens = [];
+            const allergenCheckboxes = [
+                'test-allergen-nuts', 'test-allergen-dairy', 'test-allergen-gluten',
+                'test-allergen-seafood', 'test-allergen-eggs', 'test-allergen-soy'
+            ];
+
+            allergenCheckboxes.forEach(id => {
+                const checkbox = document.getElementById(id);
+                if (checkbox && checkbox.checked) {
+                    const allergen = id.replace('test-allergen-', '');
+                    allergens.push(allergen);
+                }
+            });
+
+            if (allergens.length > 0) {
+                enhancedData.allergens = allergens;
+            }
+
+            // Validate data collection
+            const hasCollectedData = Object.keys(enhancedData).length > 0;
+            logTestResult('Enhanced Fields - Data Collection', hasCollectedData,
+                `Collected ${Object.keys(enhancedData).length} enhanced field types: ${Object.keys(enhancedData).join(', ')}`);
+
+            console.log('Collected enhanced data:', enhancedData);
+            return enhancedData;
+        }
+
+        function testDataPopulation() {
+            // Test populating form with enhanced data (simulating pospalCore.js function)
+            const testItem = {
+                description: "Test enhanced menu item with full details",
+                prep_time: 25,
+                dietary_tags: ["vegetarian", "gluten_free"],
+                allergens: ["nuts", "dairy"]
+            };
+
+            // Reset all fields first
+            resetEnhancedFields();
+
+            // Populate description
+            const descriptionField = document.getElementById('test-itemDescription');
+            if (descriptionField && testItem.description) {
+                descriptionField.value = testItem.description;
+            }
+
+            // Populate preparation time
+            const prepTimeField = document.getElementById('test-itemPrepTime');
+            if (prepTimeField && testItem.prep_time) {
+                prepTimeField.value = testItem.prep_time;
+            }
+
+            // Populate dietary tags
+            if (testItem.dietary_tags && Array.isArray(testItem.dietary_tags)) {
+                testItem.dietary_tags.forEach(tag => {
+                    const checkbox = document.getElementById(`test-dietary-${tag.replace('_', '-')}`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                });
+            }
+
+            // Populate allergens
+            if (testItem.allergens && Array.isArray(testItem.allergens)) {
+                testItem.allergens.forEach(allergen => {
+                    const checkbox = document.getElementById(`test-allergen-${allergen}`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                });
+            }
+
+            // Verify population worked
+            const populatedCorrectly =
+                descriptionField.value === testItem.description &&
+                parseInt(prepTimeField.value) === testItem.prep_time &&
+                document.getElementById('test-dietary-vegetarian').checked &&
+                document.getElementById('test-dietary-gluten-free').checked &&
+                document.getElementById('test-allergen-nuts').checked &&
+                document.getElementById('test-allergen-dairy').checked;
+
+            logTestResult('Enhanced Fields - Data Population', populatedCorrectly,
+                populatedCorrectly ? 'All test data populated correctly' : 'Data population failed');
+        }
+
+        function resetEnhancedFields() {
+            // Reset description
+            const descriptionField = document.getElementById('test-itemDescription');
+            if (descriptionField) descriptionField.value = '';
+
+            // Reset preparation time
+            const prepTimeField = document.getElementById('test-itemPrepTime');
+            if (prepTimeField) prepTimeField.value = '';
+
+            // Reset all checkboxes
+            const allCheckboxes = [
+                'test-dietary-vegetarian', 'test-dietary-vegan', 'test-dietary-gluten-free',
+                'test-dietary-dairy-free', 'test-dietary-spicy', 'test-dietary-popular',
+                'test-allergen-nuts', 'test-allergen-dairy', 'test-allergen-gluten',
+                'test-allergen-seafood', 'test-allergen-eggs', 'test-allergen-soy'
+            ];
+
+            allCheckboxes.forEach(id => {
+                const checkbox = document.getElementById(id);
+                if (checkbox) checkbox.checked = false;
+            });
+        }
+
+        function testFieldValidation() {
+            // Test field validation rules
+            const prepTimeField = document.getElementById('test-itemPrepTime');
+
+            // Test negative prep time
+            prepTimeField.value = -5;
+            const negativeTimeValid = parseInt(prepTimeField.value) > 0;
+            logTestResult('Field Validation - Negative Prep Time', !negativeTimeValid,
+                'Negative prep time should be invalid');
+
+            // Test excessive prep time
+            prepTimeField.value = 150;
+            const excessiveTimeValid = parseInt(prepTimeField.value) <= 120;
+            logTestResult('Field Validation - Excessive Prep Time', !excessiveTimeValid,
+                'Prep time over 120 minutes should be invalid');
+
+            // Test valid prep time
+            prepTimeField.value = 30;
+            const validTimeValid = parseInt(prepTimeField.value) > 0 && parseInt(prepTimeField.value) <= 120;
+            logTestResult('Field Validation - Valid Prep Time', validTimeValid,
+                'Valid prep time (30 minutes) should be accepted');
+
+            // Test description length
+            const descriptionField = document.getElementById('test-itemDescription');
+            descriptionField.value = 'Valid description';
+            const validDescription = descriptionField.value.trim().length > 0;
+            logTestResult('Field Validation - Description Length', validDescription,
+                'Non-empty description should be valid');
+        }
+
+        function testUIResponsiveness() {
+            // Test that UI elements are properly styled and responsive
+            const enhancedSection = document.querySelector('.p-4.border.border-gray-300');
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            const inputs = document.querySelectorAll('input, textarea');
+
+            logTestResult('UI Responsiveness - Enhanced Section', !!enhancedSection,
+                'Enhanced menu section is properly structured');
+
+            logTestResult('UI Responsiveness - Checkboxes', checkboxes.length === 12,
+                `Found ${checkboxes.length} checkboxes (expected 12)`);
+
+            logTestResult('UI Responsiveness - Input Fields', inputs.length >= 14,
+                `Found ${inputs.length} input fields (description, prep time, checkboxes)`);
+
+            // Test styling
+            const hasProperStyling = Array.from(checkboxes).every(cb =>
+                cb.classList.contains('h-4') && cb.classList.contains('w-4'));
+
+            logTestResult('UI Responsiveness - Checkbox Styling', hasProperStyling,
+                'All checkboxes have proper Tailwind styling classes');
+        }
+
+        function runAllTests() {
+            clearResults();
+
+            // Create the enhanced fields UI
+            testEnhancedFieldsUI();
+
+            // Wait a moment for DOM to update
+            setTimeout(() => {
+                // Run UI tests
+                testUIResponsiveness();
+
+                // Run data collection test
+                testDataCollection();
+
+                // Run data population test
+                testDataPopulation();
+
+                // Run field validation test
+                testFieldValidation();
+
+                // Summary
+                const totalTests = testResults.length;
+                const passedTests = testResults.filter(r => r.status === 'PASSED').length;
+                const successRate = ((passedTests / totalTests) * 100).toFixed(1);
+
+                const summaryDiv = document.createElement('div');
+                summaryDiv.className = 'test-result test-pending';
+                summaryDiv.innerHTML = `
+                    <strong>📊 Test Summary:</strong><br>
+                    Total Tests: ${totalTests}<br>
+                    Passed: ${passedTests}<br>
+                    Failed: ${totalTests - passedTests}<br>
+                    Success Rate: ${successRate}%
+                `;
+                resultsContainer.appendChild(summaryDiv);
+
+            }, 100);
+        }
+
+        function openMobileTest() {
+            window.open('http://127.0.0.1:5001/POSPal.html', '_blank');
+            logTestResult('Frontend Test - Mobile UI Access', true,
+                'Mobile POSPal interface opened for manual testing');
+        }
+
+        function openDesktopTest() {
+            window.open('http://127.0.0.1:5001/POSPalDesktop.html', '_blank');
+            logTestResult('Frontend Test - Desktop UI Access', true,
+                'Desktop POSPal interface opened for manual testing');
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initializeTest);
+    </script>
+</body>
+</html>

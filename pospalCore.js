@@ -3429,6 +3429,9 @@ function resetItemForm() {
     if (elements.newOptionNameInputModal) elements.newOptionNameInputModal.value = '';
     if (elements.newOptionPriceInputModal) elements.newOptionPriceInputModal.value = '';
 
+    // Reset enhanced menu fields
+    resetEnhancedMenuFields();
+
     toggleItemOptionsUIInModal();
 }
 
@@ -3490,8 +3493,129 @@ function populateItemFormForEdit(itemIdToEdit) {
             elements.itemHasOptionsCheckboxModal.checked = (foundItem.hasGeneralOptions && tempItemOptionsModal.length > 0);
         }
         toggleItemOptionsUIInModal();
+
+        // Populate enhanced menu data
+        populateEnhancedMenuData(foundItem);
+
         if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
     }
+}
+
+// Enhanced Menu Data Collection Functions
+function collectEnhancedMenuData() {
+    const enhancedData = {};
+
+    // Description
+    const descriptionField = document.getElementById('itemDescription');
+    if (descriptionField && descriptionField.value.trim()) {
+        enhancedData.description = descriptionField.value.trim();
+    }
+
+    // Preparation time
+    const prepTimeField = document.getElementById('itemPrepTime');
+    if (prepTimeField && prepTimeField.value && parseInt(prepTimeField.value) > 0) {
+        enhancedData.prep_time = parseInt(prepTimeField.value);
+    }
+
+    // Dietary tags
+    const dietaryTags = [];
+    const dietaryCheckboxes = [
+        'dietary-vegetarian', 'dietary-vegan', 'dietary-gluten-free',
+        'dietary-dairy-free', 'dietary-spicy', 'dietary-popular'
+    ];
+
+    dietaryCheckboxes.forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox && checkbox.checked) {
+            const tag = id.replace('dietary-', '').replace('-', '_');
+            dietaryTags.push(tag);
+        }
+    });
+
+    if (dietaryTags.length > 0) {
+        enhancedData.dietary_tags = dietaryTags;
+    }
+
+    // Allergen information
+    const allergens = [];
+    const allergenCheckboxes = [
+        'allergen-nuts', 'allergen-dairy', 'allergen-gluten',
+        'allergen-seafood', 'allergen-eggs', 'allergen-soy'
+    ];
+
+    allergenCheckboxes.forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox && checkbox.checked) {
+            const allergen = id.replace('allergen-', '');
+            allergens.push(allergen);
+        }
+    });
+
+    if (allergens.length > 0) {
+        enhancedData.allergens = allergens;
+    }
+
+    return enhancedData;
+}
+
+function populateEnhancedMenuData(item) {
+    // Reset all enhanced fields first
+    resetEnhancedMenuFields();
+
+    // Populate description
+    const descriptionField = document.getElementById('itemDescription');
+    if (descriptionField && item.description) {
+        descriptionField.value = item.description;
+    }
+
+    // Populate preparation time
+    const prepTimeField = document.getElementById('itemPrepTime');
+    if (prepTimeField && item.prep_time) {
+        prepTimeField.value = item.prep_time;
+    }
+
+    // Populate dietary tags
+    if (item.dietary_tags && Array.isArray(item.dietary_tags)) {
+        item.dietary_tags.forEach(tag => {
+            const checkbox = document.getElementById(`dietary-${tag.replace('_', '-')}`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+    }
+
+    // Populate allergens
+    if (item.allergens && Array.isArray(item.allergens)) {
+        item.allergens.forEach(allergen => {
+            const checkbox = document.getElementById(`allergen-${allergen}`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+    }
+}
+
+function resetEnhancedMenuFields() {
+    // Reset description
+    const descriptionField = document.getElementById('itemDescription');
+    if (descriptionField) descriptionField.value = '';
+
+    // Reset preparation time
+    const prepTimeField = document.getElementById('itemPrepTime');
+    if (prepTimeField) prepTimeField.value = '';
+
+    // Reset all checkboxes
+    const allCheckboxes = [
+        'dietary-vegetarian', 'dietary-vegan', 'dietary-gluten-free',
+        'dietary-dairy-free', 'dietary-spicy', 'dietary-popular',
+        'allergen-nuts', 'allergen-dairy', 'allergen-gluten',
+        'allergen-seafood', 'allergen-eggs', 'allergen-soy'
+    ];
+
+    allCheckboxes.forEach(id => {
+        const checkbox = document.getElementById(id);
+        if (checkbox) checkbox.checked = false;
+    });
 }
 
 async function saveItem() {
@@ -3528,12 +3652,17 @@ async function saveItem() {
         return;
     }
 
+    // Collect enhanced menu data safely
+    const enhancedData = collectEnhancedMenuData();
+
     const itemData = {
         id: itemIdVal,
         name: itemName,
         price: itemPrice,
         hasGeneralOptions: elements.itemHasOptionsCheckboxModal.checked,
-        generalOptions: (elements.itemHasOptionsCheckboxModal.checked && tempItemOptionsModal.length > 0) ? [...tempItemOptionsModal] : []
+        generalOptions: (elements.itemHasOptionsCheckboxModal.checked && tempItemOptionsModal.length > 0) ? [...tempItemOptionsModal] : [],
+        // Enhanced fields (all optional - safe backward compatibility)
+        ...enhancedData
     };
 
     if (itemData.hasGeneralOptions && itemData.generalOptions.length === 0) {

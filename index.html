@@ -263,6 +263,34 @@
         .stagger-2 { animation-delay: 0.2s; }
         .stagger-3 { animation-delay: 0.3s; }
         .stagger-4 { animation-delay: 0.4s; }
+
+        /* Mobile-specific fixes for iframe scaling */
+        @media (max-width: 640px) {
+            #mobile-view, #desktop-pos-view iframe {
+                transform: scale(0.45) !important;
+                width: 222% !important;
+                height: 222% !important;
+            }
+            /* Prevent horizontal overflow on mobile hero section */
+            .hero-visual-container {
+                max-width: 100%;
+                overflow: hidden;
+            }
+        }
+
+        @media (min-width: 641px) and (max-width: 1024px) {
+            #mobile-view, #desktop-pos-view iframe {
+                transform: scale(0.55) !important;
+                width: 182% !important;
+                height: 182% !important;
+            }
+        }
+
+        /* Ensure containers don't overflow */
+        .demo-container {
+            max-width: 100%;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body class="bg-white">
@@ -293,23 +321,23 @@
     <!-- Hero Section -->
     <section class="relative overflow-hidden bg-gradient-to-br from-gray-50 to-white">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="grid lg:grid-cols-5 gap-8 items-center py-6 lg:py-10">
+            <div class="grid lg:grid-cols-5 gap-4 lg:gap-8 items-center py-4 lg:py-10">
                 
                 <!-- Left Content -->
                 <div class="text-center lg:text-left lg:col-span-2">
                     <div class="mb-3">
                         <span class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-accent-50 text-accent-700 border border-accent-200">
                             <i class="fas fa-euro-sign mr-2 text-accent-500"></i>
-                            €20/μήνα · Δωρεάν δοκιμή 30 ημερών
+                            Δωρεάν δοκιμή 30 ημερών
                         </span>
         </div>
                     
-                    <h1 class="text-4xl lg:text-5xl font-bold text-gray-900 leading-tight mb-4 fade-in-up">
+                    <h1 class="text-2xl sm:text-3xl lg:text-5xl font-bold text-gray-900 leading-tight mb-4 fade-in-up">
                         <span class="text-brand-600">PDA Σύστημα Παραγγελιοληψίας</span><br>
                         για Καφετέριες, Beach Bars & Food Trucks
                     </h1>
-                     
-                    <p class="text-lg text-gray-600 mb-6 fade-in-up stagger-1">
+
+                    <p class="text-sm sm:text-lg text-gray-600 mb-6 fade-in-up stagger-1">
                         Mobile PDA για εποχικές επιχειρήσεις, beach bars, ταβέρνες, street food. QR μενού που ενημερώνεται αυτόματα.<br>
                         <span class="font-semibold text-brand-600">30 ημέρες δωρεάν δοκιμή</span> - ιδανικό για καλοκαιρινά μαγαζιά
                     </p>
@@ -330,11 +358,11 @@
     </div>
 
                 <!-- Right Visual -->
-                <div class="relative fade-in-up stagger-4 lg:col-span-3">
-                    <div class="bg-white rounded-2xl shadow-2xl p-4 border border-gray-100">
-                        <div class="relative w-full h-[500px] rounded-xl overflow-hidden bg-black border border-gray-200">
+                <div class="relative fade-in-up stagger-4 lg:col-span-3 hero-visual-container">
+                    <div class="bg-white rounded-2xl shadow-2xl p-4 border border-gray-100 demo-container">
+                        <div class="relative w-full h-[300px] sm:h-[400px] lg:h-[500px] rounded-xl overflow-hidden bg-black border border-gray-200">
                             <!-- Mobile UI iframe -->
-                            <iframe id="mobile-view" src="POSPal_Demo.html" class="absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" style="border:0; transform: scale(0.8); transform-origin: top left; width: 125%; height: 125%;" sandbox="allow-scripts allow-same-origin"></iframe>
+                            <iframe id="mobile-view" src="POSPal_Demo.html" class="absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" style="border:0; transform: scale(0.6); transform-origin: top left; width: 166%; height: 166%;" sandbox="allow-scripts allow-same-origin"></iframe>
                             
                             <!-- QR Menu view (customer experience) -->
                             <div id="qr-menu-view" class="absolute inset-0 bg-gray-100 transition-opacity duration-700 ease-in-out opacity-0 overflow-hidden">
@@ -359,10 +387,10 @@
 
                                     <!-- Menu header -->
                                     <div class="bg-white px-4 py-3 border-b border-gray-200">
-                                        <h1 class="text-lg font-bold text-gray-900">Cafe Test Menu</h1>
+                                        <h1 class="text-lg font-bold text-gray-900">Sunrise Café Menu</h1>
                                         <p class="text-sm text-gray-600">Tap items to add to your order</p>
                                         <div class="mt-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                                            <i class="fas fa-qrcode mr-1"></i>Live: menus-5ar.pages.dev/s/cafetest
+                                            <i class="fas fa-qrcode mr-1"></i>Live: menus-5ar.pages.dev/s/sunrise-cafe
                                         </div>
                                     </div>
 
@@ -447,7 +475,7 @@
 
                                     <!-- Desktop iframe container -->
                                     <div class="bg-white rounded-b-lg h-[calc(100%-2.5rem)] overflow-hidden">
-                                        <iframe src="POSPalDesktop.html" class="w-full h-full border-0" style="transform: scale(0.75); transform-origin: top left; width: 133.33%; height: 133.33%;" sandbox="allow-scripts allow-same-origin"></iframe>
+                                        <iframe src="POSPalDesktop.html" class="w-full h-full border-0" style="transform: scale(0.6); transform-origin: top left; width: 166%; height: 166%;" sandbox="allow-scripts allow-same-origin"></iframe>
                                     </div>
                                 </div>
                             </div>
@@ -663,7 +691,7 @@
                             <div class="flex-1">
                                 <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
                                     <div class="text-xs text-gray-500 mb-1">Live Demo Menu</div>
-                                    <a href="https://menus-5ar.pages.dev/s/cafetest" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 underline font-medium break-all">menus-5ar.pages.dev/s/cafetest</a>
+                                    <a href="https://menus-5ar.pages.dev/s/sunrise-cafe" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 underline font-medium break-all">menus-5ar.pages.dev/s/sunrise-cafe</a>
                                     <div class="mt-2 space-y-1">
                                         <div class="flex items-center text-xs text-gray-600">
                                             <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
@@ -808,16 +836,16 @@
                         <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-3">
                             <i class="fas fa-shield-alt text-2xl text-green-600"></i>
                         </div>
-                        <h4 class="font-semibold text-gray-900 mb-1">Ασφαλή Δεδομένα</h4>
-                        <p class="text-sm text-gray-600">GDPR Compliant</p>
+                        <h4 class="font-semibold text-gray-900 mb-1">Τοπική Αποθήκευση</h4>
+                        <p class="text-sm text-gray-600">Δεδομένα στη συσκευή σας</p>
                     </div>
 
                     <div class="flex flex-col items-center">
                         <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-3">
                             <i class="fas fa-undo text-2xl text-blue-600"></i>
                         </div>
-                        <h4 class="font-semibold text-gray-900 mb-1">30ήμερη Εγγύηση</h4>
-                        <p class="text-sm text-gray-600">Επιστροφή χρημάτων</p>
+                        <h4 class="font-semibold text-gray-900 mb-1">Χωρίς Δέσμευση</h4>
+                        <p class="text-sm text-gray-600">Ακύρωση οποτεδήποτε</p>
                     </div>
 
                     <div class="flex flex-col items-center">

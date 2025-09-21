@@ -1,0 +1,367 @@
+{
+  "1.COFFEE & ESPRESSO": [
+    {
+      "id": 1,
+      "name": "Espresso",
+      "price": 2.50,
+      "description": "Rich, full-bodied shot of pure coffee perfection",
+      "prep_time": 2,
+      "dietary_tags": ["vegan"],
+      "allergens": [],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Double Shot",
+          "price": 1.00
+        },
+        {
+          "name": "Decaf",
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Cappuccino",
+      "price": 4.20,
+      "description": "Classic Italian coffee with steamed milk and fluffy foam",
+      "prep_time": 5,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["dairy"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Oat Milk",
+          "price": 0.50
+        },
+        {
+          "name": "Almond Milk",
+          "price": 0.50
+        },
+        {
+          "name": "Extra Shot",
+          "price": 1.00
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Flat White",
+      "price": 4.50,
+      "description": "Smooth microfoam milk perfectly blended with double espresso",
+      "prep_time": 4,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["dairy"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Oat Milk",
+          "price": 0.50
+        },
+        {
+          "name": "Coconut Milk",
+          "price": 0.50
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Iced Coffee",
+      "price": 3.80,
+      "description": "Cold-brewed coffee served over ice with a splash of milk",
+      "prep_time": 3,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["dairy"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Vanilla Syrup",
+          "price": 0.30
+        },
+        {
+          "name": "Caramel Syrup",
+          "price": 0.30
+        },
+        {
+          "name": "Black (No Milk)",
+          "price": -0.30
+        }
+      ]
+    }
+  ],
+  "2.SPECIALTY DRINKS": [
+    {
+      "id": 5,
+      "name": "Caramel Macchiato",
+      "price": 5.20,
+      "description": "Vanilla steamed milk marked with espresso and finished with caramel drizzle",
+      "prep_time": 6,
+      "dietary_tags": ["vegetarian", "popular"],
+      "allergens": ["dairy"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Extra Caramel",
+          "price": 0.50
+        },
+        {
+          "name": "Sugar-Free Vanilla",
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Matcha Latte",
+      "price": 4.80,
+      "description": "Premium Japanese matcha powder whisked with steamed milk",
+      "prep_time": 5,
+      "dietary_tags": ["vegetarian", "gluten_free"],
+      "allergens": ["dairy"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Oat Milk",
+          "price": 0.50
+        },
+        {
+          "name": "Extra Matcha",
+          "price": 0.50
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Chai Tea Latte",
+      "price": 4.50,
+      "description": "Aromatic blend of black tea and warming spices with steamed milk",
+      "prep_time": 5,
+      "dietary_tags": ["vegetarian", "spicy"],
+      "allergens": ["dairy"],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    }
+  ],
+  "3.FRESH PASTRIES": [
+    {
+      "id": 8,
+      "name": "Croissant",
+      "price": 3.20,
+      "description": "Buttery, flaky French pastry baked fresh daily",
+      "prep_time": 1,
+      "dietary_tags": ["vegetarian", "popular"],
+      "allergens": ["gluten", "dairy", "eggs"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Almond Filling",
+          "price": 1.50
+        },
+        {
+          "name": "Chocolate Filling",
+          "price": 1.50
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Blueberry Muffin",
+      "price": 3.80,
+      "description": "Moist vanilla muffin bursting with fresh blueberries",
+      "prep_time": 2,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["gluten", "dairy", "eggs"],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    },
+    {
+      "id": 10,
+      "name": "Vegan Banana Bread",
+      "price": 4.50,
+      "description": "Moist, naturally sweetened banana bread made without dairy or eggs",
+      "prep_time": 2,
+      "dietary_tags": ["vegan", "dairy_free"],
+      "allergens": ["gluten"],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    },
+    {
+      "id": 11,
+      "name": "Avocado Toast",
+      "price": 8.50,
+      "description": "Smashed avocado on artisan sourdough with lime, salt, and chili flakes",
+      "prep_time": 8,
+      "dietary_tags": ["vegan", "popular", "spicy"],
+      "allergens": ["gluten"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Poached Egg",
+          "price": 2.00
+        },
+        {
+          "name": "Feta Cheese",
+          "price": 1.50
+        },
+        {
+          "name": "Cherry Tomatoes",
+          "price": 1.00
+        }
+      ]
+    }
+  ],
+  "4.LIGHT MEALS": [
+    {
+      "id": 12,
+      "name": "Grilled Chicken Sandwich",
+      "price": 12.50,
+      "description": "Herb-marinated grilled chicken with lettuce, tomato, and garlic aioli",
+      "prep_time": 12,
+      "dietary_tags": ["popular"],
+      "allergens": ["gluten", "eggs"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Add Avocado",
+          "price": 2.00
+        },
+        {
+          "name": "Add Cheese",
+          "price": 1.50
+        },
+        {
+          "name": "Gluten-Free Bread",
+          "price": 1.00
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "Mediterranean Wrap",
+      "price": 11.80,
+      "description": "Hummus, grilled vegetables, feta cheese, and mixed greens in a spinach wrap",
+      "prep_time": 10,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["gluten", "dairy"],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    },
+    {
+      "id": 14,
+      "name": "Caesar Salad",
+      "price": 10.50,
+      "description": "Crisp romaine lettuce with parmesan, croutons, and our signature dressing",
+      "prep_time": 8,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["gluten", "dairy", "eggs"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Grilled Chicken",
+          "price": 3.50
+        },
+        {
+          "name": "Extra Parmesan",
+          "price": 1.00
+        }
+      ]
+    }
+  ],
+  "5.COLD DRINKS": [
+    {
+      "id": 15,
+      "name": "Fresh Orange Juice",
+      "price": 4.20,
+      "description": "Freshly squeezed Valencia oranges, served chilled",
+      "prep_time": 3,
+      "dietary_tags": ["vegan", "gluten_free"],
+      "allergens": [],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    },
+    {
+      "id": 16,
+      "name": "Sparkling Water",
+      "price": 2.80,
+      "description": "Premium sparkling mineral water with natural bubbles",
+      "prep_time": 1,
+      "dietary_tags": ["vegan", "gluten_free"],
+      "allergens": [],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Lemon Slice",
+          "price": 0
+        },
+        {
+          "name": "Lime Slice",
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "Green Smoothie",
+      "price": 6.50,
+      "description": "Spinach, banana, mango, and coconut water blended to perfection",
+      "prep_time": 5,
+      "dietary_tags": ["vegan", "gluten_free", "popular"],
+      "allergens": [],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Add Protein Powder",
+          "price": 1.50
+        },
+        {
+          "name": "Add Chia Seeds",
+          "price": 0.50
+        }
+      ]
+    }
+  ],
+  "6.DESSERTS": [
+    {
+      "id": 18,
+      "name": "Chocolate Brownie",
+      "price": 5.50,
+      "description": "Rich, fudgy brownie made with Belgian dark chocolate",
+      "prep_time": 3,
+      "dietary_tags": ["vegetarian", "popular"],
+      "allergens": ["gluten", "dairy", "eggs", "nuts"],
+      "hasGeneralOptions": true,
+      "generalOptions": [
+        {
+          "name": "Vanilla Ice Cream",
+          "price": 2.00
+        },
+        {
+          "name": "Whipped Cream",
+          "price": 1.00
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "name": "Lemon Tart",
+      "price": 4.80,
+      "description": "Tangy lemon curd in a crisp pastry shell with meringue topping",
+      "prep_time": 2,
+      "dietary_tags": ["vegetarian"],
+      "allergens": ["gluten", "dairy", "eggs"],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    },
+    {
+      "id": 20,
+      "name": "Vegan Chocolate Cake",
+      "price": 5.20,
+      "description": "Moist chocolate cake made without dairy or eggs, topped with rich frosting",
+      "prep_time": 3,
+      "dietary_tags": ["vegan", "dairy_free"],
+      "allergens": ["gluten"],
+      "hasGeneralOptions": false,
+      "generalOptions": []
+    }
+  ]
+}
