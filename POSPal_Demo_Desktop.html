@@ -15,6 +15,18 @@
 		.btn-primary:hover { background-color: #1f2937; }
 		.btn-secondary { background-color: #e5e7eb; color: #1f2937; border: 1px solid #d1d5db; }
 		.order-item.selected-for-numpad { background-color: #eff6ff !important; border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,.1); }
+		.settings-gear {
+			background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+			border: 2px solid rgba(255, 255, 255, 0.1);
+		}
+		.settings-gear:hover {
+			transform: scale(1.05);
+			box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+		}
+		.btn-warning { background-color: #f59e0b; color: white; }
+		.btn-warning:hover { background-color: #d97706; }
+		.btn-danger { background-color: #ef4444; color: white; }
+		.btn-danger:hover { background-color: #dc2626; }
 	</style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -37,10 +49,49 @@
 			<div class="flex-1 bg-white p-3 rounded-lg shadow-md flex flex-col min-h-0">
 				<div class="flex items-center justify-between mb-2 flex-shrink-0">
 					<h2 class="text-xl font-bold">Order #<span id="order-number-desktop">1</span></h2>
+					<div class="flex items-center gap-2">
+						<button onclick="toggleDesktopNumpad()" class="px-2 py-1 text-xs btn-secondary rounded">Numpad</button>
+					</div>
 				</div>
 				<div id="order-items-container" class="flex-1 overflow-y-auto -mr-2 pr-2 space-y-1 min-h-0">
 					<p id="empty-order-message" class="text-gray-500 text-center py-8 italic">Your order is empty.</p>
 				</div>
+
+				<!-- Compact Numpad -->
+				<div id="compactNumpadDesktop" class="hidden mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0">
+					<div class="flex justify-between items-center">
+						<div class="grid grid-cols-3 gap-1 flex-grow">
+							<button onclick="handleNumpad_desktop(1)" class="w-full py-3 bg-white border border-gray-300 rounded text-gray-800 text-lg hover:bg-gray-200">1</button>
+							<button onclick="handleNumpad_desktop(2)" class="w-full py-3 bg-white border border-gray-300 rounded text-gray-800 text-lg hover:bg-gray-200">2</button>
+							<button onclick="handleNumpad_desktop(3)" class="w-full py-3 bg-white border border-gray-300 rounded text-gray-800 text-lg hover:bg-gray-200">3</button>
+						</div>
+						<div class="flex gap-2 ml-3">
+							<button onclick="handleNumpadClear_desktop()" class="px-3 py-2 text-xs btn-warning rounded">C</button>
+							<button onclick="handleNumpadBackspace_desktop()" class="px-3 py-2 text-xs btn-danger rounded"><i class="fas fa-backspace"></i></button>
+						</div>
+						<button onclick="expandDesktopNumpad()" class="ml-auto px-3 py-2 text-xs btn-secondary rounded"><i class="fas fa-chevron-down"></i></button>
+					</div>
+				</div>
+
+				<!-- Expanded Numpad -->
+				<div id="expandedNumpadDesktop" class="hidden mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200 flex-shrink-0">
+					<div class="grid grid-cols-3 gap-2 mb-3">
+						<button onclick="handleNumpad_desktop(1)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">1</button>
+						<button onclick="handleNumpad_desktop(2)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">2</button>
+						<button onclick="handleNumpad_desktop(3)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">3</button>
+						<button onclick="handleNumpad_desktop(4)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">4</button>
+						<button onclick="handleNumpad_desktop(5)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">5</button>
+						<button onclick="handleNumpad_desktop(6)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">6</button>
+						<button onclick="handleNumpad_desktop(7)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">7</button>
+						<button onclick="handleNumpad_desktop(8)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">8</button>
+						<button onclick="handleNumpad_desktop(9)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">9</button>
+						<button onclick="handleNumpadClear_desktop()" class="py-3 rounded-lg font-semibold text-xl transition-colors btn-warning">C</button>
+						<button onclick="handleNumpad_desktop(0)" class="py-3 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold text-xl hover:bg-gray-200 active:bg-gray-300 transition-colors">0</button>
+						<button onclick="handleNumpadBackspace_desktop()" class="py-3 rounded-lg font-semibold text-xl transition-colors btn-danger"><i class="fas fa-backspace"></i></button>
+					</div>
+					<button onclick="collapseDesktopNumpad()" class="w-full py-2 text-sm btn-secondary rounded"><i class="fas fa-chevron-up mr-2"></i>Collapse</button>
+				</div>
+
 				<div id="order-total" class="text-2xl font-bold text-right mt-4 pt-4 border-top border-gray-200 flex-shrink-0">Total: €0.00</div>
 			</div>
 			<div class="flex gap-3">
@@ -61,6 +112,75 @@
 	<!-- Toast -->
 	<div id="toast" class="fixed top-5 right-5 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[2000] hidden opacity-0 transition-opacity duration-300">
 		<span id="toast-message">Toast message here</span>
+	</div>
+
+	<!-- Settings Gear -->
+	<div id="settings-gear-container" class="fixed bottom-4 right-4 z-[1001]">
+		<button onclick="showPasswordPrompt()" class="settings-gear text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition" title="Management Settings">
+			<i class="fas fa-cog text-2xl"></i>
+		</button>
+	</div>
+
+	<!-- Management Modal -->
+	<div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] hidden flex flex-col justify-end sm:justify-center sm:items-center">
+		<div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
+			<div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+				<h2 class="text-xl font-semibold">Management (Demo)</h2>
+				<button onclick="closeManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
+			</div>
+			<div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
+				<div class="flex flex-wrap gap-1 rounded-md bg-gray-100 p-1">
+					<button onclick="switchManagementTab('analytics', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Analytics</button>
+					<button onclick="switchManagementTab('orders', this)" class="management-tab flex-1 py-2 px-2 text-xs sm:text-sm font-medium rounded-md text-gray-600 hover:bg-gray-200">Order History</button>
+				</div>
+			</div>
+			<div class="flex-grow overflow-y-auto p-4 management-content">
+				<div id="analyticsManagement" class="hidden">
+					<h3 class="text-xl font-semibold text-gray-800 mb-4">Performance Overview (Demo)</h3>
+					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+						<div class="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+							<div class="text-2xl font-bold text-green-800">€127.50</div>
+							<div class="text-sm text-green-600">Total Revenue</div>
+						</div>
+						<div class="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
+							<div class="text-2xl font-bold text-blue-800">23</div>
+							<div class="text-sm text-blue-600">Orders Today</div>
+						</div>
+						<div class="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
+							<div class="text-2xl font-bold text-purple-800">€5.54</div>
+							<div class="text-sm text-purple-600">Avg Order Value</div>
+						</div>
+						<div class="bg-gradient-to-r from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200">
+							<div class="text-2xl font-bold text-orange-800">87%</div>
+							<div class="text-sm text-orange-600">Customer Satisfaction</div>
+						</div>
+					</div>
+				</div>
+				<div id="ordersManagement" class="hidden">
+					<h3 class="text-xl font-semibold text-gray-800 mb-4">Recent Orders (Demo)</h3>
+					<div class="space-y-2">
+						<div class="bg-gray-50 p-3 rounded border">
+							<div class="flex justify-between items-start">
+								<div>
+									<div class="font-semibold">Order #1</div>
+									<div class="text-sm text-gray-600">Table 5 • 2 items • €12.50</div>
+								</div>
+								<div class="text-xs text-gray-500">10:30 AM</div>
+							</div>
+						</div>
+						<div class="bg-gray-50 p-3 rounded border">
+							<div class="flex justify-between items-start">
+								<div>
+									<div class="font-semibold">Order #2</div>
+									<div class="text-sm text-gray-600">Table 3 • 3 items • €18.75</div>
+								</div>
+								<div class="text-xs text-gray-500">11:15 AM</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
 	</div>
 
 	<script>
@@ -159,20 +279,21 @@
 				els.emptyOrderMsg.style.display = 'block';
 			} else {
 				els.emptyOrderMsg.style.display = 'none';
-				currentOrder.forEach(item => {
+				currentOrder.forEach((item, index) => {
 					total += (item.price||0) * item.quantity;
 					const row = document.createElement('div');
-					row.className = 'order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm';
+					row.className = 'order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm cursor-pointer hover:bg-gray-50 border border-transparent rounded';
+					row.onclick = () => selectOrderItemForNumpad(index);
 					row.innerHTML = `
 						<div class="flex-grow pr-2">
 							<span class="font-medium text-gray-800">${item.name}</span>
 						</div>
 						<div class="flex items-center gap-2">
-							<button class="px-2" onclick="changeQty('${item.orderId}', -1)">-</button>
+							<button class="px-2" onclick="event.stopPropagation(); changeQty('${item.orderId}', -1)">-</button>
 							<span class="w-6 text-center">${item.quantity}</span>
-							<button class="px-2" onclick="changeQty('${item.orderId}', 1)">+</button>
+							<button class="px-2" onclick="event.stopPropagation(); changeQty('${item.orderId}', 1)">+</button>
 							<span class="font-semibold">€${((item.price||0)*item.quantity).toFixed(2)}</span>
-							<button class="text-red-600" onclick="removeItem('${item.orderId}')"><i class="fas fa-trash"></i></button>
+							<button class="text-red-600" onclick="event.stopPropagation(); removeItem('${item.orderId}')"><i class="fas fa-trash"></i></button>
 						</div>`;
 					els.orderItems.appendChild(row);
 				});
@@ -226,6 +347,125 @@
 			setTimeout(()=> toast.style.opacity = 1, 10);
 			toast.style.backgroundColor = (type==='success') ? '#16a34a' : (type==='warning' ? '#f59e0b' : '#1f2937');
 			toastTimeout = setTimeout(()=>{ toast.style.opacity = 0; setTimeout(()=> toast.classList.add('hidden'), 300); }, duration);
+		}
+
+		// Management Modal Functions
+		function showPasswordPrompt() {
+			const password = prompt("Enter management password:\n\n💡 Demo Tip: Use password '9999'");
+			if (password === '9999') {
+				openManagementModal();
+			} else if (password !== null) {
+				showToast('Incorrect password. Try: 9999', 'warning');
+			}
+		}
+
+		function openManagementModal() {
+			$('managementModal').classList.remove('hidden');
+			// Default to analytics tab
+			switchManagementTab('analytics', $('managementModal').querySelector('.management-tab'));
+		}
+
+		function closeManagementModal() {
+			$('managementModal').classList.add('hidden');
+		}
+
+		function switchManagementTab(tabName, buttonElement) {
+			// Hide all content panels
+			$('analyticsManagement').classList.add('hidden');
+			$('ordersManagement').classList.add('hidden');
+
+			// Remove active styling from all tabs
+			document.querySelectorAll('.management-tab').forEach(tab => {
+				tab.classList.remove('bg-white', 'text-gray-900', 'shadow-sm');
+				tab.classList.add('text-gray-600');
+			});
+
+			// Show selected content panel
+			$(tabName + 'Management').classList.remove('hidden');
+
+			// Add active styling to selected tab
+			if (buttonElement) {
+				buttonElement.classList.add('bg-white', 'text-gray-900', 'shadow-sm');
+				buttonElement.classList.remove('text-gray-600');
+			}
+		}
+
+		// Numpad Functions
+		let selectedItemForNumpad = null;
+		let numpadVisible = false;
+
+		function toggleDesktopNumpad() {
+			numpadVisible = !numpadVisible;
+			if (numpadVisible) {
+				$('compactNumpadDesktop').classList.remove('hidden');
+				showToast('Numpad enabled - click an order item to change quantity', 'info');
+			} else {
+				$('compactNumpadDesktop').classList.add('hidden');
+				$('expandedNumpadDesktop').classList.add('hidden');
+				clearNumpadSelection();
+			}
+		}
+
+		function expandDesktopNumpad() {
+			$('compactNumpadDesktop').classList.add('hidden');
+			$('expandedNumpadDesktop').classList.remove('hidden');
+		}
+
+		function collapseDesktopNumpad() {
+			$('expandedNumpadDesktop').classList.add('hidden');
+			$('compactNumpadDesktop').classList.remove('hidden');
+		}
+
+		function selectOrderItemForNumpad(index) {
+			clearNumpadSelection();
+			selectedItemForNumpad = index;
+			const orderItems = document.querySelectorAll('.order-item');
+			if (orderItems[index]) {
+				orderItems[index].classList.add('selected-for-numpad');
+				showToast('Use numpad to change quantity', 'info');
+			}
+		}
+
+		function clearNumpadSelection() {
+			selectedItemForNumpad = null;
+			document.querySelectorAll('.order-item').forEach(item => {
+				item.classList.remove('selected-for-numpad');
+			});
+		}
+
+		function handleNumpad_desktop(digit) {
+			if (selectedItemForNumpad === null) {
+				showToast('Select an order item first', 'warning');
+				return;
+			}
+
+			if (currentOrder[selectedItemForNumpad]) {
+				const newQty = parseInt(digit.toString());
+				if (newQty > 0) {
+					currentOrder[selectedItemForNumpad].quantity = newQty;
+					updateOrderDisplay();
+					showToast(`Quantity updated to ${newQty}`, 'success');
+				}
+			}
+		}
+
+		function handleNumpadClear_desktop() {
+			if (selectedItemForNumpad !== null && currentOrder[selectedItemForNumpad]) {
+				currentOrder[selectedItemForNumpad].quantity = 1;
+				updateOrderDisplay();
+				showToast('Quantity reset to 1', 'info');
+			}
+		}
+
+		function handleNumpadBackspace_desktop() {
+			if (selectedItemForNumpad !== null && currentOrder[selectedItemForNumpad]) {
+				const currentQty = currentOrder[selectedItemForNumpad].quantity;
+				if (currentQty > 1) {
+					currentOrder[selectedItemForNumpad].quantity = currentQty - 1;
+					updateOrderDisplay();
+					showToast(`Quantity reduced to ${currentQty - 1}`, 'info');
+				}
+			}
 		}
 	</script>
 </body>
