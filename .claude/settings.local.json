@@ -90,7 +90,8 @@
       "WebFetch(domain:localhost)",
       "WebFetch(domain:menus-5ar.pages.dev)",
       "WebFetch(domain:menus-api.bzoumboulis.workers.dev)",
-      "Bash(unset:*)"
+      "Bash(unset:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []
