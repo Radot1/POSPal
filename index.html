@@ -265,10 +265,14 @@
 
         /* Mobile-specific fixes for iframe scaling */
         @media (max-width: 640px) {
-            #mobile-view, #desktop-pos-view iframe {
+            #mobile-view {
                 transform: scale(0.45) !important;
                 width: 222% !important;
-                height: 222% !important;
+                height: 230% !important;
+            }
+            /* Hide desktop view on mobile devices */
+            #desktop-pos-view {
+                display: none !important;
             }
             /* Prevent horizontal overflow on mobile hero section */
             .hero-visual-container {
@@ -278,10 +282,14 @@
         }
 
         @media (min-width: 641px) and (max-width: 1024px) {
-            #mobile-view, #desktop-pos-view iframe {
+            #mobile-view {
                 transform: scale(0.55) !important;
                 width: 182% !important;
-                height: 182% !important;
+                height: 190% !important;
+            }
+            /* Hide desktop view on tablets too */
+            #desktop-pos-view {
+                display: none !important;
             }
         }
 
@@ -289,6 +297,26 @@
         .demo-container {
             max-width: 100%;
             box-sizing: border-box;
+        }
+
+        /* Mobile-first hero improvements */
+        @media (max-width: 1023px) {
+            /* Make mobile iframe more prominent */
+            .hero-visual-container {
+                margin-bottom: 1rem;
+            }
+
+            /* Compact mobile text spacing */
+            .hero-text-compact {
+                text-align: center;
+            }
+
+            /* Make QR menu section more prominent on mobile */
+            .hero-visual-container .mt-6 {
+                margin-top: 1rem !important;
+                background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%) !important;
+                border: 2px solid #22c55e !important;
+            }
         }
     </style>
 </head>
@@ -314,16 +342,26 @@
                     <i class="fas fa-bars text-xl"></i>
                 </button>
             </div>
+
+            <!-- Mobile Menu Dropdown -->
+            <div id="mobile-menu-dropdown" class="hidden md:hidden bg-white border-t border-gray-100 shadow-lg">
+                <div class="px-4 py-2 space-y-1">
+                    <a href="POSPal_Demo_Index.html" class="block py-3 text-gray-600 hover:text-brand-600 font-medium transition-colors border-b border-gray-100">Online Demo</a>
+                    <a href="guides/index.html" class="block py-3 text-gray-600 hover:text-brand-600 font-medium transition-colors border-b border-gray-100">Οδηγοί</a>
+                    <a href="#pricing" class="block py-3 text-gray-600 hover:text-brand-600 font-medium transition-colors border-b border-gray-100">Τιμές</a>
+                    <a href="https://github.com/Radot1/POSPal/releases/latest/download/POSPal.exe" onclick="window.open('installation-guide.html', '_blank')" class="block py-3 bg-brand-600 text-white text-center rounded-lg hover:bg-brand-700 transition-colors font-semibold mt-3">Ξεκίνα Δωρεάν</a>
+                </div>
+            </div>
         </div>
     </header>
 
     <!-- Hero Section -->
     <section class="relative overflow-hidden bg-gradient-to-br from-gray-50 to-white">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="grid lg:grid-cols-5 gap-4 lg:gap-8 items-center py-4 lg:py-10">
-                
+            <div class="flex flex-col lg:grid lg:grid-cols-5 gap-4 lg:gap-8 items-center py-4 lg:py-10">
+
                 <!-- Left Content -->
-                <div class="text-center lg:text-left lg:col-span-2">
+                <div class="text-center lg:text-left lg:col-span-2 order-2 lg:order-1">
                     <div class="mb-3">
                         <span class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-accent-50 text-accent-700 border border-accent-200">
                             <i class="fas fa-euro-sign mr-2 text-accent-500"></i>
@@ -331,13 +369,17 @@
                         </span>
         </div>
                     
-                    <h1 class="text-2xl sm:text-3xl lg:text-5xl font-bold text-gray-900 leading-tight mb-4 fade-in-up">
-                        <span class="text-brand-600">PDA Σύστημα για Καφετέριες</span> - €20/μήνα
+                    <!-- Mobile Compact Headline -->
+                    <h1 class="text-2xl sm:text-3xl lg:text-5xl font-bold text-gray-900 leading-tight mb-3 lg:mb-4 fade-in-up">
+                        <span class="text-brand-600">POS για Καφετέριες</span>
+                        <span class="block lg:inline"> - €20/μήνα</span>
                     </h1>
 
-                    <p class="text-sm sm:text-lg text-gray-600 mb-6 fade-in-up stagger-1">
-                        Mobile PDA για εποχικές επιχειρήσεις, beach bars, ταβέρνες, street food. QR μενού που ενημερώνεται αυτόματα.<br>
-                        <span class="font-semibold text-brand-600">30 ημέρες δωρεάν δοκιμή</span> - ιδανικό για καλοκαιρινά μαγαζιά
+                    <!-- Mobile Compact Description -->
+                    <p class="text-sm lg:text-lg text-gray-600 mb-4 lg:mb-6 fade-in-up stagger-1">
+                        <span class="lg:hidden">QR μενού + PDA σύστημα για εστιατόρια και beach bars.</span>
+                        <span class="hidden lg:block">Mobile PDA για εποχικές επιχειρήσεις, beach bars, ταβέρνες, street food. QR μενού που ενημερώνεται αυτόματα.<br>
+                        <span class="font-semibold text-brand-600">30 ημέρες δωρεάν δοκιμή</span> - ιδανικό για καλοκαιρινά μαγαζιά</span>
                     </p>
                     
                     <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start fade-in-up stagger-3">
@@ -356,11 +398,11 @@
     </div>
 
                 <!-- Right Visual -->
-                <div class="relative fade-in-up stagger-4 lg:col-span-3 hero-visual-container">
+                <div class="relative fade-in-up stagger-4 lg:col-span-3 hero-visual-container order-1 lg:order-2">
                     <div class="bg-white rounded-2xl shadow-2xl p-4 border border-gray-100 demo-container">
-                        <div class="relative w-full h-[300px] sm:h-[400px] lg:h-[500px] rounded-xl overflow-hidden bg-black border border-gray-200">
+                        <div class="relative w-full h-[300px] sm:h-[400px] lg:h-[500px] rounded-xl overflow-hidden bg-gray-50 border border-gray-200">
                             <!-- Mobile UI iframe -->
-                            <iframe id="mobile-view" src="POSPal_Demo.html" class="absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" style="border:0; transform: scale(0.6); transform-origin: top left; width: 166%; height: 166%;" sandbox="allow-scripts allow-same-origin"></iframe>
+                            <iframe id="mobile-view" src="POSPal_Demo.html" class="absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" style="border:0; transform: scale(0.6); transform-origin: top left; width: 166%; height: 170%;" sandbox="allow-scripts allow-same-origin"></iframe>
                             
 
                             <!-- Desktop POS view (authentic desktop interface) -->
@@ -1131,10 +1173,43 @@
     </footer>
 
     <script>
-        // Mobile menu toggle (placeholder)
+        // Mobile menu toggle
         document.getElementById('mobile-menu').addEventListener('click', function() {
-            const menu = document.getElementById('mobile-menu');
-            // Implement dropdown later
+            const dropdown = document.getElementById('mobile-menu-dropdown');
+            const icon = this.querySelector('i');
+
+            if (dropdown.classList.contains('hidden')) {
+                dropdown.classList.remove('hidden');
+                icon.classList.remove('fa-bars');
+                icon.classList.add('fa-times');
+            } else {
+                dropdown.classList.add('hidden');
+                icon.classList.remove('fa-times');
+                icon.classList.add('fa-bars');
+            }
+        });
+
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(event) {
+            const mobileMenu = document.getElementById('mobile-menu');
+            const dropdown = document.getElementById('mobile-menu-dropdown');
+
+            if (!mobileMenu.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.add('hidden');
+                const icon = mobileMenu.querySelector('i');
+                icon.classList.remove('fa-times');
+                icon.classList.add('fa-bars');
+            }
+        });
+
+        // Close mobile menu when clicking on a link
+        document.getElementById('mobile-menu-dropdown').addEventListener('click', function(event) {
+            if (event.target.tagName === 'A') {
+                this.classList.add('hidden');
+                const icon = document.getElementById('mobile-menu').querySelector('i');
+                icon.classList.remove('fa-times');
+                icon.classList.add('fa-bars');
+            }
         });
 
         // Smooth scrolling for anchor links
@@ -1181,7 +1256,25 @@
         let currentView = 0;
         let autoInterval;
 
+        function isDesktopHidden() {
+            return window.innerWidth <= 1024; // Hide desktop view on mobile and tablet
+        }
+
+        function getAvailableViews() {
+            if (isDesktopHidden()) {
+                return [0, 2]; // Only mobile and analytics views
+            }
+            return [0, 1, 2]; // All views
+        }
+
         function switchView(viewIndex) {
+            const availableViews = getAvailableViews();
+
+            // Skip desktop view if hidden on mobile/tablet
+            if (viewIndex === 1 && isDesktopHidden()) {
+                viewIndex = 2; // Skip to analytics
+            }
+
             currentView = viewIndex;
 
             // Reset auto interval
@@ -1199,7 +1292,9 @@
                     mobileView.style.opacity = '1';
                     break;
                 case 1:
-                    desktopPosView.style.opacity = '1';
+                    if (!isDesktopHidden()) {
+                        desktopPosView.style.opacity = '1';
+                    }
                     break;
                 case 2:
                     analyticsView.style.opacity = '1';
@@ -1209,15 +1304,20 @@
             // Update view indicator
             viewIndicator.textContent = viewLabels[viewIndex];
 
-            // Update dots
+            // Update dots - hide middle dot on mobile
             dots.forEach((dot, index) => {
                 if (dot) {
-                    if (index === viewIndex) {
-                        dot.classList.add('bg-brand-600');
-                        dot.classList.remove('bg-gray-300');
+                    if (index === 1 && isDesktopHidden()) {
+                        dot.style.display = 'none';
                     } else {
-                        dot.classList.add('bg-gray-300');
-                        dot.classList.remove('bg-brand-600');
+                        dot.style.display = 'block';
+                        if (index === viewIndex) {
+                            dot.classList.add('bg-brand-600');
+                            dot.classList.remove('bg-gray-300');
+                        } else {
+                            dot.classList.add('bg-gray-300');
+                            dot.classList.remove('bg-brand-600');
+                        }
                     }
                 }
             });
@@ -1225,7 +1325,10 @@
 
         function startAutoProgression() {
             autoInterval = setInterval(() => {
-                currentView = (currentView + 1) % 3; // Cycle through 0, 1, 2
+                const availableViews = getAvailableViews();
+                const currentIndex = availableViews.indexOf(currentView);
+                const nextIndex = (currentIndex + 1) % availableViews.length;
+                currentView = availableViews[nextIndex];
                 switchView(currentView);
             }, 5000); // 5 seconds per view for better demonstration
         }
