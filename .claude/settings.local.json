@@ -91,7 +91,8 @@
       "WebFetch(domain:menus-5ar.pages.dev)",
       "WebFetch(domain:menus-api.bzoumboulis.workers.dev)",
       "Bash(unset:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Read(//c/Users/bzoum/OneDrive/Projects/MOLD for House/Mold detailArounfWindowsPerimeter/**)"
     ],
     "deny": [],
     "ask": []
