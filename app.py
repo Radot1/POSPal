@@ -1,7 +1,7 @@
 CURRENT_VERSION = "1.2.1"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
 from flask import Flask, request, jsonify, send_from_directory
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import csv
 import os
 from config import Config
@@ -589,6 +589,368 @@ def sanitize_string_input(value, max_length=255):
     # Remove null bytes and control characters
     sanitized = ''.join(c for c in sanitized if ord(c) >= 32 or c in '\t\n\r')
     return sanitized if sanitized else None
+
+# --- Enhanced Table Management Validation & Error Handling ---
+
+def validate_table_id(table_id):
+    """Validate table ID format"""
+    if not table_id:
+        return False, "Table ID is required"
+
+    table_id_str = str(table_id).strip()
+    if not table_id_str:
+        return False, "Table ID cannot be empty"
+
+    if len(table_id_str) > 50:
+        return False, "Table ID must be 50 characters or less"
+
+    # Allow alphanumeric, underscores, hyphens, and spaces
+    if not all(c.isalnum() or c in '_- ' for c in table_id_str):
+        return False, "Table ID can only contain letters, numbers, spaces, underscores, and hyphens"
+
+    return True, table_id_str
+
+def validate_table_name(name, existing_tables=None, exclude_table_id=None):
+    """Validate table name"""
+    if not name:
+        return False, "Table name is required"
+
+    name_str = str(name).strip()
+    if not name_str:
+        return False, "Table name cannot be empty"
+
+    if len(name_str) > 100:
+        return False, "Table name must be 100 characters or less"
+
+    # Sanitize the name
+    sanitized_name = sanitize_string_input(name_str, 100)
+    if not sanitized_name:
+        return False, "Table name contains invalid characters"
+
+    # Check for uniqueness if existing tables provided
+    if existing_tables:
+        for table_id, table_info in existing_tables.items():
+            if exclude_table_id and table_id == exclude_table_id:
+                continue
+            if table_info.get("name", "").lower() == sanitized_name.lower():
+                return False, f"Table name '{sanitized_name}' already exists"
+
+    return True, sanitized_name
+
+def validate_party_size(party_size):
+    """Validate party size parameter"""
+    if party_size is None:
+        return False, "Party size is required"
+
+    try:
+        size = int(party_size)
+        if size < 1:
+            return False, "Party size must be at least 1"
+        if size > 50:
+            return False, "Party size cannot exceed 50"
+        return True, size
+    except (ValueError, TypeError):
+        return False, "Party size must be a valid number"
+
+def validate_table_seats(seats):
+    """Validate table seat count"""
+    if seats is None:
+        return False, "Seat count is required"
+
+    try:
+        seat_count = int(seats)
+        if seat_count < 1:
+            return False, "Seat count must be at least 1"
+        if seat_count > 100:
+            return False, "Seat count cannot exceed 100"
+        return True, seat_count
+    except (ValueError, TypeError):
+        return False, "Seat count must be a valid number"
+
+def validate_payment_amount(amount):
+    """Validate payment amount"""
+    if amount is None:
+        return False, "Payment amount is required"
+
+    try:
+        payment = float(amount)
+        if payment < 0:
+            return False, "Payment amount cannot be negative"
+        if payment > 999999.99:
+            return False, "Payment amount too large (max $999,999.99)"
+        return True, round(payment, 2)
+    except (ValueError, TypeError):
+        return False, "Payment amount must be a valid number"
+
+def validate_table_status(status):
+    """Validate table status"""
+    valid_statuses = ["available", "occupied", "reserved", "out_of_order"]
+
+    if not status:
+        return False, "Table status is required"
+
+    status_str = str(status).strip().lower()
+    if status_str not in valid_statuses:
+        return False, f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+
+    return True, status_str
+
+def sanitize_table_notes(notes):
+    """Sanitize table notes/comments"""
+    if not notes:
+        return ""
+
+    notes_str = str(notes).strip()
+    # Limit notes to reasonable length
+    sanitized = sanitize_string_input(notes_str, 500)
+
+    # Remove potential script injection
+    if sanitized:
+        # Remove HTML/script tags
+        import re
+        sanitized = re.sub(r'<[^>]*>', '', sanitized)
+        # Remove potential SQL injection patterns
+        sanitized = re.sub(r'[;\'"\\]', '', sanitized)
+
+    return sanitized or ""
+
+def validate_json_structure(data, required_fields=None, optional_fields=None):
+    """Validate JSON structure for table operations"""
+    if not isinstance(data, dict):
+        return False, "Request body must be a JSON object"
+
+    if required_fields:
+        for field in required_fields:
+            if field not in data:
+                return False, f"Required field '{field}' is missing"
+
+    # Check for unexpected fields if both required and optional are specified
+    if required_fields is not None and optional_fields is not None:
+        allowed_fields = set(required_fields) | set(optional_fields)
+        unexpected_fields = set(data.keys()) - allowed_fields
+        if unexpected_fields:
+            return False, f"Unexpected fields: {', '.join(unexpected_fields)}"
+
+    return True, "Valid JSON structure"
+
+def safe_file_operation(operation, *args, **kwargs):
+    """Safely execute file operations with retry and error handling"""
+    import time
+    max_retries = 3
+    retry_delay = 0.1
+
+    for attempt in range(max_retries):
+        try:
+            return operation(*args, **kwargs)
+        except (OSError, IOError) as e:
+            if attempt == max_retries - 1:
+                app.logger.error(f"File operation failed after {max_retries} attempts: {e}")
+                raise
+            app.logger.warning(f"File operation attempt {attempt + 1} failed, retrying: {e}")
+            time.sleep(retry_delay * (attempt + 1))
+        except Exception as e:
+            app.logger.error(f"Unexpected error in file operation: {e}")
+            raise
+
+def validate_table_session_data(session_data):
+    """Validate table session data integrity"""
+    if not isinstance(session_data, dict):
+        return False, "Session data must be a dictionary"
+
+    required_fields = ["order_numbers", "total_amount", "amount_paid"]
+    for field in required_fields:
+        if field not in session_data:
+            return False, f"Session missing required field: {field}"
+
+    # Validate order numbers
+    order_numbers = session_data.get("order_numbers", [])
+    if not isinstance(order_numbers, list):
+        return False, "Order numbers must be a list"
+
+    # Validate amounts
+    try:
+        total_amount = float(session_data.get("total_amount", 0))
+        amount_paid = float(session_data.get("amount_paid", 0))
+
+        if total_amount < 0 or amount_paid < 0:
+            return False, "Amounts cannot be negative"
+
+        if amount_paid > total_amount + 0.01:  # Allow for small rounding differences
+            return False, "Amount paid cannot exceed total amount"
+
+    except (ValueError, TypeError):
+        return False, "Invalid amount format in session data"
+
+    return True, "Valid session data"
+
+def check_data_file_integrity():
+    """Check integrity of table management data files"""
+    integrity_report = {
+        "tables_config": {"status": "ok", "issues": []},
+        "table_sessions": {"status": "ok", "issues": []},
+        "table_history": {"status": "ok", "issues": []}
+    }
+
+    # Check tables configuration
+    try:
+        tables_config = load_tables_config()
+        if not isinstance(tables_config, dict):
+            integrity_report["tables_config"]["status"] = "corrupted"
+            integrity_report["tables_config"]["issues"].append("Invalid JSON structure")
+        elif "tables" in tables_config:
+            tables = tables_config["tables"]
+            if not isinstance(tables, dict):
+                integrity_report["tables_config"]["status"] = "corrupted"
+                integrity_report["tables_config"]["issues"].append("Tables section is not a dictionary")
+            else:
+                # Validate each table
+                for table_id, table_data in tables.items():
+                    if not isinstance(table_data, dict):
+                        integrity_report["tables_config"]["issues"].append(f"Table {table_id} has invalid data structure")
+                    elif "name" not in table_data or "seats" not in table_data:
+                        integrity_report["tables_config"]["issues"].append(f"Table {table_id} missing required fields")
+    except Exception as e:
+        integrity_report["tables_config"]["status"] = "error"
+        integrity_report["tables_config"]["issues"].append(str(e))
+
+    # Check table sessions
+    try:
+        table_sessions = load_table_sessions()
+        if not isinstance(table_sessions, dict):
+            integrity_report["table_sessions"]["status"] = "corrupted"
+            integrity_report["table_sessions"]["issues"].append("Invalid JSON structure")
+        else:
+            # Validate each session
+            for table_id, session_data in table_sessions.items():
+                is_valid, error_msg = validate_table_session_data(session_data)
+                if not is_valid:
+                    integrity_report["table_sessions"]["issues"].append(f"Table {table_id}: {error_msg}")
+    except Exception as e:
+        integrity_report["table_sessions"]["status"] = "error"
+        integrity_report["table_sessions"]["issues"].append(str(e))
+
+    # Update overall status
+    for file_report in integrity_report.values():
+        if file_report["issues"]:
+            file_report["status"] = "issues_found"
+
+    return integrity_report
+
+# --- Security & Rate Limiting for Table Operations ---
+
+_table_operation_counters = defaultdict(lambda: {"count": 0, "last_reset": time.time()})
+_table_operation_lock = threading.Lock()
+
+def check_rate_limit(client_identifier, operation_type, max_requests=60, window_seconds=60):
+    """Check rate limit for table operations"""
+    current_time = time.time()
+
+    with _table_operation_lock:
+        key = f"{client_identifier}:{operation_type}"
+        counter_data = _table_operation_counters[key]
+
+        # Reset counter if window has passed
+        if current_time - counter_data["last_reset"] > window_seconds:
+            counter_data["count"] = 0
+            counter_data["last_reset"] = current_time
+
+        # Check limit
+        if counter_data["count"] >= max_requests:
+            return False, f"Rate limit exceeded for {operation_type}. Max {max_requests} requests per {window_seconds} seconds."
+
+        # Increment counter
+        counter_data["count"] += 1
+        return True, "OK"
+
+def get_client_identifier(request):
+    """Get client identifier for rate limiting"""
+    # Use X-Forwarded-For if available (proxy), otherwise remote_addr
+    return request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+
+def log_table_operation(operation, table_id, user_info=None, details=None):
+    """Log table operations for audit trail"""
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "operation": operation,
+        "table_id": table_id,
+        "user_info": user_info or "system",
+        "details": details or {}
+    }
+
+    app.logger.info(f"TABLE_AUDIT: {operation} - Table {table_id} - {log_entry}")
+
+    # Optional: Save to audit log file for compliance
+    try:
+        audit_log_file = os.path.join(DATA_DIR, 'table_audit.json')
+        audit_entries = []
+
+        if os.path.exists(audit_log_file):
+            try:
+                with open(audit_log_file, 'r', encoding='utf-8') as f:
+                    audit_entries = json.load(f)
+            except:
+                audit_entries = []
+
+        audit_entries.append(log_entry)
+
+        # Keep only last 1000 entries to prevent file growth
+        if len(audit_entries) > 1000:
+            audit_entries = audit_entries[-1000:]
+
+        with open(audit_log_file, 'w', encoding='utf-8') as f:
+            json.dump(audit_entries, f, indent=2, ensure_ascii=False)
+
+    except Exception as e:
+        app.logger.error(f"Failed to write audit log: {e}")
+
+def enhanced_safe_file_operation(operation_name, file_operation, *args, **kwargs):
+    """Enhanced file operation with integrity checks"""
+    try:
+        # Create backup before critical operations
+        if operation_name in ['save_tables_config', 'save_table_sessions']:
+            backup_file = None
+            try:
+                if operation_name == 'save_tables_config':
+                    original_file = os.path.join(DATA_DIR, 'tables_config.json')
+                    backup_file = os.path.join(DATA_DIR, 'tables_config.json.backup')
+                elif operation_name == 'save_table_sessions':
+                    original_file = os.path.join(DATA_DIR, 'table_sessions.json')
+                    backup_file = os.path.join(DATA_DIR, 'table_sessions.json.backup')
+
+                if os.path.exists(original_file) and backup_file:
+                    import shutil
+                    shutil.copy2(original_file, backup_file)
+
+            except Exception as e:
+                app.logger.warning(f"Failed to create backup for {operation_name}: {e}")
+
+        # Execute the operation
+        result = safe_file_operation(file_operation, *args, **kwargs)
+
+        # Verify the operation succeeded for critical files
+        if operation_name in ['save_tables_config', 'save_table_sessions'] and result:
+            try:
+                if operation_name == 'save_tables_config':
+                    load_tables_config()  # Verify we can load what we just saved
+                elif operation_name == 'save_table_sessions':
+                    load_table_sessions()  # Verify we can load what we just saved
+            except Exception as e:
+                app.logger.error(f"Verification failed for {operation_name}: {e}")
+                # Attempt to restore from backup if verification fails
+                if backup_file and os.path.exists(backup_file):
+                    try:
+                        import shutil
+                        shutil.copy2(backup_file, original_file)
+                        app.logger.info(f"Restored {operation_name} from backup")
+                    except Exception as restore_error:
+                        app.logger.error(f"Failed to restore from backup: {restore_error}")
+                return False
+
+        return result
+
+    except Exception as e:
+        app.logger.error(f"Enhanced file operation {operation_name} failed: {e}")
+        raise
 
 # --- Single-instance guard (Windows mutex with lock-file fallback) ---
 SINGLE_INSTANCE_MUTEX_NAME = r"Global\\POSPalServerSingleton"
@@ -1702,7 +2064,11 @@ def get_frontend_config():
         if license_status.get('grace_period_active'):
             config['license']['grace_period_active'] = True
             config['license']['grace_period_warning'] = license_status.get('grace_period_warning_level', 'none')
-        
+
+        # Add table management setting
+        app_config = load_config()
+        config['table_management_enabled'] = app_config.get('table_management_enabled', False)
+
         return jsonify(config)
         
     except Exception as e:
@@ -1728,6 +2094,42 @@ def get_frontend_config():
             },
             'error': 'Configuration partially available'
         }), 200  # Return 200 to avoid breaking frontend
+
+
+@app.route('/api/config', methods=['POST'])
+def update_config():
+    """Update application configuration"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        # Handle table management toggle
+        if 'table_management_enabled' in data:
+            table_enabled = bool(data['table_management_enabled'])
+
+            # Update config
+            if save_config({"table_management_enabled": table_enabled}):
+                # Broadcast configuration change via SSE
+                _sse_broadcast('config_updated', {
+                    'table_management_enabled': table_enabled
+                })
+
+                app.logger.info(f"Table management {'enabled' if table_enabled else 'disabled'}")
+
+                return jsonify({
+                    "status": "success",
+                    "message": f"Table management {'enabled' if table_enabled else 'disabled'} successfully",
+                    "table_management_enabled": table_enabled
+                })
+            else:
+                return jsonify({"status": "error", "message": "Failed to save configuration"}), 500
+
+        return jsonify({"status": "error", "message": "No valid configuration provided"}), 400
+
+    except Exception as e:
+        app.logger.error(f"Failed to update config: {e}")
+        return jsonify({"status": "error", "message": f"Failed to update configuration: {str(e)}"}), 500
 
 
 @app.route('/')
@@ -2218,6 +2620,1601 @@ def change_password():
     if save_config({"management_password": new_pw}):
         return jsonify({"success": True, "message": "Password updated."})
     return jsonify({"success": False, "message": "Failed to update password."}), 500
+
+
+# === Table Management API Endpoints ===
+
+@app.route('/api/tables', methods=['GET'])
+def get_tables():
+    """Get all tables and their status"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        tables_config = load_tables_config()
+        table_sessions = load_table_sessions()
+
+        # Merge table configuration with current session status
+        for table_id, table_info in tables_config.get("tables", {}).items():
+            if table_id in table_sessions:
+                session = table_sessions[table_id]
+                session_status = session.get("status", "available")
+                table_info["session"] = {
+                    "status": session_status,
+                    "orders": session.get("orders", []),
+                    "total_amount": session.get("total_amount", 0.0),
+                    "opened_at": session.get("opened_at"),
+                    "last_order_at": session.get("last_order_at"),
+                    "payment_status": session.get("payment_status", "unpaid")
+                }
+                # Update table status to match session status for consistency
+                table_info["status"] = session_status
+            else:
+                table_info["session"] = {
+                    "status": "available",
+                    "orders": [],
+                    "total_amount": 0.0,
+                    "payment_status": "unpaid"
+                }
+                # Ensure table status is available when no session exists
+                table_info["status"] = "available"
+
+        return jsonify({
+            "status": "success",
+            "tables": tables_config.get("tables", {}),
+            "settings": tables_config.get("settings", {})
+        })
+    except Exception as e:
+        app.logger.error(f"Failed to get tables: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get tables: {str(e)}"}), 500
+
+@app.route('/api/tables/configure', methods=['POST'])
+def configure_tables():
+    """Update table configuration"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        config_data = request.get_json()
+        if not config_data:
+            return jsonify({"status": "error", "message": "No configuration data provided"}), 400
+
+        if save_tables_config(config_data):
+            # Broadcast table configuration update via SSE
+            _sse_broadcast('tables_config', config_data)
+            return jsonify({"status": "success", "message": "Table configuration updated"})
+        else:
+            return jsonify({"status": "error", "message": "Failed to save table configuration"}), 500
+    except Exception as e:
+        app.logger.error(f"Failed to configure tables: {e}")
+        return jsonify({"status": "error", "message": f"Failed to configure tables: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/status', methods=['GET'])
+def get_table_status(table_id):
+    """Get specific table status"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        tables_config = load_tables_config()
+        table_sessions = load_table_sessions()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        table_info = tables_config["tables"][table_id].copy()
+
+        if table_id in table_sessions:
+            session = table_sessions[table_id]
+            session_status = session.get("status", "available")
+            table_info["session"] = {
+                "status": session_status,
+                "orders": session.get("orders", []),
+                "total_amount": session.get("total_amount", 0.0),
+                "opened_at": session.get("opened_at"),
+                "last_order_at": session.get("last_order_at"),
+                "payment_status": session.get("payment_status", "unpaid")
+            }
+            # Update table status to match session status for consistency
+            table_info["status"] = session_status
+        else:
+            table_info["session"] = {
+                "status": "available",
+                "orders": [],
+                "total_amount": 0.0,
+                "payment_status": "unpaid"
+            }
+            # Ensure table status is available when no session exists
+            table_info["status"] = "available"
+
+        return jsonify({
+            "status": "success",
+            "table": table_info
+        })
+    except Exception as e:
+        app.logger.error(f"Failed to get table status for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get table status: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/status', methods=['POST'])
+def update_table_status(table_id):
+    """Update table status"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        tables_config = load_tables_config()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        # Update table status in configuration if provided
+        if "status" in data:
+            tables_config["tables"][table_id]["status"] = data["status"]
+            save_tables_config(tables_config)
+
+        # Broadcast table status update via SSE
+        _sse_broadcast('table_status', {
+            "table_id": table_id,
+            "status": data.get("status")
+        })
+
+        return jsonify({"status": "success", "message": "Table status updated"})
+    except Exception as e:
+        app.logger.error(f"Failed to update table status for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to update table status: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/session', methods=['GET'])
+def get_table_session(table_id):
+    """Get table session (orders, total)"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        tables_config = load_tables_config()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        table_sessions = load_table_sessions()
+
+        if table_id in table_sessions:
+            session = table_sessions[table_id]
+            return jsonify({
+                "status": "success",
+                "session": {
+                    "status": session.get("status", "available"),
+                    "orders": session.get("orders", []),
+                    "total_amount": session.get("total_amount", 0.0),
+                    "opened_at": session.get("opened_at"),
+                    "last_order_at": session.get("last_order_at"),
+                    "payment_status": session.get("payment_status", "unpaid")
+                }
+            })
+        else:
+            return jsonify({
+                "status": "success",
+                "session": {
+                    "status": "available",
+                    "orders": [],
+                    "total_amount": 0.0,
+                    "payment_status": "unpaid"
+                }
+            })
+    except Exception as e:
+        app.logger.error(f"Failed to get table session for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get table session: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/open', methods=['POST'])
+def open_table(table_id):
+    """Open/assign table"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        tables_config = load_tables_config()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        sessions = load_table_sessions()
+        current_time = datetime.now().isoformat()
+
+        # Create or update session
+        sessions[table_id] = {
+            "status": "occupied",
+            "orders": [],
+            "total_amount": 0.0,
+            "opened_at": current_time,
+            "last_order_at": current_time,
+            "payment_status": "unpaid"
+        }
+
+        if save_table_sessions(sessions):
+            # Broadcast table opened via SSE
+            _sse_broadcast('table_opened', {
+                "table_id": table_id,
+                "opened_at": current_time
+            })
+            return jsonify({"status": "success", "message": "Table opened"})
+        else:
+            return jsonify({"status": "error", "message": "Failed to open table"}), 500
+    except Exception as e:
+        app.logger.error(f"Failed to open table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to open table: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/close', methods=['POST'])
+def close_table(table_id):
+    """Close table (mark as paid)"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        tables_config = load_tables_config()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        if close_table_session(table_id):
+            # Broadcast table closed via SSE
+            _sse_broadcast('table_closed', {
+                "table_id": table_id,
+                "closed_at": datetime.now().isoformat()
+            })
+            return jsonify({"status": "success", "message": "Table closed and marked as paid"})
+        else:
+            return jsonify({"status": "error", "message": "Failed to close table"}), 500
+    except Exception as e:
+        app.logger.error(f"Failed to close table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to close table: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/clear', methods=['POST'])
+def clear_table(table_id):
+    """Clear table for next customers"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        data = request.get_json() or {}
+        force_clear = data.get('force_clear', False)
+
+        tables_config = load_tables_config()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        # Check payment status before clearing (unless forced)
+        if not force_clear:
+            sessions = load_table_sessions()
+            if table_id in sessions:
+                session = sessions[table_id]
+                payment_status = session.get("payment_status", "unpaid")
+                total_amount = session.get("total_amount", 0.0)
+                amount_paid = session.get("amount_paid", 0.0)
+                amount_remaining = max(0, total_amount - amount_paid)
+
+                if payment_status != "paid" and amount_remaining > 0.01:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Cannot clear table with outstanding balance of €{amount_remaining:.2f}. Payment required or use force_clear.",
+                        "payment_status": payment_status,
+                        "total_amount": total_amount,
+                        "amount_paid": amount_paid,
+                        "amount_remaining": amount_remaining,
+                        "requires_force": True
+                    }), 400
+
+        if clear_table_session(table_id):
+            # Broadcast table cleared via SSE
+            _sse_broadcast('table_cleared', {
+                "table_id": table_id,
+                "cleared_at": datetime.now().isoformat()
+            })
+            return jsonify({"status": "success", "message": "Table cleared and made available"})
+        else:
+            return jsonify({"status": "error", "message": "Failed to clear table"}), 500
+    except Exception as e:
+        app.logger.error(f"Failed to clear table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to clear table: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/bill', methods=['GET'])
+def get_table_bill(table_id):
+    """Generate complete bill for a table showing all orders"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        # Generate bill data
+        bill_data = get_table_bill_data(table_id)
+
+        if bill_data is None:
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        return jsonify(bill_data)
+
+    except Exception as e:
+        app.logger.error(f"Failed to generate bill for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to generate bill: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/print-bill', methods=['POST'])
+def print_table_bill(table_id):
+    """Print complete table bill using POSPal's printing system"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        # Get bill data
+        bill_data = get_table_bill_data(table_id)
+        if bill_data is None:
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        if not bill_data.get('orders'):
+            return jsonify({"status": "error", "message": "No orders found for this table"}), 400
+
+        # Print bill using existing printing infrastructure
+        print_success = print_table_bill_ticket(bill_data)
+
+        if print_success:
+            app.logger.info(f"Table {table_id} bill printed successfully")
+            # Broadcast SSE event for real-time updates
+            _sse_broadcast("table_bill_printed", {
+                "table_id": table_id,
+                "timestamp": datetime.now().isoformat(),
+                "total": bill_data.get('total', 0.0)
+            })
+
+            return jsonify({
+                "status": "success",
+                "message": "Bill printed successfully",
+                "table_id": table_id,
+                "print_jobs": COPIES_PER_ORDER,
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to print bill. Check printer status."
+            }), 500
+
+    except Exception as e:
+        app.logger.error(f"Failed to print bill for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to print bill: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/add-payment', methods=['POST'])
+def add_table_payment(table_id):
+    """Record a payment for a table"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        data = request.get_json() or {}
+
+        # Validate required fields
+        amount = data.get('amount')
+        payment_method = data.get('method', 'Cash')
+
+        if amount is None:
+            return jsonify({"status": "error", "message": "Payment amount is required"}), 400
+
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                return jsonify({"status": "error", "message": "Payment amount must be positive"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"status": "error", "message": "Invalid payment amount"}), 400
+
+        # Get current session
+        sessions = load_table_sessions()
+        if table_id not in sessions:
+            return jsonify({"status": "error", "message": "Table not found or not in use"}), 404
+
+        session = sessions[table_id]
+        current_total = session.get("total_amount", 0.0)
+        current_paid = session.get("amount_paid", 0.0)
+        current_remaining = max(0, current_total - current_paid)
+
+        # Validate payment amount doesn't exceed remaining balance
+        if amount > current_remaining + 0.01:  # Small tolerance for rounding
+            return jsonify({
+                "status": "error",
+                "message": f"Payment amount (€{amount:.2f}) exceeds remaining balance (€{current_remaining:.2f})"
+            }), 400
+
+        # Create payment record
+        payment_id = str(uuid.uuid4())
+        payment_record = {
+            "payment_id": payment_id,
+            "amount": round(amount, 2),
+            "method": payment_method,
+            "timestamp": datetime.now().isoformat(),
+            "note": data.get('note', ''),
+            "items": data.get('items', [])  # For split by items functionality
+        }
+
+        # Ensure payment arrays exist
+        if "payments" not in session:
+            session["payments"] = []
+        if "amount_paid" not in session:
+            session["amount_paid"] = 0.0
+
+        # Add payment to session
+        session["payments"].append(payment_record)
+        session["amount_paid"] = round(session["amount_paid"] + amount, 2)
+        session["amount_remaining"] = round(max(0, current_total - session["amount_paid"]), 2)
+
+        # Update payment status
+        if session["amount_remaining"] <= 0.01:  # Tolerance for rounding
+            session["payment_status"] = "paid"
+        elif session["amount_paid"] > 0:
+            session["payment_status"] = "partial"
+        else:
+            session["payment_status"] = "unpaid"
+
+        # Save updated session
+        if not save_table_sessions(sessions):
+            return jsonify({"status": "error", "message": "Failed to save payment"}), 500
+
+        app.logger.info(f"Payment recorded for table {table_id}: €{amount:.2f} via {payment_method}")
+
+        # Broadcast SSE event for real-time updates
+        _sse_broadcast("payment_updated", {
+            "table_id": table_id,
+            "payment_id": payment_id,
+            "amount": amount,
+            "method": payment_method,
+            "payment_status": session["payment_status"],
+            "amount_paid": session["amount_paid"],
+            "amount_remaining": session["amount_remaining"],
+            "timestamp": payment_record["timestamp"]
+        })
+
+        return jsonify({
+            "status": "success",
+            "payment_id": payment_id,
+            "amount_paid": session["amount_paid"],
+            "payment_status": session["payment_status"],
+            "amount_remaining": session["amount_remaining"]
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to add payment for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to record payment: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/payments', methods=['GET'])
+def get_table_payments(table_id):
+    """Get payment history for a table"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        sessions = load_table_sessions()
+        if table_id not in sessions:
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        session = sessions[table_id]
+        payments = session.get("payments", [])
+
+        return jsonify({
+            "status": "success",
+            "table_id": table_id,
+            "payments": payments,
+            "amount_paid": session.get("amount_paid", 0.0),
+            "amount_remaining": session.get("amount_remaining", 0.0),
+            "payment_status": session.get("payment_status", "unpaid"),
+            "total_amount": session.get("total_amount", 0.0)
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to get payments for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get payments: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/split-bill', methods=['POST'])
+def split_table_bill(table_id):
+    """Generate split bill options for a table"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        data = request.get_json() or {}
+        split_type = data.get('split_type', 'amount')  # 'amount', 'items', or 'equal'
+
+        # Get table bill data
+        bill_data = get_table_bill_data(table_id)
+        if bill_data is None:
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        if not bill_data.get('orders'):
+            return jsonify({"status": "error", "message": "No orders found for this table"}), 400
+
+        total_amount = bill_data['grand_total']
+        already_paid = bill_data.get('amount_paid', 0.0)
+        remaining_amount = max(0, total_amount - already_paid)
+
+        if remaining_amount <= 0:
+            return jsonify({"status": "error", "message": "Bill is already fully paid"}), 400
+
+        split_options = {}
+
+        if split_type == 'equal':
+            # Split equally among specified number of people
+            people_count = data.get('people_count', 2)
+            if people_count < 2:
+                return jsonify({"status": "error", "message": "People count must be at least 2"}), 400
+
+            per_person = round(remaining_amount / people_count, 2)
+            # Handle rounding by adjusting the last person's amount
+            last_person_amount = round(remaining_amount - (per_person * (people_count - 1)), 2)
+
+            split_options['equal'] = {
+                "type": "equal",
+                "people_count": people_count,
+                "per_person": per_person,
+                "splits": [
+                    {"person": i + 1, "amount": per_person if i < people_count - 1 else last_person_amount}
+                    for i in range(people_count)
+                ],
+                "total": remaining_amount
+            }
+
+        elif split_type == 'amount':
+            # Custom split by specified amounts
+            custom_amounts = data.get('amounts', [])
+            if not custom_amounts:
+                return jsonify({"status": "error", "message": "Custom amounts required for amount split"}), 400
+
+            try:
+                amounts = [float(amount) for amount in custom_amounts]
+                if any(amount <= 0 for amount in amounts):
+                    return jsonify({"status": "error", "message": "All amounts must be positive"}), 400
+
+                total_splits = sum(amounts)
+                if abs(total_splits - remaining_amount) > 0.01:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Split amounts total (€{total_splits:.2f}) must equal remaining amount (€{remaining_amount:.2f})"
+                    }), 400
+
+                split_options['amount'] = {
+                    "type": "amount",
+                    "splits": [
+                        {"person": i + 1, "amount": round(amount, 2)}
+                        for i, amount in enumerate(amounts)
+                    ],
+                    "total": remaining_amount
+                }
+
+            except (ValueError, TypeError):
+                return jsonify({"status": "error", "message": "Invalid amount values"}), 400
+
+        elif split_type == 'items':
+            # Split by specific orders/items
+            person_orders = data.get('person_orders', {})
+            if not person_orders:
+                return jsonify({"status": "error", "message": "Person orders mapping required for item split"}), 400
+
+            orders = bill_data['orders']
+            order_totals = {}
+
+            # Calculate total for each order
+            for order in orders:
+                order_number = order.get('order_number')
+                order_total = 0.0
+                for item in order.get('items', []):
+                    item_quantity = item.get('quantity', 1)
+                    item_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                    order_total += item_quantity * item_price
+                order_totals[str(order_number)] = round(order_total, 2)
+
+            # Calculate each person's total based on assigned orders
+            person_totals = {}
+            assigned_orders = set()
+
+            for person, order_numbers in person_orders.items():
+                person_total = 0.0
+                for order_num in order_numbers:
+                    order_key = str(order_num)
+                    if order_key in order_totals:
+                        if order_key in assigned_orders:
+                            return jsonify({
+                                "status": "error",
+                                "message": f"Order {order_num} is assigned to multiple people"
+                            }), 400
+                        person_total += order_totals[order_key]
+                        assigned_orders.add(order_key)
+                    else:
+                        return jsonify({
+                            "status": "error",
+                            "message": f"Order {order_num} not found"
+                        }), 400
+                person_totals[person] = round(person_total, 2)
+
+            # Check if all orders are assigned
+            unassigned_orders = set(order_totals.keys()) - assigned_orders
+            if unassigned_orders:
+                unassigned_total = sum(order_totals[order] for order in unassigned_orders)
+                return jsonify({
+                    "status": "error",
+                    "message": f"Orders {list(unassigned_orders)} are unassigned (total: €{unassigned_total:.2f})"
+                }), 400
+
+            split_options['items'] = {
+                "type": "items",
+                "splits": [
+                    {"person": person, "amount": amount, "orders": person_orders[person]}
+                    for person, amount in person_totals.items()
+                ],
+                "order_totals": order_totals,
+                "total": remaining_amount
+            }
+
+        else:
+            return jsonify({"status": "error", "message": "Invalid split_type. Use 'equal', 'amount', or 'items'"}), 400
+
+        return jsonify({
+            "status": "success",
+            "table_id": table_id,
+            "total_amount": total_amount,
+            "already_paid": already_paid,
+            "remaining_amount": remaining_amount,
+            "split_options": split_options
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to generate split bill for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to generate split bill: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/print-customer-receipt', methods=['POST'])
+def print_customer_receipt(table_id):
+    """Print customer receipt for specific payment"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        data = request.get_json() or {}
+        payment_id = data.get('payment_id')
+
+        if not payment_id:
+            return jsonify({"status": "error", "message": "Payment ID is required"}), 400
+
+        # Get table session and payment details
+        sessions = load_table_sessions()
+        if table_id not in sessions:
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        session = sessions[table_id]
+        payments = session.get("payments", [])
+
+        # Find the specific payment
+        payment = None
+        for p in payments:
+            if p.get("payment_id") == payment_id:
+                payment = p
+                break
+
+        if not payment:
+            return jsonify({"status": "error", "message": "Payment not found"}), 404
+
+        # Get table bill data for context
+        bill_data = get_table_bill_data(table_id)
+        if bill_data is None:
+            return jsonify({"status": "error", "message": "Table data not found"}), 404
+
+        # Prepare customer receipt data
+        receipt_data = {
+            "table_id": table_id,
+            "table_name": bill_data.get("table_name", f"Table {table_id}"),
+            "payment": payment,
+            "total_payments": len(payments),
+            "bill_total": bill_data.get("grand_total", 0.0),
+            "amount_paid_total": session.get("amount_paid", 0.0),
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Print customer receipt
+        print_success = print_customer_receipt_ticket(receipt_data)
+
+        if print_success:
+            app.logger.info(f"Customer receipt printed for table {table_id}, payment {payment_id}")
+
+            # Broadcast SSE event
+            _sse_broadcast("customer_receipt_printed", {
+                "table_id": table_id,
+                "payment_id": payment_id,
+                "amount": payment.get("amount", 0.0),
+                "timestamp": receipt_data["timestamp"]
+            })
+
+            return jsonify({
+                "status": "success",
+                "message": "Customer receipt printed successfully",
+                "table_id": table_id,
+                "payment_id": payment_id,
+                "print_jobs": COPIES_PER_ORDER,
+                "timestamp": receipt_data["timestamp"]
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to print customer receipt. Check printer status."
+            }), 500
+
+    except Exception as e:
+        app.logger.error(f"Failed to print customer receipt for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to print customer receipt: {str(e)}"}), 500
+
+@app.route('/api/tables/history/<date>', methods=['GET'])
+def get_table_history(date):
+    """Get table history for a specific date"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        # Validate date format
+        try:
+            datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+        # Load history
+        history = load_table_history(date)
+
+        return jsonify({
+            "status": "success",
+            "date": date,
+            "history": history
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to get table history for {date}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get table history: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/recalculate', methods=['POST'])
+def recalculate_table_total_endpoint(table_id):
+    """Recalculate table total from actual order data"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
+
+    try:
+        # Check if table exists
+        tables_config = load_tables_config()
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": "Table not found"}), 404
+
+        # Check if table has an active session
+        sessions = load_table_sessions()
+        if table_id not in sessions:
+            return jsonify({"status": "error", "message": "No active session for this table"}), 400
+
+        # Recalculate total
+        new_total = recalculate_table_total(table_id)
+
+        return jsonify({
+            "status": "success",
+            "table_id": table_id,
+            "new_total": round(new_total, 2),
+            "message": "Table total recalculated from order data"
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to recalculate total for table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to recalculate total: {str(e)}"}), 500
+
+
+# --- PHASE 5: Table Management Optimizations ---
+
+# Table status cache for performance optimization
+_table_status_cache = {}
+_table_config_cache = {}
+_table_cache_time = 0
+_table_cache_lock = threading.Lock()
+TABLE_CACHE_TTL = 30  # Cache for 30 seconds
+
+def get_cached_table_status():
+    """Get cached table status with TTL"""
+    global _table_status_cache, _table_cache_time
+
+    with _table_cache_lock:
+        if _table_status_cache and time.time() - _table_cache_time < TABLE_CACHE_TTL:
+            return _table_status_cache.copy()
+    return None
+
+def update_table_status_cache(table_data):
+    """Update table status cache"""
+    global _table_status_cache, _table_cache_time
+
+    with _table_cache_lock:
+        _table_status_cache = table_data.copy()
+        _table_cache_time = time.time()
+
+def invalidate_table_cache():
+    """Invalidate table cache"""
+    global _table_status_cache, _table_cache_time
+
+    with _table_cache_lock:
+        _table_status_cache = {}
+        _table_cache_time = 0
+
+@app.route('/api/tables/suggest', methods=['GET'])
+def suggest_tables():
+    """Suggest best available tables based on party size"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        # Validate party size parameter
+        party_size = request.args.get('party_size', type=int)
+        if not party_size or party_size < 1 or party_size > 20:
+            return jsonify({
+                "status": "error",
+                "message": "Valid party_size parameter required (1-20)"
+            }), 400
+
+        # Load table configuration and sessions
+        tables_config = load_tables_config()
+        table_sessions = load_table_sessions()
+
+        if not tables_config or not tables_config.get("tables"):
+            return jsonify({
+                "status": "error",
+                "message": "No tables configured"
+            }), 400
+
+        suggestions = []
+        available_tables = []
+
+        # Analyze each table
+        for table_id, table_info in tables_config.get("tables", {}).items():
+            table_seats = table_info.get("seats", 4)
+            table_name = table_info.get("name", f"Table {table_id}")
+            table_status = table_info.get("status", "available")
+
+            # Check if table has active session
+            has_active_session = table_id in table_sessions
+
+            # Only consider available tables without active sessions
+            if table_status == "available" and not has_active_session:
+                available_tables.append({
+                    "table_id": table_id,
+                    "table_name": table_name,
+                    "seats": table_seats,
+                    "status": "available"
+                })
+
+        if not available_tables:
+            return jsonify({
+                "status": "success",
+                "party_size": party_size,
+                "suggestions": [],
+                "message": "No available tables found"
+            })
+
+        # Generate suggestions with match quality scoring
+        for table in available_tables:
+            seats = table["seats"]
+
+            if seats == party_size:
+                # Perfect match
+                suggestions.append({
+                    **table,
+                    "match_quality": "perfect",
+                    "reason": "Exact capacity match",
+                    "score": 100
+                })
+            elif seats == party_size + 1 or seats == party_size + 2:
+                # Good match (1-2 extra seats)
+                extra_seats = seats - party_size
+                suggestions.append({
+                    **table,
+                    "match_quality": "good",
+                    "reason": f"{extra_seats} extra seat{'s' if extra_seats > 1 else ''}",
+                    "score": 90 - (extra_seats * 5)
+                })
+            elif seats > party_size and seats <= party_size + 4:
+                # Acceptable match
+                extra_seats = seats - party_size
+                suggestions.append({
+                    **table,
+                    "match_quality": "acceptable",
+                    "reason": f"{extra_seats} extra seats",
+                    "score": 70 - (extra_seats * 5)
+                })
+            elif seats > party_size:
+                # Poor match but available
+                extra_seats = seats - party_size
+                suggestions.append({
+                    **table,
+                    "match_quality": "poor",
+                    "reason": f"Much larger table ({extra_seats} extra seats)",
+                    "score": 50 - min(extra_seats, 10) * 2
+                })
+
+        # Sort suggestions by score (best first)
+        suggestions.sort(key=lambda x: x["score"], reverse=True)
+
+        # Remove score from response (internal use only)
+        for suggestion in suggestions:
+            suggestion.pop("score", None)
+
+        # Limit to top 5 suggestions
+        suggestions = suggestions[:5]
+
+        app.logger.info(f"Generated {len(suggestions)} table suggestions for party size {party_size}")
+
+        return jsonify({
+            "status": "success",
+            "party_size": party_size,
+            "suggestions": suggestions
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to generate table suggestions: {e}")
+        return jsonify({"status": "error", "message": f"Failed to generate suggestions: {str(e)}"}), 500
+
+@app.route('/api/tables/health', methods=['GET'])
+def table_health_check():
+    """Check table management system health"""
+    if not is_table_management_enabled():
+        return jsonify({
+            "status": "disabled",
+            "table_management_enabled": False,
+            "message": "Table management is not enabled"
+        })
+
+    try:
+        health_status = {
+            "status": "healthy",
+            "table_management_enabled": True,
+            "total_tables": 0,
+            "active_sessions": 0,
+            "printer_status": "unknown",
+            "data_files": {}
+        }
+
+        # Check table configuration file
+        tables_config_file = os.path.join(DATA_DIR, 'tables_config.json')
+        if os.path.exists(tables_config_file) and os.access(tables_config_file, os.R_OK):
+            health_status["data_files"]["tables_config"] = "ok"
+            try:
+                tables_config = load_tables_config()
+                health_status["total_tables"] = len(tables_config.get("tables", {}))
+            except:
+                health_status["data_files"]["tables_config"] = "corrupted"
+                health_status["status"] = "degraded"
+        else:
+            health_status["data_files"]["tables_config"] = "missing"
+            health_status["status"] = "degraded"
+
+        # Check table sessions file
+        table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
+        if os.path.exists(table_sessions_file) and os.access(table_sessions_file, os.R_OK):
+            health_status["data_files"]["table_sessions"] = "ok"
+            try:
+                table_sessions = load_table_sessions()
+                health_status["active_sessions"] = len(table_sessions)
+            except:
+                health_status["data_files"]["table_sessions"] = "corrupted"
+                health_status["status"] = "degraded"
+        else:
+            health_status["data_files"]["table_sessions"] = "ok"  # Empty sessions file is normal
+
+        # Check table history file
+        table_history_file = os.path.join(DATA_DIR, 'table_history.json')
+        if os.path.exists(table_history_file) and os.access(table_history_file, os.R_OK):
+            health_status["data_files"]["table_history"] = "ok"
+        else:
+            health_status["data_files"]["table_history"] = "ok"  # Missing history is normal for new installations
+
+        # Check printer status
+        try:
+            printers = [printer[2] for printer in win32print.EnumPrinters(2)]
+            if printers:
+                health_status["printer_status"] = "available"
+                health_status["available_printers"] = len(printers)
+            else:
+                health_status["printer_status"] = "none_found"
+        except Exception as e:
+            health_status["printer_status"] = "error"
+            health_status["printer_error"] = str(e)
+
+        # Overall health assessment
+        if health_status["data_files"]["tables_config"] != "ok":
+            health_status["status"] = "unhealthy"
+        elif any(status == "corrupted" for status in health_status["data_files"].values()):
+            health_status["status"] = "degraded"
+
+        return jsonify(health_status)
+
+    except Exception as e:
+        app.logger.error(f"Failed to check table health: {e}")
+        return jsonify({
+            "status": "error",
+            "table_management_enabled": True,
+            "message": f"Health check failed: {str(e)}"
+        }), 500
+
+@app.route('/api/tables/add', methods=['POST'])
+def add_table():
+    """Add new table to configuration"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        # Validate required fields
+        table_id = str(data.get("table_id", "")).strip()
+        table_name = str(data.get("name", "")).strip()
+        seats = data.get("seats")
+
+        if not table_id:
+            return jsonify({"status": "error", "message": "table_id is required"}), 400
+
+        if not table_name:
+            return jsonify({"status": "error", "message": "name is required"}), 400
+
+        if not isinstance(seats, int) or seats < 1 or seats > 50:
+            return jsonify({"status": "error", "message": "seats must be a number between 1 and 50"}), 400
+
+        # Load current configuration
+        tables_config = load_tables_config()
+
+        # Check if table ID already exists
+        if table_id in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": f"Table ID '{table_id}' already exists"}), 409
+
+        # Check if table name already exists
+        for existing_id, existing_table in tables_config.get("tables", {}).items():
+            if existing_table.get("name", "").lower() == table_name.lower():
+                return jsonify({"status": "error", "message": f"Table name '{table_name}' already exists"}), 409
+
+        # Add new table
+        new_table = {
+            "name": table_name,
+            "seats": seats,
+            "status": "available"
+        }
+
+        if "tables" not in tables_config:
+            tables_config["tables"] = {}
+
+        tables_config["tables"][table_id] = new_table
+
+        # Save configuration
+        if save_tables_config(tables_config):
+            # Invalidate cache
+            invalidate_table_cache()
+
+            # Broadcast table configuration update via SSE
+            _sse_broadcast('table_added', {
+                "table_id": table_id,
+                "table": new_table
+            })
+
+            app.logger.info(f"Added new table: {table_id} - {table_name} ({seats} seats)")
+
+            return jsonify({
+                "status": "success",
+                "message": "Table added successfully",
+                "table": {
+                    "table_id": table_id,
+                    **new_table
+                }
+            })
+        else:
+            return jsonify({"status": "error", "message": "Failed to save table configuration"}), 500
+
+    except Exception as e:
+        app.logger.error(f"Failed to add table: {e}")
+        return jsonify({"status": "error", "message": f"Failed to add table: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>/configure', methods=['PUT'])
+def update_table_config(table_id):
+    """Update table properties"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        # Load current configuration
+        tables_config = load_tables_config()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": f"Table '{table_id}' not found"}), 404
+
+        current_table = tables_config["tables"][table_id]
+
+        # Validate and update fields
+        if "name" in data:
+            new_name = str(data["name"]).strip()
+            if not new_name:
+                return jsonify({"status": "error", "message": "name cannot be empty"}), 400
+
+            # Check if name conflicts with other tables
+            for existing_id, existing_table in tables_config.get("tables", {}).items():
+                if existing_id != table_id and existing_table.get("name", "").lower() == new_name.lower():
+                    return jsonify({"status": "error", "message": f"Table name '{new_name}' already exists"}), 409
+
+            current_table["name"] = new_name
+
+        if "seats" in data:
+            seats = data["seats"]
+            if not isinstance(seats, int) or seats < 1 or seats > 50:
+                return jsonify({"status": "error", "message": "seats must be a number between 1 and 50"}), 400
+
+            current_table["seats"] = seats
+
+        if "status" in data:
+            status = str(data["status"]).strip()
+            if status not in ["available", "occupied", "reserved", "out_of_order"]:
+                return jsonify({"status": "error", "message": "Invalid status. Must be: available, occupied, reserved, or out_of_order"}), 400
+
+            current_table["status"] = status
+
+        # Save configuration
+        if save_tables_config(tables_config):
+            # Invalidate cache
+            invalidate_table_cache()
+
+            # Broadcast table configuration update via SSE
+            _sse_broadcast('table_updated', {
+                "table_id": table_id,
+                "table": current_table
+            })
+
+            app.logger.info(f"Updated table configuration: {table_id}")
+
+            return jsonify({
+                "status": "success",
+                "message": "Table updated successfully",
+                "table": {
+                    "table_id": table_id,
+                    **current_table
+                }
+            })
+        else:
+            return jsonify({"status": "error", "message": "Failed to save table configuration"}), 500
+
+    except Exception as e:
+        app.logger.error(f"Failed to update table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to update table: {str(e)}"}), 500
+
+@app.route('/api/tables/<table_id>', methods=['DELETE'])
+def delete_table(table_id):
+    """Remove table from configuration (only if no active session)"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        # Load current configuration and sessions
+        tables_config = load_tables_config()
+        table_sessions = load_table_sessions()
+
+        if table_id not in tables_config.get("tables", {}):
+            return jsonify({"status": "error", "message": f"Table '{table_id}' not found"}), 404
+
+        # Check if table has active session
+        if table_id in table_sessions:
+            return jsonify({
+                "status": "error",
+                "message": f"Cannot delete table '{table_id}' - has active session. Close session first."
+            }), 409
+
+        # Remove table from configuration
+        table_name = tables_config["tables"][table_id].get("name", table_id)
+        del tables_config["tables"][table_id]
+
+        # Save configuration
+        if save_tables_config(tables_config):
+            # Invalidate cache
+            invalidate_table_cache()
+
+            # Broadcast table deletion via SSE
+            _sse_broadcast('table_deleted', {
+                "table_id": table_id,
+                "table_name": table_name
+            })
+
+            app.logger.info(f"Deleted table: {table_id} - {table_name}")
+
+            return jsonify({
+                "status": "success",
+                "message": f"Table '{table_name}' deleted successfully"
+            })
+        else:
+            return jsonify({"status": "error", "message": "Failed to save table configuration"}), 500
+
+    except Exception as e:
+        app.logger.error(f"Failed to delete table {table_id}: {e}")
+        return jsonify({"status": "error", "message": f"Failed to delete table: {str(e)}"}), 500
+
+@app.route('/api/tables/bulk-clear', methods=['POST'])
+def bulk_clear_tables():
+    """Clear multiple paid tables at once"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        data = request.get_json()
+        if not data or "table_ids" not in data:
+            return jsonify({"status": "error", "message": "table_ids array is required"}), 400
+
+        table_ids = data.get("table_ids", [])
+        if not isinstance(table_ids, list) or not table_ids:
+            return jsonify({"status": "error", "message": "table_ids must be a non-empty array"}), 400
+
+        # Load current configuration and sessions
+        tables_config = load_tables_config()
+        table_sessions = load_table_sessions()
+
+        results = {
+            "cleared": [],
+            "failed": [],
+            "skipped": []
+        }
+
+        for table_id in table_ids:
+            table_id = str(table_id)
+
+            # Validate table exists
+            if table_id not in tables_config.get("tables", {}):
+                results["failed"].append({
+                    "table_id": table_id,
+                    "reason": "Table not found"
+                })
+                continue
+
+            # Check if table has session
+            if table_id not in table_sessions:
+                results["skipped"].append({
+                    "table_id": table_id,
+                    "reason": "No active session"
+                })
+                continue
+
+            session = table_sessions[table_id]
+
+            # Check if table is fully paid
+            total_amount = session.get("total_amount", 0)
+            amount_paid = session.get("amount_paid", 0)
+
+            if amount_paid < total_amount:
+                results["skipped"].append({
+                    "table_id": table_id,
+                    "reason": f"Not fully paid (${amount_paid:.2f} of ${total_amount:.2f})"
+                })
+                continue
+
+            # Clear the table
+            try:
+                if clear_table_session(table_id):
+                    results["cleared"].append({
+                        "table_id": table_id,
+                        "table_name": tables_config["tables"][table_id].get("name", table_id)
+                    })
+                else:
+                    results["failed"].append({
+                        "table_id": table_id,
+                        "reason": "Failed to clear session"
+                    })
+            except Exception as e:
+                results["failed"].append({
+                    "table_id": table_id,
+                    "reason": str(e)
+                })
+
+        # Invalidate cache after bulk operations
+        if results["cleared"]:
+            invalidate_table_cache()
+
+        app.logger.info(f"Bulk clear operation: {len(results['cleared'])} cleared, {len(results['failed'])} failed, {len(results['skipped'])} skipped")
+
+        return jsonify({
+            "status": "success",
+            "message": f"Bulk clear completed: {len(results['cleared'])} tables cleared",
+            "results": results
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to bulk clear tables: {e}")
+        return jsonify({"status": "error", "message": f"Failed to bulk clear tables: {str(e)}"}), 500
+
+@app.route('/api/tables/summary', methods=['GET'])
+def get_table_summary():
+    """Get complete table system summary"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        # Load configuration and sessions
+        tables_config = load_tables_config()
+        table_sessions = load_table_sessions()
+
+        summary = {
+            "total_tables": len(tables_config.get("tables", {})),
+            "active_sessions": len(table_sessions),
+            "table_statuses": {
+                "available": 0,
+                "occupied": 0,
+                "reserved": 0,
+                "out_of_order": 0
+            },
+            "revenue_summary": {
+                "total_unpaid": 0.0,
+                "total_paid": 0.0,
+                "pending_payment": 0.0
+            },
+            "session_summary": {
+                "fully_paid": 0,
+                "partially_paid": 0,
+                "unpaid": 0
+            }
+        }
+
+        # Analyze table statuses
+        for table_id, table_info in tables_config.get("tables", {}).items():
+            status = table_info.get("status", "available")
+
+            # Adjust status based on active sessions
+            if table_id in table_sessions:
+                if status == "available":
+                    status = "occupied"
+
+            summary["table_statuses"][status] = summary["table_statuses"].get(status, 0) + 1
+
+        # Analyze session financials
+        for table_id, session in table_sessions.items():
+            total_amount = session.get("total_amount", 0)
+            amount_paid = session.get("amount_paid", 0)
+
+            summary["revenue_summary"]["total_unpaid"] += total_amount
+            summary["revenue_summary"]["total_paid"] += amount_paid
+            summary["revenue_summary"]["pending_payment"] += (total_amount - amount_paid)
+
+            # Categorize payment status
+            if amount_paid >= total_amount:
+                summary["session_summary"]["fully_paid"] += 1
+            elif amount_paid > 0:
+                summary["session_summary"]["partially_paid"] += 1
+            else:
+                summary["session_summary"]["unpaid"] += 1
+
+        # Round financial values
+        for key in summary["revenue_summary"]:
+            summary["revenue_summary"][key] = round(summary["revenue_summary"][key], 2)
+
+        return jsonify({
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "summary": summary
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to get table summary: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get table summary: {str(e)}"}), 500
+
+@app.route('/api/tables/integrity-check', methods=['GET'])
+def check_table_integrity():
+    """Check data integrity of table management system"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        # Rate limiting for integrity checks
+        client_id = get_client_identifier(request)
+        rate_ok, rate_msg = check_rate_limit(client_id, "integrity_check", max_requests=10, window_seconds=300)
+        if not rate_ok:
+            return jsonify({"status": "error", "message": rate_msg}), 429
+
+        integrity_report = check_data_file_integrity()
+
+        # Additional cross-validation checks
+        try:
+            tables_config = load_tables_config()
+            table_sessions = load_table_sessions()
+
+            # Check for orphaned sessions (sessions for non-existent tables)
+            orphaned_sessions = []
+            for table_id in table_sessions.keys():
+                if table_id not in tables_config.get("tables", {}):
+                    orphaned_sessions.append(table_id)
+
+            if orphaned_sessions:
+                integrity_report["cross_validation"] = {
+                    "status": "issues_found",
+                    "issues": [f"Orphaned sessions found for tables: {', '.join(orphaned_sessions)}"]
+                }
+            else:
+                integrity_report["cross_validation"] = {
+                    "status": "ok",
+                    "issues": []
+                }
+
+        except Exception as e:
+            integrity_report["cross_validation"] = {
+                "status": "error",
+                "issues": [f"Cross-validation failed: {str(e)}"]
+            }
+
+        # Determine overall status
+        overall_status = "healthy"
+        total_issues = 0
+
+        for section, report in integrity_report.items():
+            if report["status"] in ["corrupted", "error"]:
+                overall_status = "unhealthy"
+            elif report["status"] == "issues_found":
+                overall_status = "needs_attention"
+            total_issues += len(report.get("issues", []))
+
+        log_table_operation("integrity_check", "system", client_id, {
+            "overall_status": overall_status,
+            "total_issues": total_issues
+        })
+
+        return jsonify({
+            "status": "success",
+            "overall_status": overall_status,
+            "total_issues": total_issues,
+            "timestamp": datetime.now().isoformat(),
+            "details": integrity_report
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to check table integrity: {e}")
+        return jsonify({"status": "error", "message": f"Integrity check failed: {str(e)}"}), 500
+
+@app.route('/api/tables/cleanup', methods=['POST'])
+def cleanup_table_system():
+    """Cleanup old table data and optimize system"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        # Rate limiting for cleanup operations
+        client_id = get_client_identifier(request)
+        rate_ok, rate_msg = check_rate_limit(client_id, "cleanup", max_requests=5, window_seconds=600)
+        if not rate_ok:
+            return jsonify({"status": "error", "message": rate_msg}), 429
+
+        cleanup_results = {
+            "sessions_cleaned": 0,
+            "backups_cleaned": 0,
+            "cache_cleared": False,
+            "errors": []
+        }
+
+        # Cleanup old sessions
+        try:
+            original_sessions = load_table_sessions()
+            original_count = len(original_sessions)
+            cleanup_old_table_sessions()
+            new_sessions = load_table_sessions()
+            cleanup_results["sessions_cleaned"] = original_count - len(new_sessions)
+        except Exception as e:
+            cleanup_results["errors"].append(f"Session cleanup failed: {str(e)}")
+
+        # Cleanup old backup files
+        try:
+            backup_files = [
+                'tables_config.json.backup',
+                'table_sessions.json.backup'
+            ]
+            cleaned_backups = 0
+            for backup_file in backup_files:
+                backup_path = os.path.join(DATA_DIR, backup_file)
+                if os.path.exists(backup_path):
+                    try:
+                        # Keep only recent backups (last 7 days)
+                        file_age = time.time() - os.path.getmtime(backup_path)
+                        if file_age > 7 * 24 * 3600:  # 7 days in seconds
+                            os.remove(backup_path)
+                            cleaned_backups += 1
+                    except Exception as e:
+                        cleanup_results["errors"].append(f"Failed to clean backup {backup_file}: {str(e)}")
+            cleanup_results["backups_cleaned"] = cleaned_backups
+        except Exception as e:
+            cleanup_results["errors"].append(f"Backup cleanup failed: {str(e)}")
+
+        # Clear table cache
+        try:
+            invalidate_table_cache()
+            cleanup_results["cache_cleared"] = True
+        except Exception as e:
+            cleanup_results["errors"].append(f"Cache clear failed: {str(e)}")
+
+        # Log cleanup operation
+        log_table_operation("cleanup", "system", client_id, cleanup_results)
+
+        # Broadcast system maintenance event
+        broadcast_table_event("system_maintenance", {
+            "type": "cleanup",
+            "results": cleanup_results
+        })
+
+        return jsonify({
+            "status": "success",
+            "message": "Table system cleanup completed",
+            "results": cleanup_results
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to cleanup table system: {e}")
+        return jsonify({"status": "error", "message": f"Cleanup failed: {str(e)}"}), 500
+
+# --- Performance Monitoring for Table Operations ---
+
+@app.route('/api/tables/performance', methods=['GET'])
+def get_table_performance_metrics():
+    """Get performance metrics for table management system"""
+    if not is_table_management_enabled():
+        return jsonify({"status": "error", "message": "Table management is not enabled"}), 400
+
+    try:
+        # Rate limiting
+        client_id = get_client_identifier(request)
+        rate_ok, rate_msg = check_rate_limit(client_id, "performance_metrics", max_requests=30, window_seconds=60)
+        if not rate_ok:
+            return jsonify({"status": "error", "message": rate_msg}), 429
+
+        # Gather performance metrics
+        metrics = {
+            "cache_status": {
+                "enabled": True,
+                "ttl_seconds": TABLE_CACHE_TTL,
+                "cached": bool(_table_status_cache),
+                "cache_age": time.time() - _table_cache_time if _table_cache_time > 0 else None
+            },
+            "file_sizes": {},
+            "operation_counts": {},
+            "response_times": {
+                "avg_load_config": 0,
+                "avg_load_sessions": 0,
+                "avg_save_operations": 0
+            }
+        }
+
+        # File size metrics
+        data_files = [
+            'tables_config.json',
+            'table_sessions.json',
+            'table_history.json',
+            'table_audit.json'
+        ]
+
+        for filename in data_files:
+            filepath = os.path.join(DATA_DIR, filename)
+            if os.path.exists(filepath):
+                metrics["file_sizes"][filename] = os.path.getsize(filepath)
+            else:
+                metrics["file_sizes"][filename] = 0
+
+        # Operation counts from rate limiter
+        current_time = time.time()
+        with _table_operation_lock:
+            for key, data in _table_operation_counters.items():
+                if current_time - data["last_reset"] < 3600:  # Last hour
+                    operation_type = key.split(':')[-1]
+                    if operation_type not in metrics["operation_counts"]:
+                        metrics["operation_counts"][operation_type] = 0
+                    metrics["operation_counts"][operation_type] += data["count"]
+
+        return jsonify({
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "metrics": metrics
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to get performance metrics: {e}")
+        return jsonify({"status": "error", "message": f"Failed to get metrics: {str(e)}"}), 500
 
 
 ## PDF folder opening removed with PDF fallback deprecation
@@ -2767,6 +4764,445 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
                 app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
 
 
+def print_table_bill_ticket(bill_data):
+    """
+    Print a formatted table bill using POSPal's existing printing infrastructure.
+    Follows the same patterns as print_kitchen_ticket for Windows compatibility.
+    """
+    # Pre-flight checks (same as print_kitchen_ticket)
+    global last_print_used_fallback
+    last_print_used_fallback = False
+    trial_status = check_trial_status()
+    if not trial_status.get("active", False):
+        app.logger.warning("Printing blocked - trial expired")
+        return False
+
+    if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
+        app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print table bill.")
+        return False
+
+    # PDF printers are not supported
+    if 'pdf' in str(PRINTER_NAME).lower():
+        app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for bill printing.")
+        return False
+
+    # Build the bill ticket content
+    try:
+        ticket_content = bytearray()
+        ticket_content += InitializePrinter
+
+        NORMAL_FONT_LINE_WIDTH = 42
+
+        # Header - Restaurant name and title
+        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+        restaurant_name = "POSPal"
+        ticket_content += to_bytes(restaurant_name + "\n")
+        ticket_content += BoldOff
+
+        # Bill title with table info
+        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+        table_name = bill_data.get('table_name', f"Table {bill_data.get('table_id', 'Unknown')}")
+        seats = bill_data.get('seats', '')
+        seats_text = f" ({seats} seats)" if seats else ""
+        bill_title = f"TABLE BILL - {table_name}{seats_text}"
+        ticket_content += to_bytes(bill_title + "\n")
+        ticket_content += BoldOff
+
+        # Date and time
+        ticket_content += AlignLeft + SelectFontA + NormalText
+        current_time = datetime.now()
+        ticket_content += to_bytes(f"Date: {current_time.strftime('%d/%m/%Y')}  Time: {current_time.strftime('%H:%M')}\n")
+
+        # Separator
+        ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+        # Orders section
+        grand_total = 0.0
+        order_count = 0
+
+        for order in bill_data.get('orders', []):
+            order_count += 1
+            order_number = order.get('order_number', 'N/A')
+            order_time = order.get('time', 'N/A')
+
+            # Order header
+            ticket_content += SelectFontA + BoldOn
+            ticket_content += to_bytes(f"ORDER #{order_number} - {order_time}\n")
+            ticket_content += BoldOff
+
+            # Order items
+            for item in order.get('items', []):
+                item_name = item.get('name', 'Unknown Item')
+                item_quantity = item.get('quantity', 1)
+                item_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                line_total = item_quantity * item_price
+                grand_total += line_total
+
+                # Format item line: "- Item Name          €Price"
+                left_side = f"- {item_quantity}x {item_name}"
+                right_side = f"€{line_total:.2f}"
+
+                # Calculate padding to right-align price
+                available_space = NORMAL_FONT_LINE_WIDTH - len(left_side) - len(right_side)
+                padding = " " * max(1, available_space)
+
+                ticket_content += to_bytes(f"{left_side}{padding}{right_side}\n")
+
+                # Add item options/modifiers if any
+                general_options = item.get('generalSelectedOptions', [])
+                if general_options:
+                    for opt in general_options:
+                        opt_name = opt.get('name', 'N/A')
+                        opt_price_change = float(opt.get('priceChange', 0.0))
+                        price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})" if opt_price_change != 0 else ""
+                        option_line = f"    + {opt_name}{price_change_str}"
+                        ticket_content += to_bytes(option_line + "\n")
+
+                # Add item comments if any
+                item_comments = item.get('comments', '').strip()
+                if item_comments:
+                    for comment_line in item_comments.split('\n'):
+                        if comment_line.strip():
+                            ticket_content += to_bytes(f"    Note: {comment_line.strip()}\n")
+
+            ticket_content += to_bytes("\n")  # Space between orders
+
+        # Summary section
+        ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+        ticket_content += SelectFontA + BoldOn
+        ticket_content += to_bytes(f"Total Orders: {order_count}\n")
+
+        # Grand total
+        total_left = "TOTAL:"
+        total_right = f"€{grand_total:.2f}"
+        total_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(total_left) - len(total_right))
+        ticket_content += to_bytes(f"{total_left}{total_padding}{total_right}\n")
+        ticket_content += BoldOff
+
+        # Payment status
+        ticket_content += to_bytes("\n")
+        payment_status = bill_data.get('payment_status', 'unpaid').upper()
+        if payment_status == 'UNPAID':
+            status_display = "[  PENDING  ]"
+        elif payment_status == 'PARTIAL':
+            amount_paid = bill_data.get('amount_paid', 0.0)
+            amount_remaining = bill_data.get('amount_remaining', grand_total)
+            status_display = f"[PARTIAL: €{amount_paid:.2f} paid, €{amount_remaining:.2f} remaining]"
+        else:  # PAID
+            status_display = "[  PAID  ]"
+
+        ticket_content += AlignCenter
+        ticket_content += to_bytes(f"Payment: {status_display}\n")
+        ticket_content += AlignLeft
+
+        # Footer
+        ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+        # Cut paper if configured
+        if CUT_AFTER_PRINT:
+            ticket_content += PartialCut
+
+    except Exception as e:
+        app.logger.error(f"Failed to build table bill content: {e}")
+        return False
+
+    # Print the bill (same pattern as print_kitchen_ticket)
+    print_attempts = 0
+    max_attempts = COPIES_PER_ORDER
+    printed_any = False
+
+    for attempt in range(max_attempts):
+        print_attempts += 1
+        copy_info = f"Copy {print_attempts}" if max_attempts > 1 else ""
+
+        if print_table_bill_raw(ticket_content, bill_data, copy_info):
+            printed_any = True
+        else:
+            app.logger.warning(f"Table bill print attempt {print_attempts} failed")
+
+    return printed_any
+
+
+def print_table_bill_raw(ticket_content, bill_data, copy_info=""):
+    """
+    Raw printing function for table bills, following print_kitchen_ticket patterns.
+    """
+    hprinter = None
+    doc_started = False
+    try:
+        table_id = bill_data.get('table_id', 'Unknown')
+        app.logger.info(f"Attempting to open printer: '{PRINTER_NAME}' for table {table_id} bill{f' ({copy_info})' if copy_info else ''}")
+        hprinter = win32print.OpenPrinter(PRINTER_NAME)
+
+        # Check printer status (same as print_kitchen_ticket)
+        printer_info = win32print.GetPrinter(hprinter, 2)
+        current_status = printer_info['Status']
+        app.logger.info(f"Printer '{PRINTER_NAME}' current status code: {hex(current_status)}")
+
+        PRINTER_STATUS_OFFLINE = 0x00000080; PRINTER_STATUS_ERROR = 0x00000002
+        PRINTER_STATUS_NOT_AVAILABLE = 0x00001000; PRINTER_STATUS_PAPER_OUT = 0x00000010
+        PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
+
+        problematic_statuses = [
+            PRINTER_STATUS_OFFLINE, PRINTER_STATUS_ERROR, PRINTER_STATUS_NOT_AVAILABLE,
+            PRINTER_STATUS_PAPER_OUT, PRINTER_STATUS_USER_INTERVENTION, PRINTER_STATUS_PAPER_JAM
+        ]
+
+        if any(current_status & status for status in problematic_statuses):
+            status_messages = []
+            if current_status & PRINTER_STATUS_OFFLINE: status_messages.append("OFFLINE")
+            if current_status & PRINTER_STATUS_ERROR: status_messages.append("ERROR")
+            if current_status & PRINTER_STATUS_NOT_AVAILABLE: status_messages.append("NOT_AVAILABLE")
+            if current_status & PRINTER_STATUS_PAPER_OUT: status_messages.append("PAPER_OUT")
+            if current_status & PRINTER_STATUS_USER_INTERVENTION: status_messages.append("USER_INTERVENTION")
+            if current_status & PRINTER_STATUS_PAPER_JAM: status_messages.append("PAPER_JAM")
+
+            app.logger.warning(f"Printer '{PRINTER_NAME}' has problematic status: {', '.join(status_messages)}")
+            return False
+
+        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with table bill print.")
+
+        # Print the document
+        doc_name = f"POSPal Table {table_id} Bill"
+        win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
+        doc_started = True
+
+        win32print.StartPagePrinter(hprinter)
+        win32print.WritePrinter(hprinter, bytes(ticket_content))
+        win32print.EndPagePrinter(hprinter)
+
+        app.logger.info(f"Table {table_id} bill data sent to printer spooler for '{PRINTER_NAME}'.")
+        return True
+
+    except (win32print.error, Exception) as e:
+        table_id = bill_data.get('table_id', 'Unknown')
+        app.logger.error(f"A printing error occurred for table {table_id} bill{f' ({copy_info})' if copy_info else ''} with printer '{PRINTER_NAME}'. Error: {str(e)}")
+        return False
+
+    finally:
+        # Clean up printer resources
+        if doc_started and hprinter:
+            try:
+                win32print.EndDocPrinter(hprinter)
+            except Exception as e_doc:
+                app.logger.error(f"Error ending document on printer '{PRINTER_NAME}': {str(e_doc)}")
+        if hprinter:
+            try:
+                win32print.ClosePrinter(hprinter)
+            except Exception as e_close:
+                app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
+
+
+def print_customer_receipt_ticket(receipt_data):
+    """
+    Print a customer receipt for a specific payment.
+    """
+    # Pre-flight checks (same as other print functions)
+    global last_print_used_fallback
+    last_print_used_fallback = False
+    trial_status = check_trial_status()
+    if not trial_status.get("active", False):
+        app.logger.warning("Printing blocked - trial expired")
+        return False
+
+    if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
+        app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print customer receipt.")
+        return False
+
+    # PDF printers are not supported
+    if 'pdf' in str(PRINTER_NAME).lower():
+        app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for receipt printing.")
+        return False
+
+    # Build the customer receipt content
+    try:
+        ticket_content = bytearray()
+        ticket_content += InitializePrinter
+
+        NORMAL_FONT_LINE_WIDTH = 42
+
+        # Header - Restaurant name
+        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+        restaurant_name = "POSPal"
+        ticket_content += to_bytes(restaurant_name + "\n")
+        ticket_content += BoldOff
+
+        # Receipt title
+        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+        ticket_content += to_bytes("CUSTOMER RECEIPT\n")
+        ticket_content += BoldOff
+
+        # Date and time
+        ticket_content += AlignLeft + SelectFontA + NormalText
+        current_time = datetime.now()
+        ticket_content += to_bytes(f"Date: {current_time.strftime('%d/%m/%Y')}  Time: {current_time.strftime('%H:%M')}\n")
+
+        # Table and payment info
+        table_name = receipt_data.get('table_name', f"Table {receipt_data.get('table_id', 'Unknown')}")
+        payment_number = receipt_data.get('total_payments', 1)
+        ticket_content += to_bytes(f"{table_name} - Payment {payment_number}\n")
+
+        # Separator
+        ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+        # Payment details
+        payment = receipt_data.get('payment', {})
+        payment_amount = payment.get('amount', 0.0)
+        payment_method = payment.get('method', 'Cash')
+        payment_note = payment.get('note', '')
+
+        ticket_content += SelectFontA + BoldOn
+        ticket_content += to_bytes("PAYMENT DETAILS\n")
+        ticket_content += BoldOff
+
+        # Amount paid
+        amount_left = "Amount Paid:"
+        amount_right = f"€{payment_amount:.2f}"
+        amount_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(amount_left) - len(amount_right))
+        ticket_content += to_bytes(f"{amount_left}{amount_padding}{amount_right}\n")
+
+        # Payment method
+        method_left = "Payment Method:"
+        method_right = payment_method
+        method_padding = " " * max(1, NORMAL_FONT_LINE_WIDTH - len(method_left) - len(method_right))
+        ticket_content += to_bytes(f"{method_left}{method_padding}{method_right}\n")
+
+        # Payment note if provided
+        if payment_note:
+            ticket_content += to_bytes(f"Note: {payment_note}\n")
+
+        # Bill summary
+        ticket_content += to_bytes("\n")
+        ticket_content += SelectFontA + BoldOn
+        ticket_content += to_bytes("BILL SUMMARY\n")
+        ticket_content += BoldOff
+
+        bill_total = receipt_data.get('bill_total', 0.0)
+        total_paid = receipt_data.get('amount_paid_total', 0.0)
+        remaining = max(0, bill_total - total_paid)
+
+        # Bill total
+        total_left = "Bill Total:"
+        total_right = f"€{bill_total:.2f}"
+        total_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(total_left) - len(total_right))
+        ticket_content += to_bytes(f"{total_left}{total_padding}{total_right}\n")
+
+        # Total paid
+        paid_left = "Total Paid:"
+        paid_right = f"€{total_paid:.2f}"
+        paid_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(paid_left) - len(paid_right))
+        ticket_content += to_bytes(f"{paid_left}{paid_padding}{paid_right}\n")
+
+        # Remaining balance
+        if remaining > 0.01:
+            remaining_left = "Remaining:"
+            remaining_right = f"€{remaining:.2f}"
+            remaining_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(remaining_left) - len(remaining_right))
+            ticket_content += to_bytes(f"{remaining_left}{remaining_padding}{remaining_right}\n")
+
+        # Footer
+        ticket_content += to_bytes("\n")
+        ticket_content += AlignCenter
+        ticket_content += to_bytes("Thank you for dining with us!\n")
+        ticket_content += AlignLeft
+        ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+        # Cut paper if configured
+        if CUT_AFTER_PRINT:
+            ticket_content += PartialCut
+
+    except Exception as e:
+        app.logger.error(f"Failed to build customer receipt content: {e}")
+        return False
+
+    # Print the receipt (same pattern as other print functions)
+    print_attempts = 0
+    max_attempts = COPIES_PER_ORDER
+    printed_any = False
+
+    for attempt in range(max_attempts):
+        print_attempts += 1
+        copy_info = f"Copy {print_attempts}" if max_attempts > 1 else ""
+
+        if print_customer_receipt_raw(ticket_content, receipt_data, copy_info):
+            printed_any = True
+        else:
+            app.logger.warning(f"Customer receipt print attempt {print_attempts} failed")
+
+    return printed_any
+
+
+def print_customer_receipt_raw(ticket_content, receipt_data, copy_info=""):
+    """
+    Raw printing function for customer receipts.
+    """
+    hprinter = None
+    doc_started = False
+    try:
+        table_id = receipt_data.get('table_id', 'Unknown')
+        payment_id = receipt_data.get('payment', {}).get('payment_id', 'Unknown')
+        app.logger.info(f"Attempting to open printer: '{PRINTER_NAME}' for table {table_id} customer receipt{f' ({copy_info})' if copy_info else ''}")
+        hprinter = win32print.OpenPrinter(PRINTER_NAME)
+
+        # Check printer status (same as other print functions)
+        printer_info = win32print.GetPrinter(hprinter, 2)
+        current_status = printer_info['Status']
+        app.logger.info(f"Printer '{PRINTER_NAME}' current status code: {hex(current_status)}")
+
+        PRINTER_STATUS_OFFLINE = 0x00000080; PRINTER_STATUS_ERROR = 0x00000002
+        PRINTER_STATUS_NOT_AVAILABLE = 0x00001000; PRINTER_STATUS_PAPER_OUT = 0x00000010
+        PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
+
+        problematic_statuses = [
+            PRINTER_STATUS_OFFLINE, PRINTER_STATUS_ERROR, PRINTER_STATUS_NOT_AVAILABLE,
+            PRINTER_STATUS_PAPER_OUT, PRINTER_STATUS_USER_INTERVENTION, PRINTER_STATUS_PAPER_JAM
+        ]
+
+        if any(current_status & status for status in problematic_statuses):
+            status_messages = []
+            if current_status & PRINTER_STATUS_OFFLINE: status_messages.append("OFFLINE")
+            if current_status & PRINTER_STATUS_ERROR: status_messages.append("ERROR")
+            if current_status & PRINTER_STATUS_NOT_AVAILABLE: status_messages.append("NOT_AVAILABLE")
+            if current_status & PRINTER_STATUS_PAPER_OUT: status_messages.append("PAPER_OUT")
+            if current_status & PRINTER_STATUS_USER_INTERVENTION: status_messages.append("USER_INTERVENTION")
+            if current_status & PRINTER_STATUS_PAPER_JAM: status_messages.append("PAPER_JAM")
+
+            app.logger.warning(f"Printer '{PRINTER_NAME}' has problematic status: {', '.join(status_messages)}")
+            return False
+
+        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with customer receipt print.")
+
+        # Print the document
+        doc_name = f"POSPal Table {table_id} Customer Receipt"
+        win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
+        doc_started = True
+
+        win32print.StartPagePrinter(hprinter)
+        win32print.WritePrinter(hprinter, bytes(ticket_content))
+        win32print.EndPagePrinter(hprinter)
+
+        app.logger.info(f"Table {table_id} customer receipt data sent to printer spooler for '{PRINTER_NAME}'.")
+        return True
+
+    except (win32print.error, Exception) as e:
+        table_id = receipt_data.get('table_id', 'Unknown')
+        app.logger.error(f"A printing error occurred for table {table_id} customer receipt{f' ({copy_info})' if copy_info else ''} with printer '{PRINTER_NAME}'. Error: {str(e)}")
+        return False
+
+    finally:
+        # Clean up printer resources
+        if doc_started and hprinter:
+            try:
+                win32print.EndDocPrinter(hprinter)
+            except Exception as e_doc:
+                app.logger.error(f"Error ending document on printer '{PRINTER_NAME}': {str(e_doc)}")
+        if hprinter:
+            try:
+                win32print.ClosePrinter(hprinter)
+            except Exception as e_close:
+                app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
+
+
 def record_order_in_csv(order_data, print_status_message):
     try:
         # Ensure data directory exists
@@ -2968,7 +5404,36 @@ def handle_order():
         track_order_analytics(order_data_internal)
     except Exception as e:
         app.logger.warning(f"Failed to track order analytics: {e}")
-    
+
+    # Track table session if table management is enabled and order has valid table number
+    # NOTE: Table session tracking is independent of CSV logging to ensure restaurant operations continue
+    if is_table_management_enabled():
+        table_number = order_data_internal.get('tableNumber', '').strip()
+        if table_number and table_number != 'N/A':
+            try:
+                # Calculate order total for table tracking
+                order_total = sum(
+                    float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))) * int(item.get('quantity', 0))
+                    for item in order_data_internal.get('items', [])
+                )
+
+                # Update table session
+                if update_table_session(table_number, authoritative_order_number, order_total):
+                    app.logger.info(f"Order #{authoritative_order_number} tracked for table {table_number} (€{order_total:.2f})")
+
+                    # Broadcast table update via SSE to all devices
+                    _sse_broadcast('table_order_added', {
+                        "table_id": table_number,
+                        "order_number": authoritative_order_number,
+                        "order_total": order_total,
+                        "new_table_total": get_table_total(table_number),
+                        "timestamp": datetime.now().isoformat()
+                    })
+                else:
+                    app.logger.warning(f"Failed to update table session for table {table_number}")
+            except Exception as e:
+                app.logger.warning(f"Failed to track table session for order #{authoritative_order_number}: {e}")
+
     app.logger.info(f"Order #{authoritative_order_number} processing complete. Final Status: {final_status_code}, Printed: {print_status_summary}, Logged: {csv_log_succeeded}")
     return jsonify({
         "status": final_status_code,
@@ -2976,6 +5441,72 @@ def handle_order():
         "printed": print_status_summary, 
         "logged": csv_log_succeeded,
         "message": message
+    }), 200
+
+@app.route('/api/test/orders', methods=['POST'])
+def handle_test_order():
+    """TEST ENDPOINT: Submit order without trial checking for table integration testing"""
+    order_data_from_client = request.json
+    if not order_data_from_client or 'items' not in order_data_from_client or not order_data_from_client['items']:
+        return jsonify({"status": "error_validation", "message": "Invalid order data: Items are required."}), 400
+
+    authoritative_order_number = -1
+    try:
+        authoritative_order_number = get_next_daily_order_number()
+    except Exception as e:
+        app.logger.critical(f"Could not generate order number: {str(e)}")
+        return jsonify({
+            "status": "error_internal_server",
+            "message": f"System error: Could not assign order number. {str(e)}"
+        }), 500
+
+    order_data_internal = {
+        'number': authoritative_order_number,
+        'tableNumber': order_data_from_client.get('tableNumber', '').strip() or 'N/A',
+        'items': order_data_from_client.get('items', []),
+        'universalComment': order_data_from_client.get('universalComment', ''),
+        'paymentMethod': order_data_from_client.get('paymentMethod', 'Cash')
+    }
+
+    # Skip printing and CSV logging for test - focus on table integration
+    print_status_summary = "Test Mode - No Printing"
+    csv_log_succeeded = True  # Assume success for test
+
+    # Track table session if table management is enabled and order has valid table number
+    # NOTE: Table session tracking is independent of CSV logging to ensure restaurant operations continue
+    if is_table_management_enabled():
+        table_number = order_data_internal.get('tableNumber', '').strip()
+        if table_number and table_number != 'N/A':
+            try:
+                # Calculate order total for table tracking
+                order_total = sum(
+                    float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))) * int(item.get('quantity', 0))
+                    for item in order_data_internal.get('items', [])
+                )
+
+                # Update table session
+                if update_table_session(table_number, authoritative_order_number, order_total):
+                    app.logger.info(f"TEST: Order #{authoritative_order_number} tracked for table {table_number} (€{order_total:.2f})")
+
+                    # Broadcast table update via SSE to all devices
+                    _sse_broadcast('table_order_added', {
+                        "table_id": table_number,
+                        "order_number": authoritative_order_number,
+                        "order_total": order_total,
+                        "new_table_total": get_table_total(table_number),
+                        "timestamp": datetime.now().isoformat()
+                    })
+                else:
+                    app.logger.warning(f"Failed to update table session for table {table_number}")
+            except Exception as e:
+                app.logger.warning(f"Failed to track table session for order #{authoritative_order_number}: {e}")
+
+    return jsonify({
+        "status": "success",
+        "order_number": authoritative_order_number,
+        "printed": print_status_summary,
+        "logged": csv_log_succeeded,
+        "message": f"TEST: Order #{authoritative_order_number} processed for table integration testing"
     }), 200
 
 def diagnose_license_failure(license_file_path):
@@ -3399,6 +5930,650 @@ def get_trial_usage_summary():
         "avg_orders_per_day": analytics['total_orders'] / max(days_used, 1),
         "avg_revenue_per_day": analytics['total_revenue'] / max(days_used, 1)
     }
+
+# === Table Management Helper Functions ===
+
+def load_tables_config():
+    """Load table configuration from tables_config.json"""
+    tables_config_file = os.path.join(DATA_DIR, 'tables_config.json')
+
+    default_config = {
+        "tables": {
+            "1": {"name": "Table 1", "seats": 4, "status": "available"},
+            "2": {"name": "Table 2", "seats": 2, "status": "available"},
+            "3": {"name": "VIP Booth", "seats": 6, "status": "available"}
+        },
+        "settings": {
+            "auto_clear_paid_tables": True,
+            "default_table_timeout": 3600
+        }
+    }
+
+    try:
+        if os.path.exists(tables_config_file):
+            with open(tables_config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            # Create default file if it doesn't exist
+            with open(tables_config_file, 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, indent=2)
+            return default_config
+    except Exception as e:
+        app.logger.error(f"Failed to load tables config: {e}")
+        return default_config
+
+def save_tables_config(config_data):
+    """Save table configuration to tables_config.json with enhanced safety"""
+    def _save_operation():
+        tables_config_file = os.path.join(DATA_DIR, 'tables_config.json')
+        with open(tables_config_file, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+        return True
+
+    try:
+        return enhanced_safe_file_operation('save_tables_config', _save_operation)
+    except Exception as e:
+        app.logger.error(f"Failed to save tables config: {e}")
+        return False
+
+def load_table_sessions():
+    """Load table sessions from table_sessions.json"""
+    table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
+
+    try:
+        if os.path.exists(table_sessions_file):
+            with open(table_sessions_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            # Create empty sessions file if it doesn't exist
+            with open(table_sessions_file, 'w', encoding='utf-8') as f:
+                json.dump({}, f, indent=2)
+            return {}
+    except Exception as e:
+        app.logger.error(f"Failed to load table sessions: {e}")
+        return {}
+
+def save_table_sessions(sessions_data):
+    """Save table sessions to table_sessions.json with enhanced safety"""
+    def _save_operation():
+        table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
+        with open(table_sessions_file, 'w', encoding='utf-8') as f:
+            json.dump(sessions_data, f, indent=2, ensure_ascii=False)
+        return True
+
+    try:
+        return enhanced_safe_file_operation('save_table_sessions', _save_operation)
+    except Exception as e:
+        app.logger.error(f"Failed to save table sessions: {e}")
+        return False
+
+# --- Enhanced SSE Events for Table Management ---
+
+def broadcast_table_event(event_type, table_data, additional_data=None):
+    """Enhanced SSE broadcast for table events"""
+    try:
+        event_payload = {
+            "timestamp": datetime.now().isoformat(),
+            "table_id": table_data.get("table_id") if isinstance(table_data, dict) else None,
+            "event_type": event_type,
+            "data": table_data
+        }
+
+        if additional_data:
+            event_payload.update(additional_data)
+
+        _sse_broadcast(f'table_{event_type}', event_payload)
+
+        # Also broadcast a general table_updated event for clients listening to all changes
+        _sse_broadcast('table_system_updated', {
+            "timestamp": event_payload["timestamp"],
+            "last_event": event_type,
+            "affected_table": event_payload.get("table_id")
+        })
+
+    except Exception as e:
+        app.logger.error(f"Failed to broadcast table event {event_type}: {e}")
+
+def get_order_data_for_table(table_id, order_numbers):
+    """Enhanced CSV integration to get order data for a table"""
+    order_data = []
+    total_calculated = 0.0
+
+    try:
+        orders_csv_file = os.path.join(DATA_DIR, 'orders.csv')
+        if not os.path.exists(orders_csv_file):
+            return order_data, total_calculated
+
+        with open(orders_csv_file, 'r', encoding='utf-8', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                try:
+                    # Match by order number and table number
+                    row_order_number = row.get('order_number', '').strip()
+                    row_table_number = row.get('table_number', '').strip()
+
+                    if (row_order_number in order_numbers or
+                        (row_table_number == str(table_id) and row_order_number)):
+
+                        # Parse order data
+                        order_entry = {
+                            "order_number": row_order_number,
+                            "timestamp": row.get('timestamp', ''),
+                            "items": [],
+                            "subtotal": 0.0,
+                            "tax": 0.0,
+                            "total": 0.0
+                        }
+
+                        # Parse items (stored as JSON string in CSV)
+                        items_str = row.get('items', '[]')
+                        try:
+                            items = json.loads(items_str)
+                            order_entry["items"] = items
+                        except:
+                            app.logger.warning(f"Failed to parse items for order {row_order_number}")
+
+                        # Parse financial data
+                        try:
+                            order_entry["subtotal"] = float(row.get('subtotal', '0'))
+                            order_entry["tax"] = float(row.get('tax', '0'))
+                            order_entry["total"] = float(row.get('total', '0'))
+                            total_calculated += order_entry["total"]
+                        except (ValueError, TypeError):
+                            app.logger.warning(f"Failed to parse amounts for order {row_order_number}")
+
+                        order_data.append(order_entry)
+
+                except Exception as e:
+                    app.logger.warning(f"Error processing CSV row for table {table_id}: {e}")
+                    continue
+
+    except Exception as e:
+        app.logger.error(f"Failed to read orders CSV for table {table_id}: {e}")
+
+    return order_data, round(total_calculated, 2)
+
+def cleanup_old_table_sessions():
+    """Cleanup old table sessions and history"""
+    try:
+        current_time = datetime.now()
+        cleanup_threshold = current_time - timedelta(days=30)  # 30 days old
+
+        sessions = load_table_sessions()
+        cleaned_sessions = {}
+        cleaned_count = 0
+
+        for table_id, session in sessions.items():
+            try:
+                # Check if session has recent activity
+                session_time_str = session.get("created_at", "")
+                if session_time_str:
+                    session_time = datetime.fromisoformat(session_time_str.replace('Z', '+00:00'))
+                    if session_time > cleanup_threshold:
+                        cleaned_sessions[table_id] = session
+                    else:
+                        cleaned_count += 1
+                        app.logger.info(f"Cleaned up old session for table {table_id}")
+                else:
+                    # Keep sessions without timestamps (safer)
+                    cleaned_sessions[table_id] = session
+            except Exception as e:
+                app.logger.warning(f"Error checking session age for table {table_id}: {e}")
+                cleaned_sessions[table_id] = session  # Keep on error
+
+        if cleaned_count > 0:
+            save_table_sessions(cleaned_sessions)
+            app.logger.info(f"Cleaned up {cleaned_count} old table sessions")
+
+    except Exception as e:
+        app.logger.error(f"Failed to cleanup old table sessions: {e}")
+
+def update_table_session(table_id, order_number, order_total):
+    """Update table session with new order"""
+    try:
+        sessions = load_table_sessions()
+        current_time = datetime.now().isoformat()
+
+        if table_id not in sessions:
+            # Create new session
+            sessions[table_id] = {
+                "status": "occupied",
+                "orders": [],
+                "order_details": [],
+                "total_amount": 0.0,
+                "opened_at": current_time,
+                "last_order_at": current_time,
+                "payment_status": "unpaid",
+                "payments": [],
+                "amount_paid": 0.0,
+                "amount_remaining": 0.0
+            }
+
+        # Ensure order_details exists for backward compatibility
+        if "order_details" not in sessions[table_id]:
+            sessions[table_id]["order_details"] = []
+
+        # Ensure payment tracking fields exist for backward compatibility
+        if "payments" not in sessions[table_id]:
+            sessions[table_id]["payments"] = []
+        if "amount_paid" not in sessions[table_id]:
+            sessions[table_id]["amount_paid"] = 0.0
+        if "amount_remaining" not in sessions[table_id]:
+            sessions[table_id]["amount_remaining"] = 0.0
+
+        # Update session
+        sessions[table_id]["orders"].append(order_number)
+        sessions[table_id]["order_details"].append({
+            "order_number": order_number,
+            "order_total": float(order_total),
+            "timestamp": current_time
+        })
+        sessions[table_id]["total_amount"] += float(order_total)
+        sessions[table_id]["last_order_at"] = current_time
+        sessions[table_id]["status"] = "occupied"
+
+        # Update amount_remaining when new order is added
+        sessions[table_id]["amount_remaining"] = sessions[table_id]["total_amount"] - sessions[table_id]["amount_paid"]
+
+        # Update payment status based on amounts
+        if sessions[table_id]["amount_paid"] <= 0:
+            sessions[table_id]["payment_status"] = "unpaid"
+        elif sessions[table_id]["amount_remaining"] <= 0.01:  # Small tolerance for rounding
+            sessions[table_id]["payment_status"] = "paid"
+        else:
+            sessions[table_id]["payment_status"] = "partial"
+
+        return save_table_sessions(sessions)
+    except Exception as e:
+        app.logger.error(f"Failed to update table session for table {table_id}: {e}")
+        return False
+
+def get_table_orders(table_id):
+    """Get all orders for a specific table"""
+    try:
+        sessions = load_table_sessions()
+        if table_id in sessions:
+            return sessions[table_id].get("orders", [])
+        return []
+    except Exception as e:
+        app.logger.error(f"Failed to get table orders for table {table_id}: {e}")
+        return []
+
+def get_table_total(table_id):
+    """Get total amount for a specific table"""
+    try:
+        sessions = load_table_sessions()
+        if table_id in sessions:
+            return sessions[table_id].get("total_amount", 0.0)
+        return 0.0
+    except Exception as e:
+        app.logger.error(f"Failed to get table total for table {table_id}: {e}")
+        return 0.0
+
+def recalculate_table_total(table_id):
+    """Recalculate table total from actual order data for accuracy"""
+    try:
+        sessions = load_table_sessions()
+        if table_id not in sessions:
+            return 0.0
+
+        # Get all orders for this table from CSV data
+        orders = get_orders_for_table(table_id)
+        calculated_total = calculate_table_total(orders)
+
+        # Update session with recalculated total
+        sessions[table_id]["total_amount"] = calculated_total
+
+        # Save updated session
+        if save_table_sessions(sessions):
+            app.logger.info(f"Recalculated total for table {table_id}: €{calculated_total:.2f}")
+            return calculated_total
+        else:
+            app.logger.error(f"Failed to save recalculated total for table {table_id}")
+            return sessions[table_id].get("total_amount", 0.0)
+
+    except Exception as e:
+        app.logger.error(f"Failed to recalculate table total for table {table_id}: {e}")
+        return 0.0
+
+def close_table_session(table_id):
+    """Close table session and mark as paid"""
+    try:
+        sessions = load_table_sessions()
+        if table_id in sessions:
+            sessions[table_id]["payment_status"] = "paid"
+            sessions[table_id]["status"] = "occupied"  # Still occupied until cleared
+            return save_table_sessions(sessions)
+        return False
+    except Exception as e:
+        app.logger.error(f"Failed to close table session for table {table_id}: {e}")
+        return False
+
+def clear_table_session(table_id):
+    """Clear table session and make table available"""
+    try:
+        sessions = load_table_sessions()
+        if table_id in sessions:
+            session = sessions[table_id]
+
+            # Log session to history before clearing
+            try:
+                opened_at = session.get("opened_at", "")
+                closed_at = datetime.now().isoformat()
+
+                # Calculate duration
+                duration_minutes = 0
+                if opened_at:
+                    try:
+                        opened_time = datetime.fromisoformat(opened_at.replace('Z', '+00:00') if opened_at.endswith('Z') else opened_at)
+                        closed_time = datetime.now()
+                        duration_minutes = int((closed_time - opened_time).total_seconds() / 60)
+                    except Exception as e:
+                        app.logger.warning(f"Failed to calculate session duration: {e}")
+
+                # Create session history record
+                session_history = {
+                    "table_id": table_id,
+                    "opened_at": opened_at.split('T')[1][:8] if 'T' in opened_at else opened_at,
+                    "closed_at": closed_at.split('T')[1][:8],
+                    "orders": session.get("orders", []),
+                    "total": round(session.get("total_amount", 0.0), 2),
+                    "duration_minutes": duration_minutes,
+                    "payment_status": session.get("payment_status", "unpaid"),
+                    "amount_paid": round(session.get("amount_paid", 0.0), 2),
+                    "amount_remaining": round(max(0, session.get("total_amount", 0.0) - session.get("amount_paid", 0.0)), 2),
+                    "payments": session.get("payments", [])
+                }
+
+                # Log to history file
+                if not log_table_session_history(table_id, session_history):
+                    app.logger.warning(f"Failed to log session history for table {table_id}")
+
+            except Exception as e:
+                app.logger.error(f"Failed to process session history for table {table_id}: {e}")
+
+            # Clear the session
+            del sessions[table_id]
+            return save_table_sessions(sessions)
+        return True  # Table already clear
+    except Exception as e:
+        app.logger.error(f"Failed to clear table session for table {table_id}: {e}")
+        return False
+
+def is_table_management_enabled():
+    """Check if table management is enabled in config"""
+    return config.get('table_management_enabled', False)
+
+def get_orders_for_table(table_id, date_range=None):
+    """Get all orders for a table from CSV files"""
+    try:
+        orders = []
+
+        # Validate table_id
+        if not table_id or str(table_id).strip() == '':
+            app.logger.warning("Empty table_id provided to get_orders_for_table")
+            return []
+
+        # If no date range specified, search recent files (last 7 days)
+        if date_range is None:
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=7)
+            date_range = (start_date, end_date)
+        elif isinstance(date_range, tuple) and len(date_range) == 2:
+            start_date, end_date = date_range
+            # Validate dates
+            if not isinstance(start_date, (datetime, date)) or not isinstance(end_date, (datetime, date)):
+                app.logger.error(f"Invalid date types in date_range: {type(start_date)}, {type(end_date)}")
+                return []
+        else:
+            app.logger.error(f"Invalid date_range format: {date_range}")
+            return []
+
+        # Ensure DATA_DIR exists
+        if not os.path.exists(DATA_DIR):
+            app.logger.warning(f"Data directory does not exist: {DATA_DIR}")
+            return []
+
+        files_checked = 0
+        files_found = 0
+
+        # Search through CSV files in date range
+        current_date = start_date
+        while current_date <= end_date:
+            filename = os.path.join(DATA_DIR, f"orders_{current_date.strftime('%Y-%m-%d')}.csv")
+            files_checked += 1
+
+            if os.path.exists(filename):
+                files_found += 1
+                try:
+                    with open(filename, 'r', newline='', encoding='utf-8') as csvfile:
+                        reader = csv.DictReader(csvfile)
+                        row_count = 0
+
+                        for row in reader:
+                            row_count += 1
+                            # Check if this order belongs to our table
+                            table_number = row.get('table_number', '').strip()
+
+                            if table_number == str(table_id).strip():
+                                try:
+                                    # Parse order data
+                                    order_number = int(row.get('order_number', 0))
+                                    if order_number <= 0:
+                                        app.logger.warning(f"Invalid order number in file {filename}, row {row_count}")
+                                        continue
+
+                                    timestamp = row.get('timestamp', '')
+                                    order_total = float(row.get('order_total', 0.0))
+                                    items_json = row.get('items_json', '[]')
+
+                                    # Parse items
+                                    items = []
+                                    try:
+                                        items_list = json.loads(items_json)
+                                        if isinstance(items_list, list):
+                                            for item in items_list:
+                                                if isinstance(item, dict):
+                                                    items.append({
+                                                        'name': str(item.get('name', '')),
+                                                        'price': float(item.get('price', 0.0)),
+                                                        'quantity': int(item.get('quantity', 1))
+                                                    })
+                                        else:
+                                            app.logger.warning(f"Items JSON is not a list for order {order_number}")
+                                    except (json.JSONDecodeError, TypeError, ValueError) as e:
+                                        app.logger.warning(f"Failed to parse items for order {order_number}: {e}")
+
+                                    orders.append({
+                                        'order_number': order_number,
+                                        'timestamp': timestamp,
+                                        'items': items,
+                                        'order_total': order_total
+                                    })
+
+                                except (ValueError, TypeError) as e:
+                                    app.logger.warning(f"Failed to parse order data from CSV {filename}, row {row_count}: {e}")
+                                    continue
+
+                except Exception as e:
+                    app.logger.error(f"Failed to read orders file {filename}: {e}")
+
+            current_date += timedelta(days=1)
+
+        app.logger.debug(f"Searched {files_checked} files, found {files_found} files, retrieved {len(orders)} orders for table {table_id}")
+
+        # Sort orders by timestamp
+        orders.sort(key=lambda x: x.get('timestamp', ''))
+        return orders
+
+    except Exception as e:
+        app.logger.error(f"Failed to get orders for table {table_id}: {e}")
+        return []
+
+def calculate_table_total(orders):
+    """Calculate total amount from list of orders"""
+    try:
+        total = 0.0
+        for order in orders:
+            total += float(order.get('order_total', 0.0))
+        return total
+    except Exception as e:
+        app.logger.error(f"Failed to calculate table total: {e}")
+        return 0.0
+
+def get_table_bill_data(table_id):
+    """Generate complete bill data for a table"""
+    try:
+        # Get table configuration
+        tables_config = load_tables_config()
+        if not tables_config or table_id not in tables_config.get("tables", {}):
+            app.logger.warning(f"Table {table_id} not found in configuration")
+            return None
+
+        table_info = tables_config["tables"][table_id]
+        table_name = table_info.get("name", f"Table {table_id}")
+
+        # Get payment status and payment information from session (primary data source)
+        sessions = load_table_sessions()
+        payment_status = "unpaid"
+        session_total = 0.0
+        amount_paid = 0.0
+        amount_remaining = 0.0
+        payments = []
+        orders = []
+        session_order_numbers = []
+
+        if table_id in sessions:
+            session = sessions[table_id]
+            payment_status = session.get("payment_status", "unpaid")
+            session_total = session.get("total_amount", 0.0)
+            amount_paid = session.get("amount_paid", 0.0)
+            amount_remaining = session.get("amount_remaining", 0.0)
+            payments = session.get("payments", [])
+            session_order_numbers = session.get("orders", [])
+
+            # Use session total as authoritative source (table session is the source of truth)
+            grand_total = session_total
+
+            # Try to get order details from CSV files as secondary data for display
+            orders = get_orders_for_table(table_id)
+
+            # If CSV orders don't match session orders, create basic order entries from session data
+            if len(orders) != len(session_order_numbers):
+                app.logger.info(f"CSV orders ({len(orders)}) don't match session orders ({len(session_order_numbers)}) for table {table_id}")
+
+                # Use session order details if available
+                if "order_details" in session:
+                    orders = []
+                    for order_detail in session.get("order_details", []):
+                        orders.append({
+                            "order_number": order_detail.get("order_number", "Unknown"),
+                            "timestamp": order_detail.get("timestamp", ""),
+                            "total": order_detail.get("order_total", 0.0),
+                            "items": [{"name": "Order items", "quantity": 1, "price": order_detail.get("order_total", 0.0)}],
+                            "universal_comment": ""
+                        })
+
+            # Recalculate amount_remaining based on current total
+            amount_remaining = max(0, grand_total - amount_paid)
+        else:
+            # No session data - fall back to CSV only
+            orders = get_orders_for_table(table_id)
+            grand_total = calculate_table_total(orders)
+
+            # Handle case where no orders exist
+            if not orders:
+                app.logger.info(f"No orders found for table {table_id}")
+                grand_total = 0.0
+
+        # Get table config for additional info
+        table_info = tables_config["tables"][table_id]
+        seats = table_info.get("seats", "")
+
+        # Format bill data
+        bill_data = {
+            "status": "success",
+            "table_id": table_id,
+            "table_name": table_name,
+            "seats": seats,
+            "bill_date": datetime.now().strftime("%Y-%m-%d"),
+            "bill_time": datetime.now().strftime("%H:%M"),
+            "orders": orders,
+            "total_orders": len(orders),
+            "grand_total": round(grand_total, 2),
+            "total": round(grand_total, 2),  # Alias for printing function
+            "payment_status": payment_status,
+            "amount_paid": round(amount_paid, 2),
+            "amount_remaining": round(amount_remaining, 2),
+            "payments": payments
+        }
+
+        # Add debug info for troubleshooting
+        csv_orders_count = len(get_orders_for_table(table_id)) if table_id in sessions else len(orders)
+        if csv_orders_count != len(session_order_numbers):
+            bill_data["_debug"] = {
+                "session_orders": len(session_order_numbers),
+                "csv_orders": csv_orders_count,
+                "using_session_data": table_id in sessions,
+                "session_total": round(session_total, 2) if table_id in sessions else "N/A"
+            }
+
+        return bill_data
+
+    except Exception as e:
+        app.logger.error(f"Failed to generate bill data for table {table_id}: {e}")
+        return None
+
+def log_table_session_history(table_id, session_data):
+    """Save session to daily history file"""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        history_file = os.path.join(DATA_DIR, f"table_history_{today}.json")
+
+        # Load existing history or create new
+        history = {"date": today, "sessions": []}
+
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+                    if "sessions" not in history:
+                        history["sessions"] = []
+            except Exception as e:
+                app.logger.warning(f"Failed to load existing history file, creating new: {e}")
+
+        # Add session to history
+        history["sessions"].append(session_data)
+
+        # Save updated history
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+
+        return True
+
+    except Exception as e:
+        app.logger.error(f"Failed to log table session history: {e}")
+        return False
+
+def load_table_history(date):
+    """Load daily history file"""
+    try:
+        if isinstance(date, str):
+            date_str = date
+        else:
+            date_str = date.strftime("%Y-%m-%d")
+
+        history_file = os.path.join(DATA_DIR, f"table_history_{date_str}.json")
+
+        if os.path.exists(history_file):
+            with open(history_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+
+        return {"date": date_str, "sessions": []}
+
+    except Exception as e:
+        app.logger.error(f"Failed to load table history for {date}: {e}")
+        return {"date": date_str if 'date_str' in locals() else str(date), "sessions": []}
 
 # Add API endpoint
 @app.route('/api/trial_status')

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Table Management Frontend Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #cce5ff; color: #004085; border: 1px solid #99ccff; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .test-results {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #f9f9f9;
+        }
+        .toggle-section {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 POSPal Table Management Frontend Test</h1>
+
+    <div class="test-container">
+        <h2>Configuration Status</h2>
+        <div id="configStatus" class="status info">Loading configuration...</div>
+        <button onclick="refreshConfig()">Refresh Config</button>
+    </div>
+
+    <div class="test-container toggle-section">
+        <h2>Table Management Toggle</h2>
+        <label>
+            <input type="checkbox" id="tableToggle" onchange="toggleTableManagement(this.checked)">
+            Enable Table Management
+        </label>
+        <div id="toggleStatus" class="status info">Toggle not tested yet</div>
+    </div>
+
+    <div class="test-container">
+        <h2>Table Data Tests</h2>
+        <button onclick="testGetTables()">Get All Tables</button>
+        <button onclick="testGetTableStatus()">Get Table Status</button>
+        <button onclick="testTableHealth()">Health Check</button>
+        <button onclick="testTableSummary()">Get Summary</button>
+        <div id="tableDataResults" class="test-results">No tests run yet...</div>
+    </div>
+
+    <div class="test-container">
+        <h2>Table Operations Tests</h2>
+        <button onclick="testOpenTable()">Open Table</button>
+        <button onclick="testCloseTable()">Close Table</button>
+        <button onclick="testClearTable()">Clear Table</button>
+        <button onclick="testGetBill()">Generate Bill</button>
+        <div id="operationResults" class="test-results">No operations tested yet...</div>
+    </div>
+
+    <div class="test-container">
+        <h2>Frontend Integration Status</h2>
+        <div id="frontendStatus" class="status info">Testing frontend integration...</div>
+        <button onclick="testFrontendIntegration()">Test UI Elements</button>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000';
+        let currentConfig = null;
+
+        // Helper function for API requests
+        async function apiRequest(method, endpoint, data = null) {
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (data) options.body = JSON.stringify(data);
+
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const result = await response.json();
+                return { status: response.status, ok: response.ok, data: result };
+            } catch (error) {
+                return { status: 0, ok: false, data: { message: error.message } };
+            }
+        }
+
+        // Display results helper
+        function displayResult(containerId, message, isSuccess = true) {
+            const container = document.getElementById(containerId);
+            const timestamp = new Date().toLocaleTimeString();
+            const statusClass = isSuccess ? 'success' : 'error';
+
+            container.innerHTML += `<div class="status ${statusClass}">[${timestamp}] ${message}</div>`;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Configuration tests
+        async function refreshConfig() {
+            const statusEl = document.getElementById('configStatus');
+            statusEl.textContent = 'Loading...';
+
+            const result = await apiRequest('GET', '/api/config');
+            if (result.ok) {
+                currentConfig = result.data;
+                const tableEnabled = currentConfig.table_management_enabled || false;
+                statusEl.innerHTML = `
+                    <strong>Config loaded successfully</strong><br>
+                    Table Management: ${tableEnabled ? '✅ Enabled' : '❌ Disabled'}<br>
+                    App Version: ${currentConfig.app?.version || 'Unknown'}<br>
+                    License Status: ${currentConfig.license?.licensed ? '✅ Licensed' : '❌ Not Licensed'}
+                `;
+                statusEl.className = 'status success';
+
+                // Update toggle
+                document.getElementById('tableToggle').checked = tableEnabled;
+            } else {
+                statusEl.innerHTML = `<strong>❌ Failed to load config:</strong> ${result.data.message}`;
+                statusEl.className = 'status error';
+            }
+        }
+
+        // Toggle table management
+        async function toggleTableManagement(enabled) {
+            const statusEl = document.getElementById('toggleStatus');
+            statusEl.textContent = 'Updating...';
+            statusEl.className = 'status info';
+
+            const result = await apiRequest('POST', '/api/config', { table_management_enabled: enabled });
+
+            if (result.ok && result.data.status === 'success') {
+                statusEl.innerHTML = `✅ Table management ${enabled ? 'enabled' : 'disabled'} successfully`;
+                statusEl.className = 'status success';
+                await refreshConfig(); // Refresh to show updated status
+            } else {
+                statusEl.innerHTML = `❌ Failed to toggle: ${result.data.message}`;
+                statusEl.className = 'status error';
+                // Reset toggle to previous state
+                document.getElementById('tableToggle').checked = !enabled;
+            }
+        }
+
+        // Table data tests
+        async function testGetTables() {
+            const result = await apiRequest('GET', '/api/tables');
+            if (result.ok && result.data.status === 'success') {
+                const tableCount = Object.keys(result.data.tables).length;
+                displayResult('tableDataResults', `✅ Retrieved ${tableCount} tables successfully`);
+            } else {
+                displayResult('tableDataResults', `❌ Failed to get tables: ${result.data.message}`, false);
+            }
+        }
+
+        async function testGetTableStatus() {
+            const result = await apiRequest('GET', '/api/tables/1/status');
+            if (result.ok && result.data.status === 'success') {
+                const table = result.data.table;
+                displayResult('tableDataResults', `✅ Table 1 status: ${table.name} (${table.seats} seats)`);
+            } else {
+                displayResult('tableDataResults', `❌ Failed to get table status: ${result.data.message}`, false);
+            }
+        }
+
+        async function testTableHealth() {
+            const result = await apiRequest('GET', '/api/tables/health');
+            if (result.ok && result.data.status === 'healthy') {
+                displayResult('tableDataResults', `✅ System healthy - ${result.data.total_tables} tables, ${result.data.active_sessions} active sessions`);
+            } else {
+                displayResult('tableDataResults', `❌ Health check failed: ${result.data.message}`, false);
+            }
+        }
+
+        async function testTableSummary() {
+            const result = await apiRequest('GET', '/api/tables/summary');
+            if (result.ok && result.data.status === 'success') {
+                displayResult('tableDataResults', `✅ Summary generated - ${result.data.total_tables || 0} tables total`);
+            } else {
+                displayResult('tableDataResults', `❌ Failed to get summary: ${result.data.message}`, false);
+            }
+        }
+
+        // Table operations tests
+        async function testOpenTable() {
+            const result = await apiRequest('POST', '/api/tables/2/open', { party_size: 3 });
+            if (result.ok && result.data.status === 'success') {
+                displayResult('operationResults', '✅ Table 2 opened successfully');
+            } else {
+                displayResult('operationResults', `❌ Failed to open table: ${result.data.message}`, false);
+            }
+        }
+
+        async function testCloseTable() {
+            const result = await apiRequest('POST', '/api/tables/2/close');
+            if (result.ok && result.data.status === 'success') {
+                displayResult('operationResults', '✅ Table 2 closed successfully');
+            } else {
+                displayResult('operationResults', `❌ Failed to close table: ${result.data.message}`, false);
+            }
+        }
+
+        async function testClearTable() {
+            const result = await apiRequest('POST', '/api/tables/2/clear');
+            if (result.ok && result.data.status === 'success') {
+                displayResult('operationResults', '✅ Table 2 cleared successfully');
+            } else {
+                displayResult('operationResults', `❌ Failed to clear table: ${result.data.message}`, false);
+            }
+        }
+
+        async function testGetBill() {
+            const result = await apiRequest('GET', '/api/tables/1/bill');
+            if (result.ok && result.data.status === 'success') {
+                displayResult('operationResults', `✅ Bill generated - Total: $${result.data.total}, Orders: ${result.data.total_orders}`);
+            } else {
+                displayResult('operationResults', `❌ Failed to generate bill: ${result.data.message}`, false);
+            }
+        }
+
+        // Frontend integration test
+        async function testFrontendIntegration() {
+            const statusEl = document.getElementById('frontendStatus');
+            let issues = [];
+
+            // Check if table-specific CSS classes exist
+            const hasTableModeCSS = document.querySelector('style') || document.styleSheets.length > 0;
+
+            // Test UI element detection
+            const tableElements = {
+                'Table Status Panel': document.querySelector('#table-status-panel'),
+                'Mobile Table Nav': document.querySelector('#mobile-table-nav'),
+                'Table Mode CSS': hasTableModeCSS
+            };
+
+            let foundElements = 0;
+            let totalElements = Object.keys(tableElements).length;
+
+            Object.entries(tableElements).forEach(([name, element]) => {
+                if (element) {
+                    foundElements++;
+                } else {
+                    issues.push(`Missing: ${name}`);
+                }
+            });
+
+            // Check if toggle function exists
+            if (typeof toggleTableManagement === 'function') {
+                foundElements++;
+                totalElements++;
+            } else {
+                issues.push('Missing: toggleTableManagement function');
+                totalElements++;
+            }
+
+            const successRate = Math.round((foundElements / totalElements) * 100);
+
+            if (successRate >= 75) {
+                statusEl.innerHTML = `✅ Frontend Integration: ${successRate}% (${foundElements}/${totalElements} elements found)`;
+                statusEl.className = 'status success';
+            } else {
+                statusEl.innerHTML = `⚠️ Frontend Integration: ${successRate}% - Issues: ${issues.join(', ')}`;
+                statusEl.className = 'status error';
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshConfig();
+            testFrontendIntegration();
+        });
+    </script>
+</body>
+</html>

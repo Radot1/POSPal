@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Table Management Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .test-result { margin: 8px 0; padding: 12px; border-radius: 6px; }
+        .test-pass { background-color: #d1fae5; border: 1px solid #10b981; color: #065f46; }
+        .test-fail { background-color: #fee2e2; border: 1px solid #ef4444; color: #991b1b; }
+        .test-warn { background-color: #fef3c7; border: 1px solid #f59e0b; color: #92400e; }
+        .test-info { background-color: #dbeafe; border: 1px solid #3b82f6; color: #1e40af; }
+        .status-indicator { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+        .status-pass { background-color: #10b981; }
+        .status-fail { background-color: #ef4444; }
+        .status-warn { background-color: #f59e0b; }
+        .status-info { background-color: #3b82f6; }
+        .loading { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 p-6">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Frontend Table Management Test Suite</h1>
+            <p class="text-gray-600 mb-4">Testing table management interface integration and functionality</p>
+
+            <div class="flex gap-4 mb-6">
+                <button onclick="runAllTests()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-play mr-2"></i>Run All Tests
+                </button>
+                <button onclick="testConfigurationAPI()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                    Test Config API
+                </button>
+                <button onclick="testTableEndpoints()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                    Test Table Endpoints
+                </button>
+                <button onclick="clearResults()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+                    Clear Results
+                </button>
+            </div>
+
+            <div id="testProgress" class="mb-4 hidden">
+                <div class="bg-gray-200 rounded-full h-2">
+                    <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <p id="progressText" class="text-sm text-gray-600 mt-1">Initializing tests...</p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Test Results</h2>
+            <div id="testResults"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">System Status</h2>
+            <div id="systemStatus" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </div>
+    </div>
+
+    <script>
+        class FrontendTableManagementTester {
+            constructor() {
+                this.baseUrl = 'http://localhost:5000';
+                this.results = [];
+                this.totalTests = 0;
+                this.passedTests = 0;
+                this.currentTest = 0;
+                this.systemStatus = {};
+            }
+
+            async makeRequest(endpoint, options = {}) {
+                const startTime = Date.now();
+                const url = `${this.baseUrl}${endpoint}`;
+
+                try {
+                    const response = await fetch(url, {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...options.headers
+                        },
+                        ...options
+                    });
+
+                    const endTime = Date.now();
+                    const responseTime = endTime - startTime;
+
+                    let data;
+                    try {
+                        data = await response.json();
+                    } catch {
+                        data = await response.text();
+                    }
+
+                    return {
+                        status: response.status,
+                        data,
+                        responseTime,
+                        success: response.ok,
+                        url
+                    };
+                } catch (error) {
+                    const endTime = Date.now();
+                    const responseTime = endTime - startTime;
+
+                    return {
+                        status: 0,
+                        data: null,
+                        responseTime,
+                        success: false,
+                        error: error.message,
+                        url
+                    };
+                }
+            }
+
+            updateProgress(current, total, message) {
+                const progressEl = document.getElementById('testProgress');
+                const progressBar = document.getElementById('progressBar');
+                const progressText = document.getElementById('progressText');
+
+                if (progressEl && progressBar && progressText) {
+                    progressEl.classList.remove('hidden');
+                    const percentage = Math.round((current / total) * 100);
+                    progressBar.style.width = `${percentage}%`;
+                    progressText.textContent = message;
+                }
+            }
+
+            logResult(testName, status, details, responseTime = 0) {
+                const result = {
+                    test: testName,
+                    status,
+                    details,
+                    responseTime,
+                    timestamp: new Date().toISOString()
+                };
+
+                this.results.push(result);
+
+                if (status === 'pass') {
+                    this.passedTests++;
+                }
+
+                this.currentTest++;
+                this.updateProgress(this.currentTest, this.totalTests, `Completed: ${testName}`);
+                this.displayResult(result);
+            }
+
+            displayResult(result) {
+                const resultsContainer = document.getElementById('testResults');
+                const resultDiv = document.createElement('div');
+
+                const statusClass = {
+                    'pass': 'test-pass',
+                    'fail': 'test-fail',
+                    'warn': 'test-warn',
+                    'info': 'test-info'
+                }[result.status] || 'test-info';
+
+                const statusIndicatorClass = {
+                    'pass': 'status-pass',
+                    'fail': 'status-fail',
+                    'warn': 'status-warn',
+                    'info': 'status-info'
+                }[result.status] || 'status-info';
+
+                const icon = {
+                    'pass': 'fas fa-check-circle',
+                    'fail': 'fas fa-times-circle',
+                    'warn': 'fas fa-exclamation-triangle',
+                    'info': 'fas fa-info-circle'
+                }[result.status] || 'fas fa-info-circle';
+
+                resultDiv.className = `test-result ${statusClass}`;
+                resultDiv.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="status-indicator ${statusIndicatorClass}"></div>
+                        <i class="${icon} mr-2"></i>
+                        <strong>${result.test}</strong>
+                        <span class="ml-auto text-sm">${result.responseTime}ms</span>
+                    </div>
+                    <div class="mt-1 text-sm">${result.details}</div>
+                `;
+
+                resultsContainer.appendChild(resultDiv);
+                resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            async testConfigurationAPI() {
+                this.logResult('Configuration API Test', 'info', 'Testing configuration endpoint...', 0);
+
+                // Test config GET endpoint
+                const configResult = await this.makeRequest('/api/config');
+
+                if (configResult.success) {
+                    const hasTableManagement = configResult.data.hasOwnProperty('table_management_enabled');
+                    const tableManagementValue = configResult.data.table_management_enabled;
+
+                    this.systemStatus.configAPI = 'working';
+                    this.systemStatus.tableManagementInConfig = hasTableManagement;
+                    this.systemStatus.tableManagementEnabled = tableManagementValue;
+
+                    if (hasTableManagement) {
+                        this.logResult(
+                            'Config API - Table Management Flag',
+                            'pass',
+                            `Table management flag present: ${tableManagementValue}`,
+                            configResult.responseTime
+                        );
+                    } else {
+                        this.logResult(
+                            'Config API - Table Management Flag',
+                            'fail',
+                            'Table management flag missing from config response',
+                            configResult.responseTime
+                        );
+                    }
+                } else {
+                    this.systemStatus.configAPI = 'error';
+                    this.logResult(
+                        'Config API - Connection',
+                        'fail',
+                        `Failed to connect: ${configResult.error || configResult.status}`,
+                        configResult.responseTime
+                    );
+                }
+
+                // Test config POST endpoint (toggle functionality)
+                this.logResult('Config POST Test', 'info', 'Testing configuration update...', 0);
+
+                const updateResult = await this.makeRequest('/api/config', {
+                    method: 'POST',
+                    body: JSON.stringify({ table_management_enabled: true })
+                });
+
+                if (updateResult.success) {
+                    this.logResult(
+                        'Config POST - Update Table Management',
+                        'pass',
+                        'Configuration update successful',
+                        updateResult.responseTime
+                    );
+                } else {
+                    this.logResult(
+                        'Config POST - Update Table Management',
+                        'fail',
+                        `Update failed: ${updateResult.error || updateResult.status}`,
+                        updateResult.responseTime
+                    );
+                }
+            }
+
+            async testTableEndpoints() {
+                this.logResult('Table Endpoints Test', 'info', 'Testing table management endpoints...', 0);
+
+                const endpoints = [
+                    { path: '/api/tables/health', method: 'GET', name: 'Table Health Check' },
+                    { path: '/api/tables', method: 'GET', name: 'Get All Tables' },
+                    { path: '/api/tables/summary', method: 'GET', name: 'Table Summary' },
+                    { path: '/api/tables/performance', method: 'GET', name: 'Performance Metrics' }
+                ];
+
+                for (const endpoint of endpoints) {
+                    const result = await this.makeRequest(endpoint.path, { method: endpoint.method });
+
+                    if (result.success) {
+                        this.logResult(
+                            endpoint.name,
+                            'pass',
+                            `${endpoint.method} ${endpoint.path} - Response: ${result.status}`,
+                            result.responseTime
+                        );
+                    } else if (result.status === 404 || result.status === 400) {
+                        this.logResult(
+                            endpoint.name,
+                            'warn',
+                            `${endpoint.method} ${endpoint.path} - Table management disabled: ${result.status}`,
+                            result.responseTime
+                        );
+                    } else {
+                        this.logResult(
+                            endpoint.name,
+                            'fail',
+                            `${endpoint.method} ${endpoint.path} - Error: ${result.error || result.status}`,
+                            result.responseTime
+                        );
+                    }
+                }
+            }
+
+            async testSystemIntegration() {
+                this.logResult('System Integration Test', 'info', 'Testing overall system integration...', 0);
+
+                // Check if POSPal.html exists and loads
+                try {
+                    const htmlResponse = await fetch('/POSPal.html');
+                    if (htmlResponse.ok) {
+                        this.logResult(
+                            'Frontend Accessibility',
+                            'pass',
+                            'POSPal.html is accessible',
+                            0
+                        );
+                    } else {
+                        this.logResult(
+                            'Frontend Accessibility',
+                            'fail',
+                            `POSPal.html not accessible: ${htmlResponse.status}`,
+                            0
+                        );
+                    }
+                } catch (error) {
+                    this.logResult(
+                        'Frontend Accessibility',
+                        'fail',
+                        `Error accessing POSPal.html: ${error.message}`,
+                        0
+                    );
+                }
+
+                // Test SSE endpoint
+                try {
+                    const sseResponse = await fetch('/events');
+                    if (sseResponse.ok) {
+                        this.logResult(
+                            'SSE Support',
+                            'pass',
+                            'Server-Sent Events endpoint is accessible',
+                            0
+                        );
+                    } else {
+                        this.logResult(
+                            'SSE Support',
+                            'warn',
+                            `SSE endpoint responded with: ${sseResponse.status}`,
+                            0
+                        );
+                    }
+                } catch (error) {
+                    this.logResult(
+                        'SSE Support',
+                        'fail',
+                        `SSE endpoint error: ${error.message}`,
+                        0
+                    );
+                }
+            }
+
+            async testBugValidation() {
+                this.logResult('Bug Validation', 'info', 'Validating known configuration bug...', 0);
+
+                // Check the specific bug: get_app_config() function
+                const configResult = await this.makeRequest('/api/config');
+
+                if (configResult.success) {
+                    const hasTableFlag = configResult.data.hasOwnProperty('table_management_enabled');
+                    const tableValue = configResult.data.table_management_enabled;
+
+                    if (!hasTableFlag) {
+                        this.logResult(
+                            'Bug Validation - Missing Table Flag',
+                            'fail',
+                            'CONFIRMED: table_management_enabled missing from config (get_app_config() bug)',
+                            configResult.responseTime
+                        );
+                    } else if (tableValue === false) {
+                        this.logResult(
+                            'Bug Validation - Table Flag False',
+                            'warn',
+                            'Table management disabled in config (may be due to get_app_config() bug)',
+                            configResult.responseTime
+                        );
+                    } else {
+                        this.logResult(
+                            'Bug Validation - Table Flag Present',
+                            'pass',
+                            'Table management flag present and enabled in config',
+                            configResult.responseTime
+                        );
+                    }
+                } else {
+                    this.logResult(
+                        'Bug Validation - Config Error',
+                        'fail',
+                        'Cannot validate bug due to config endpoint error',
+                        configResult.responseTime
+                    );
+                }
+
+                // Check table health to confirm the bug impact
+                const healthResult = await this.makeRequest('/api/tables/health');
+                if (healthResult.success) {
+                    const healthData = healthResult.data;
+                    if (healthData.table_management_enabled === false && healthData.status === 'disabled') {
+                        this.logResult(
+                            'Bug Impact Validation',
+                            'fail',
+                            'CONFIRMED: Table management disabled due to configuration bug',
+                            healthResult.responseTime
+                        );
+                    } else {
+                        this.logResult(
+                            'Bug Impact Validation',
+                            'pass',
+                            'Table management appears to be working correctly',
+                            healthResult.responseTime
+                        );
+                    }
+                }
+            }
+
+            updateSystemStatus() {
+                const statusContainer = document.getElementById('systemStatus');
+                statusContainer.innerHTML = '';
+
+                const statusItems = [
+                    {
+                        title: 'Configuration API',
+                        status: this.systemStatus.configAPI || 'unknown',
+                        details: 'Backend configuration endpoint'
+                    },
+                    {
+                        title: 'Table Management Flag',
+                        status: this.systemStatus.tableManagementInConfig ? 'present' : 'missing',
+                        details: 'Config contains table_management_enabled'
+                    },
+                    {
+                        title: 'Table Management State',
+                        status: this.systemStatus.tableManagementEnabled ? 'enabled' : 'disabled',
+                        details: 'Current table management status'
+                    },
+                    {
+                        title: 'Test Success Rate',
+                        status: this.passedTests > 0 ? Math.round((this.passedTests / this.results.length) * 100) + '%' : 'N/A',
+                        details: `${this.passedTests}/${this.results.length} tests passed`
+                    }
+                ];
+
+                statusItems.forEach(item => {
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = 'bg-gray-50 p-4 rounded-lg';
+
+                    const statusColor = {
+                        'working': 'text-green-600',
+                        'present': 'text-green-600',
+                        'enabled': 'text-green-600',
+                        'error': 'text-red-600',
+                        'missing': 'text-red-600',
+                        'disabled': 'text-red-600',
+                        'unknown': 'text-gray-600'
+                    }[item.status] || 'text-gray-600';
+
+                    statusDiv.innerHTML = `
+                        <h3 class="font-semibold text-gray-800">${item.title}</h3>
+                        <p class="${statusColor} font-medium">${item.status}</p>
+                        <p class="text-sm text-gray-600">${item.details}</p>
+                    `;
+
+                    statusContainer.appendChild(statusDiv);
+                });
+            }
+
+            generateSummary() {
+                const totalTests = this.results.length;
+                const passedTests = this.results.filter(r => r.status === 'pass').length;
+                const failedTests = this.results.filter(r => r.status === 'fail').length;
+                const warningTests = this.results.filter(r => r.status === 'warn').length;
+
+                const avgResponseTime = this.results
+                    .filter(r => r.responseTime > 0)
+                    .reduce((sum, r) => sum + r.responseTime, 0) /
+                    Math.max(1, this.results.filter(r => r.responseTime > 0).length);
+
+                const summaryDiv = document.createElement('div');
+                summaryDiv.className = 'test-result test-info';
+                summaryDiv.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-2">📊 Test Summary</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div><strong>Total Tests:</strong> ${totalTests}</div>
+                        <div><strong>Passed:</strong> <span class="text-green-600">${passedTests}</span></div>
+                        <div><strong>Failed:</strong> <span class="text-red-600">${failedTests}</span></div>
+                        <div><strong>Warnings:</strong> <span class="text-yellow-600">${warningTests}</span></div>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        <strong>Success Rate:</strong> ${Math.round((passedTests / totalTests) * 100)}% |
+                        <strong>Avg Response Time:</strong> ${Math.round(avgResponseTime)}ms
+                    </div>
+                `;
+
+                const resultsContainer = document.getElementById('testResults');
+                resultsContainer.appendChild(summaryDiv);
+            }
+
+            async runAllTests() {
+                this.results = [];
+                this.passedTests = 0;
+                this.currentTest = 0;
+                this.totalTests = 15; // Approximate number of tests
+
+                document.getElementById('testResults').innerHTML = '';
+
+                this.logResult('Test Suite Started', 'info', 'Running comprehensive frontend table management tests...', 0);
+
+                await this.testConfigurationAPI();
+                await this.testTableEndpoints();
+                await this.testSystemIntegration();
+                await this.testBugValidation();
+
+                this.generateSummary();
+                this.updateSystemStatus();
+
+                // Hide progress bar after completion
+                setTimeout(() => {
+                    document.getElementById('testProgress').classList.add('hidden');
+                }, 2000);
+
+                this.logResult('Test Suite Completed', 'info', `All tests completed. Results: ${this.passedTests}/${this.results.length} passed`, 0);
+            }
+        }
+
+        // Global functions for button handlers
+        let tester = new FrontendTableManagementTester();
+
+        async function runAllTests() {
+            await tester.runAllTests();
+        }
+
+        async function testConfigurationAPI() {
+            await tester.testConfigurationAPI();
+            tester.updateSystemStatus();
+        }
+
+        async function testTableEndpoints() {
+            await tester.testTableEndpoints();
+            tester.updateSystemStatus();
+        }
+
+        function clearResults() {
+            document.getElementById('testResults').innerHTML = '';
+            document.getElementById('systemStatus').innerHTML = '';
+            document.getElementById('testProgress').classList.add('hidden');
+            tester = new FrontendTableManagementTester();
+        }
+
+        // Auto-run basic tests on page load
+        window.addEventListener('load', async () => {
+            await tester.testConfigurationAPI();
+            tester.updateSystemStatus();
+        });
+    </script>
+</body>
+</html>

@@ -168,6 +168,133 @@
         .connection-help-modal { backdrop-filter: blur(8px); }
         .status-indicator-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
+
+        /* ==================================================================================
+           TABLE MANAGEMENT MODE SWITCHING CSS - Desktop Version
+           ================================================================================== */
+
+        /* Default: Hide table features */
+        .table-mode-only { display: none !important; }
+        .simple-mode-only { display: block; }
+
+        /* Show table features when enabled */
+        body.table-mode .table-mode-only:not(.fixed.inset-0) { display: block !important; }
+        body.table-mode .simple-mode-only { display: none !important; }
+
+        /* Desktop table panel styling */
+        body.table-mode .table-status-panel {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border-bottom: 2px solid #4b5563;
+        }
+
+        /* Table grid for desktop - larger cards */
+        .table-card {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            min-height: 120px;
+        }
+
+        .table-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .table-card.available {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            border-color: #10b981;
+            border-width: 2px;
+        }
+
+        .table-card.occupied {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border-color: #ef4444;
+            border-width: 2px;
+            animation: tablePulse 3s ease-in-out infinite;
+        }
+
+        @keyframes tablePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.95; }
+        }
+
+        /* Desktop-specific table status indicators */
+        .table-status-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .table-status-indicator.available {
+            background-color: #10b981;
+        }
+
+        .table-status-indicator.occupied {
+            background-color: #ef4444;
+            animation: statusBlink 2s ease-in-out infinite;
+        }
+
+        @keyframes statusBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        /* Desktop table selection enhancement */
+        body.table-mode .table-selection-button {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border: 2px solid #4b5563;
+            transition: all 0.3s ease;
+        }
+
+        body.table-mode .table-selection-button:hover {
+            background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+            border-color: #6b7280;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Desktop layout adjustments */
+        body.table-mode .main-grid {
+            grid-template-columns: 300px 1fr 400px; /* Table Panel | Menu | Order */
+        }
+
+        body.simple-mode .main-grid {
+            grid-template-columns: 1fr 400px; /* Menu | Order */
+        }
+
+        /* Table panel for desktop */
+        .desktop-table-panel {
+            background: #f9fafb;
+            border-right: 1px solid #e5e7eb;
+            overflow-y: auto;
+        }
+
+        /* Accessibility improvements for desktop */
+        .table-card:focus {
+            outline: 3px solid #3b82f6;
+            outline-offset: 3px;
+        }
+
+        /* Desktop table management modal styling */
+        .desktop-table-modal .modal-content {
+            max-width: 600px;
+            max-height: 80vh;
+        }
+
+        /* Desktop bill view styling */
+        .desktop-table-bill {
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 2rem;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
     </style>
 </head>
 <body class="desktop-ui flex h-screen bg-gray-100 text-gray-800">
@@ -588,6 +715,13 @@
                                     <option value="en" data-i18n="ui.management.general.lang_en">English</option>
                                     <option value="el" data-i18n="ui.management.general.lang_el">Greek</option>
                                 </select>
+                            </div>
+                            <div class="flex items-center gap-3 flex-wrap mb-2">
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="checkbox" id="tableManagementToggle" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" onchange="toggleTableManagement(this.checked)">
+                                    <span class="font-medium text-gray-700">Enable Table Management</span>
+                                </label>
+                                <span class="text-xs text-gray-500">(For restaurants with table service)</span>
                             </div>
                             <div class="my-3 border-t border-gray-200"></div>
                             <div class="flex items-center gap-4 flex-wrap">

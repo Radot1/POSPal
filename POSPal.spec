@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('UISelect.html', '.'), ('POSPal.html', '.'), ('POSPalDesktop.html', '.'), ('pospalCore.js', '.'), ('i18n.js', '.'), ('locales', 'locales')],
+    datas=[('POSPal.html', '.'), ('POSPalDesktop.html', '.'), ('pospalCore.js', '.'), ('managementComponent.html', '.'), ('managementComponent.js', '.'), ('i18n.js', '.'), ('locales', 'locales')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -26,7 +26,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -35,4 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['app_icon.ico'],
 )

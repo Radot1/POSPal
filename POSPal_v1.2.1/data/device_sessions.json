@@ -1,11 +1,83 @@
 {
-  "device_1758650067198_hsnjk40mx": {
+  "device_1759162932544_lrnx7ft53": {
     "info": {
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
       "ip": "127.0.0.1",
-      "timestamp": "2025-09-23T20:54:27.225642"
+      "timestamp": "2025-09-29T19:22:12.556986"
     },
-    "last_seen": "2025-09-23T20:54:27.226116",
+    "last_seen": "2025-09-29T19:22:12.557437",
+    "active": true
+  },
+  "device_1759162942453_enmaz95dk": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:22:22.460471"
+    },
+    "last_seen": "2025-09-29T19:22:22.460851",
+    "active": true
+  },
+  "device_1759164000263_p7tx3cx9f": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:40:00.269343"
+    },
+    "last_seen": "2025-09-29T19:40:00.270324",
+    "active": true
+  },
+  "device_1759164044978_px51pgn1s": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:40:44.986202"
+    },
+    "last_seen": "2025-09-29T19:40:44.986369",
+    "active": true
+  },
+  "device_1759164045683_l3rleh57i": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:40:45.694612"
+    },
+    "last_seen": "2025-09-29T19:40:45.694762",
+    "active": true
+  },
+  "device_1759164046389_nwtumqcxk": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:40:46.399366"
+    },
+    "last_seen": "2025-09-29T19:40:46.399515",
+    "active": true
+  },
+  "device_1759164049067_poxq59mvw": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:40:49.074637"
+    },
+    "last_seen": "2025-09-29T19:40:49.075156",
+    "active": true
+  },
+  "device_1759164063977_qieecdrko": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:41:03.985925"
+    },
+    "last_seen": "2025-09-29T19:41:03.986238",
+    "active": true
+  },
+  "device_1759164078129_70soahiwm": {
+    "info": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      "ip": "127.0.0.1",
+      "timestamp": "2025-09-29T19:41:18.137977"
+    },
+    "last_seen": "2025-09-29T19:41:18.138393",
     "active": true
   }
 }

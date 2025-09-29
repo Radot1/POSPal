@@ -92,7 +92,10 @@
       "WebFetch(domain:menus-api.bzoumboulis.workers.dev)",
       "Bash(unset:*)",
       "Bash(powershell:*)",
-      "Read(//c/Users/bzoum/OneDrive/Projects/MOLD for House/Mold detailArounfWindowsPerimeter/**)"
+      "Read(//c/Users/bzoum/OneDrive/Projects/MOLD for House/Mold detailArounfWindowsPerimeter/**)",
+      "Bash(cat:*)",
+      "Bash(del \"C:\\PROJECTS\\POSPal\\POSPal\\data\\app_instance.lock\")",
+      "Bash(del table_modal_fix_test.html verify_modal_fix.js)"
     ],
     "deny": [],
     "ask": []

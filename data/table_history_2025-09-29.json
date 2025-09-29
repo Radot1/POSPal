@@ -1,0 +1,35 @@
+{
+  "date": "2025-09-29",
+  "sessions": [
+    {
+      "table_id": "2",
+      "opened_at": "17:36:38",
+      "closed_at": "17:55:51",
+      "orders": [],
+      "total": 0.0,
+      "duration_minutes": 19,
+      "payment_status": "unpaid",
+      "amount_paid": 0.0,
+      "amount_remaining": 0,
+      "payments": []
+    },
+    {
+      "table_id": "1",
+      "opened_at": "10:00:00",
+      "closed_at": "17:56:13",
+      "orders": [
+        134,
+        135,
+        136,
+        1,
+        2
+      ],
+      "total": 20.5,
+      "duration_minutes": 1916,
+      "payment_status": "unpaid",
+      "amount_paid": 0.0,
+      "amount_remaining": 20.5,
+      "payments": []
+    }
+  ]
+}

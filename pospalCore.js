@@ -34,6 +34,12 @@ let currentOptionSelectionStep = null;
 let selectedItemId_desktop = null;
 let numpadInput_desktop = "";
 
+// --- Table Management State ---
+let tableManagementEnabled = false;
+let tableConfig = null;
+let tableSessions = {};
+let selectedTableForAction = null;
+
 // --- Centralized Timer Management System ---
 const TimerManager = {
     timers: new Map(),
@@ -1074,12 +1080,16 @@ const elements = {};
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOM Content Loaded - Starting initialization...');
-    
+
     // Load centralized state first
     console.log('Loading centralized state...');
     const stateLoaded = await loadCentralizedState();
     console.log('Centralized state loaded:', stateLoaded);
-    
+
+    // Initialize table management mode detection
+    console.log('Initializing app mode...');
+    await initializeAppMode();
+
     // Management component is included directly in HTML
     const componentLoaded = loadManagementComponent();
     console.log('Management component loaded:', componentLoaded);
@@ -1280,6 +1290,1241 @@ function cacheDOMElements() {
     console.log('productsContainer:', elements.productsContainer);
     console.log('orderItemsContainer:', elements.orderItemsContainer);
 }
+
+// ==================================================================================
+// TABLE MANAGEMENT SYSTEM - Phase 3 Implementation
+// ==================================================================================
+
+/**
+ * Initialize app mode detection and table management features
+ */
+async function initializeAppMode() {
+    try {
+        // Fetch configuration from backend
+        const response = await fetch('/api/config');
+        const config = await response.json();
+
+        tableManagementEnabled = config.table_management_enabled || false;
+
+        console.log('App mode initialized:', tableManagementEnabled ? 'Table Mode' : 'Simple Mode');
+
+        if (tableManagementEnabled) {
+            // Enable table mode
+            document.body.classList.add('table-mode');
+            document.body.classList.remove('simple-mode');
+            await initializeTableFeatures();
+        } else {
+            // Enable simple mode
+            document.body.classList.add('simple-mode');
+            document.body.classList.remove('table-mode');
+            initializeSimpleMode();
+        }
+
+        // Update UI based on mode
+        updateModeSpecificUI();
+
+    } catch (error) {
+        console.error('Failed to initialize app mode:', error);
+        // Default to simple mode on error
+        document.body.classList.add('simple-mode');
+        document.body.classList.remove('table-mode');
+        initializeSimpleMode();
+    }
+}
+
+/**
+ * Initialize table management features
+ */
+async function initializeTableFeatures() {
+    console.log('Initializing table management features...');
+
+    try {
+        // Load initial table data
+        await loadTableConfiguration();
+        await loadTableSessions();
+
+        // Set up real-time updates
+        setupTableSSEUpdates();
+
+        // Initialize table UI components
+        initializeTableUI();
+
+        // Initialize mobile navigation
+        updateMobileTabDisplay();
+
+        console.log('Table management features initialized successfully');
+
+    } catch (error) {
+        console.error('Failed to initialize table features:', error);
+        showToast('Failed to load table management. Some features may not work.', 'error');
+    }
+}
+
+/**
+ * Initialize simple mode (no table management)
+ */
+function initializeSimpleMode() {
+    console.log('Initializing simple mode...');
+    // Hide all table-related UI elements
+    const tableElements = document.querySelectorAll('.table-mode-only');
+    tableElements.forEach(el => el.style.display = 'none');
+
+    // Show simple mode elements
+    const simpleElements = document.querySelectorAll('.simple-mode-only');
+    simpleElements.forEach(el => el.style.display = 'block');
+}
+
+/**
+ * Load table configuration from backend
+ */
+async function loadTableConfiguration() {
+    try {
+        const response = await fetch('/api/tables');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            tableConfig = data.tables;
+            console.log('Table configuration loaded:', tableConfig);
+        } else {
+            throw new Error(data.message || 'Failed to load table configuration');
+        }
+    } catch (error) {
+        console.error('Error loading table configuration:', error);
+        throw error;
+    }
+}
+
+/**
+ * Load current table sessions
+ */
+async function loadTableSessions() {
+    try {
+        const response = await fetch('/api/tables');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            tableSessions = data.sessions || {};
+            console.log('Table sessions loaded:', tableSessions);
+        } else {
+            throw new Error(data.message || 'Failed to load table sessions');
+        }
+    } catch (error) {
+        console.error('Error loading table sessions:', error);
+        throw error;
+    }
+}
+
+/**
+ * Initialize table UI components
+ */
+function initializeTableUI() {
+    // Create table selection modal if it doesn't exist
+    createTableSelectionModal();
+
+    // Create table management modal if it doesn't exist
+    createTableManagementModal();
+
+    // Update table display
+    updateTableDisplay();
+
+    // Replace simple table input with visual selector
+    setupTableSelectionUI();
+}
+
+/**
+ * Create table selection modal
+ */
+function createTableSelectionModal() {
+    // Check if modal already exists
+    if (document.getElementById('tableSelectionModal')) return;
+
+    const modalHTML = `
+        <div id="tableSelectionModal" class="table-mode-only fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[95vh] flex flex-col">
+                <!-- Enhanced Header with Party Size Selector -->
+                <div class="p-4 border-b border-gray-300">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">Select Table</h2>
+                        <button onclick="closeTableSelectionModal()" class="text-gray-500 hover:text-black transition-colors">
+                            <i class="fas fa-times text-2xl"></i>
+                        </button>
+                    </div>
+
+                    <!-- Party Size Selector -->
+                    <div class="flex items-center space-x-4 mb-4">
+                        <label class="text-sm font-medium text-gray-700">Party Size:</label>
+                        <div class="flex items-center bg-gray-100 rounded-lg overflow-hidden">
+                            <button onclick="adjustPartySize(-1)" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 transition-colors" id="partySizeDecrement">
+                                <i class="fas fa-minus text-sm"></i>
+                            </button>
+                            <input type="number" id="partySizeInput" value="2" min="1" max="20"
+                                   class="w-16 text-center py-2 bg-gray-100 border-none focus:outline-none font-medium"
+                                   onchange="updateTableSuggestions()">
+                            <button onclick="adjustPartySize(1)" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 transition-colors" id="partySizeIncrement">
+                                <i class="fas fa-plus text-sm"></i>
+                            </button>
+                        </div>
+                        <div id="suggestionStatus" class="text-sm text-gray-600"></div>
+                    </div>
+
+                    <!-- Filter and Search Bar -->
+                    <div class="flex flex-wrap gap-3 items-center">
+                        <div class="flex-1 min-w-60">
+                            <div class="relative">
+                                <input type="text" id="tableSearchInput" placeholder="Search tables by number or name..."
+                                       class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                       oninput="filterTables()">
+                                <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="filterTablesByStatus('all')" class="px-3 py-2 text-xs border rounded-lg transition-colors"
+                                    id="filterAll" data-filter="all">All</button>
+                            <button onclick="filterTablesByStatus('available')" class="px-3 py-2 text-xs border rounded-lg transition-colors"
+                                    id="filterAvailable" data-filter="available">Available</button>
+                            <button onclick="filterTablesByStatus('occupied')" class="px-3 py-2 text-xs border rounded-lg transition-colors"
+                                    id="filterOccupied" data-filter="occupied">Occupied</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="tableLoadingState" class="hidden p-8 text-center">
+                    <div class="inline-flex items-center space-x-3">
+                        <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        <span class="text-gray-600">Loading table suggestions...</span>
+                    </div>
+                </div>
+
+                <!-- Table Grid Container -->
+                <div class="flex-grow overflow-y-auto p-4">
+                    <!-- Suggestions Section -->
+                    <div id="suggestionsSection" class="hidden mb-6">
+                        <h3 class="text-lg font-medium mb-3 text-green-700">
+                            <i class="fas fa-lightbulb mr-2"></i>Recommended Tables
+                        </h3>
+                        <div id="suggestedTables" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-4">
+                            <!-- Suggested table cards will be populated here -->
+                        </div>
+                        <hr class="border-gray-200 mb-4">
+                    </div>
+
+                    <!-- All Tables Section -->
+                    <div>
+                        <h3 id="allTablesHeader" class="text-lg font-medium mb-3 text-gray-700">All Tables</h3>
+                        <div id="tableGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            <!-- Table cards will be populated here -->
+                        </div>
+                    </div>
+
+                    <!-- No Results Message -->
+                    <div id="noTablesMessage" class="hidden text-center py-8 text-gray-500">
+                        <i class="fas fa-search text-3xl mb-3 opacity-50"></i>
+                        <p>No tables found matching your criteria</p>
+                    </div>
+                </div>
+
+                <!-- Footer with Quick Actions -->
+                <div class="p-4 border-t border-gray-200 bg-gray-50">
+                    <div class="flex justify-between items-center text-sm text-gray-600">
+                        <div id="tableStats" class="flex space-x-4">
+                            <span>Total: <span id="totalTables">0</span></span>
+                            <span>Available: <span id="availableTables">0</span></span>
+                            <span>Occupied: <span id="occupiedTables">0</span></span>
+                        </div>
+                        <button onclick="refreshTableDisplay()" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-sync-alt mr-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // Initialize filter state
+    setActiveFilter('all');
+}
+
+/**
+ * Create table management modal
+ */
+function createTableManagementModal() {
+    // Check if modal already exists
+    if (document.getElementById('tableManagementModal')) return;
+
+    const modalHTML = `
+        <div id="tableManagementModal" class="table-mode-only fixed inset-0 bg-black bg-opacity-70 z-[90] hidden items-center justify-center p-4">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col">
+                <div class="p-4 border-b border-gray-300 flex justify-between items-center">
+                    <h2 class="text-xl font-semibold">Table <span id="tableManagementNumber"></span></h2>
+                    <button onclick="closeTableManagementModal()" class="text-gray-500 hover:text-black">
+                        <i class="fas fa-times text-2xl"></i>
+                    </button>
+                </div>
+                <div class="p-4 space-y-4">
+                    <div id="tableManagementInfo" class="bg-gray-50 p-3 rounded-md">
+                        <div class="text-sm text-gray-600">Status: <span id="tableStatusDisplay"></span></div>
+                        <div class="text-sm text-gray-600">Current Total: <span id="tableCurrentTotal">€0.00</span></div>
+                        <div class="text-sm text-gray-600">Active Orders: <span id="tableActiveOrders">0</span></div>
+                    </div>
+                    <div class="space-y-2">
+                        <button onclick="addOrderToTable()" class="w-full py-2 px-4 btn-primary">
+                            <i class="fas fa-plus mr-2"></i>Add Order
+                        </button>
+                        <button onclick="viewTableBill()" class="w-full py-2 px-4 btn-secondary">
+                            <i class="fas fa-receipt mr-2"></i>View Bill
+                        </button>
+                        <button onclick="closeTable()" class="w-full py-2 px-4 btn-success">
+                            <i class="fas fa-check mr-2"></i>Close Table
+                        </button>
+                        <button onclick="clearTable()" class="w-full py-2 px-4 btn-danger">
+                            <i class="fas fa-eraser mr-2"></i>Clear Table
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    // Add event listeners for escape key and backdrop click
+    const modal = document.getElementById('tableManagementModal');
+    if (modal) {
+        // Escape key support
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+                closeTableManagementModal();
+            }
+        });
+
+        // Backdrop click support - click on the modal overlay, not the content
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) { // Only if clicking the backdrop, not modal content
+                closeTableManagementModal();
+            }
+        });
+    }
+}
+
+/**
+ * Update table status summary in header
+ */
+function updateTableStatusSummary() {
+    if (!tableManagementEnabled || !tableConfig) return;
+
+    const totalTables = Object.keys(tableConfig).length;
+    let occupiedCount = 0;
+    let totalRevenue = 0;
+
+    Object.keys(tableConfig).forEach(tableId => {
+        const session = tableSessions[tableId] || {};
+        if (session.total && session.total > 0) {
+            occupiedCount++;
+            totalRevenue += session.total;
+        }
+    });
+
+    const availableCount = totalTables - occupiedCount;
+
+    // Update header summary
+    const summaryEl = document.getElementById('tableStatusSummary');
+    if (summaryEl) {
+        summaryEl.innerHTML = `${occupiedCount}/${totalTables} occupied • €${totalRevenue.toFixed(2)} total`;
+    }
+
+    // Update modal stats
+    const totalTablesEl = document.getElementById('totalTables');
+    const availableTablesEl = document.getElementById('availableTables');
+    const occupiedTablesEl = document.getElementById('occupiedTables');
+
+    if (totalTablesEl) totalTablesEl.textContent = totalTables;
+    if (availableTablesEl) availableTablesEl.textContent = availableCount;
+    if (occupiedTablesEl) occupiedTablesEl.textContent = occupiedCount;
+}
+
+/**
+ * Update table display with current table data
+ */
+function updateTableDisplay(searchTerm = '') {
+    if (!tableManagementEnabled || !tableConfig) return;
+
+    const tableGrid = document.getElementById('tableGrid');
+    if (!tableGrid) return;
+
+    tableGrid.innerHTML = '';
+
+    const currentFilter = window.currentTableFilter || 'all';
+    const partySize = parseInt(document.getElementById('partySizeInput')?.value) || 2;
+    let visibleTables = 0;
+
+    Object.keys(tableConfig).forEach(tableId => {
+        const table = tableConfig[tableId];
+        const session = tableSessions[tableId] || {};
+        const status = session.total > 0 ? 'occupied' : 'available';
+
+        // Apply filters
+        if (currentFilter !== 'all' && currentFilter !== status) return;
+
+        // Apply search filter
+        if (searchTerm && !tableId.toLowerCase().includes(searchTerm) &&
+            !(table.name && table.name.toLowerCase().includes(searchTerm))) {
+            return;
+        }
+
+        visibleTables++;
+        const card = createTableCard(tableId, table, session, false);
+        tableGrid.appendChild(card);
+    });
+
+    // Show/hide no results message
+    const noResultsMsg = document.getElementById('noTablesMessage');
+    if (noResultsMsg) {
+        if (visibleTables === 0) {
+            noResultsMsg.classList.remove('hidden');
+        } else {
+            noResultsMsg.classList.add('hidden');
+        }
+    }
+
+    // Update status summary
+    updateTableStatusSummary();
+}
+
+/**
+ * Create enhanced table card with match quality indicators
+ */
+function createTableCard(tableId, table, session, isSuggestion = false, matchQuality = null, reason = '') {
+    const total = session.total || 0;
+    const orderCount = session.orders ? session.orders.length : 0;
+    const status = total > 0 ? 'occupied' : 'available';
+    const capacity = table.capacity || table.seats || 4;
+    const lastActivity = session.lastActivity ? new Date(session.lastActivity) : null;
+
+    const tableCard = document.createElement('div');
+    tableCard.className = `table-card ${status} p-4 rounded-lg border-2 cursor-pointer hover:shadow-lg transition-all`;
+    tableCard.dataset.tableId = tableId;
+    tableCard.setAttribute('tabindex', '0');
+
+    // Apply base styling
+    if (status === 'available') {
+        tableCard.classList.add('border-green-300', 'bg-green-50', 'hover:bg-green-100');
+    } else {
+        tableCard.classList.add('border-red-300', 'bg-red-50', 'hover:bg-red-100');
+    }
+
+    // Apply match quality styling for suggestions
+    if (isSuggestion && matchQuality) {
+        tableCard.classList.remove('border-green-300', 'bg-green-50', 'hover:bg-green-100');
+
+        switch (matchQuality) {
+            case 'perfect':
+                tableCard.classList.add('border-green-500', 'bg-green-100', 'hover:bg-green-200', 'ring-2', 'ring-green-200');
+                break;
+            case 'good':
+                tableCard.classList.add('border-yellow-400', 'bg-yellow-50', 'hover:bg-yellow-100', 'ring-1', 'ring-yellow-200');
+                break;
+            case 'acceptable':
+                tableCard.classList.add('border-orange-400', 'bg-orange-50', 'hover:bg-orange-100', 'ring-1', 'ring-orange-200');
+                break;
+        }
+    }
+
+    // Calculate occupancy percentage for visual indicator
+    const occupancyPercent = status === 'occupied' && capacity > 0 ? Math.min(100, (orderCount / capacity) * 100) : 0;
+
+    tableCard.innerHTML = `
+        <div class="text-center relative">
+            ${isSuggestion && matchQuality ? `
+                <div class="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                    matchQuality === 'perfect' ? 'bg-green-500' :
+                    matchQuality === 'good' ? 'bg-yellow-500' : 'bg-orange-500'
+                }">
+                    ${matchQuality === 'perfect' ? '🎯' : matchQuality === 'good' ? '👍' : '✓'}
+                </div>
+            ` : ''}
+
+            <div class="text-2xl font-bold text-gray-800 mb-1">${tableId}</div>
+
+            ${table.name ? `<div class="text-xs text-gray-500 mb-1">${table.name}</div>` : ''}
+
+            <div class="text-sm font-medium ${status === 'available' ? 'text-green-700' : 'text-red-700'} mb-1">
+                ${status === 'available' ? 'Available' : `€${total.toFixed(2)}`}
+            </div>
+
+            <!-- Capacity and Activity Info -->
+            <div class="text-xs text-gray-600 space-y-1">
+                <div class="flex items-center justify-center space-x-1">
+                    <i class="fas fa-users text-gray-400"></i>
+                    <span>${capacity} seats</span>
+                    ${status === 'occupied' ? `<span class="text-gray-400">•</span><span>${orderCount} order${orderCount !== 1 ? 's' : ''}</span>` : ''}
+                </div>
+
+                ${status === 'occupied' && capacity > 0 ? `
+                    <div class="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                        <div class="bg-red-400 h-1.5 rounded-full transition-all" style="width: ${occupancyPercent}%"></div>
+                    </div>
+                ` : ''}
+
+                ${lastActivity ? `
+                    <div class="text-gray-400">
+                        <i class="fas fa-clock text-xs"></i>
+                        <span>${formatLastActivity(lastActivity)}</span>
+                    </div>
+                ` : ''}
+
+                ${isSuggestion && reason ? `
+                    <div class="text-xs font-medium mt-2 ${
+                        matchQuality === 'perfect' ? 'text-green-700' :
+                        matchQuality === 'good' ? 'text-yellow-700' : 'text-orange-700'
+                    }">
+                        ${reason}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+
+    // Add click handler
+    tableCard.addEventListener('click', () => {
+        if (status === 'available') {
+            selectTableForNewOrder(tableId);
+        } else {
+            showTableManagementModal(tableId);
+        }
+    });
+
+    // Add keyboard support
+    tableCard.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            tableCard.click();
+        }
+    });
+
+    return tableCard;
+}
+
+/**
+ * Format last activity time
+ */
+function formatLastActivity(date) {
+    const now = new Date();
+    const diffMinutes = Math.floor((now - date) / 60000);
+
+    if (diffMinutes < 1) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    return date.toLocaleDateString();
+}
+
+/**
+ * Setup table selection UI to replace simple input
+ */
+function setupTableSelectionUI() {
+    if (!tableManagementEnabled) return;
+
+    const headerTableContainer = document.getElementById('header-table-container');
+    if (headerTableContainer) {
+        headerTableContainer.addEventListener('click', () => {
+            showTableSelectionModal();
+        });
+
+        // Make it look more like a button
+        headerTableContainer.style.cursor = 'pointer';
+        headerTableContainer.title = 'Click to select table';
+
+        // Hide the input cursor
+        const headerTableInput = document.getElementById('header-table-input');
+        if (headerTableInput) {
+            headerTableInput.style.cursor = 'pointer';
+            headerTableInput.readOnly = true;
+        }
+    }
+}
+
+/**
+ * Setup Server-Sent Events for real-time table updates
+ */
+function setupTableSSEUpdates() {
+    if (!tableManagementEnabled) return;
+
+    // Listen for table updates through existing SSE connection
+    if (window.evtSource) {
+        window.evtSource.addEventListener('table_updated', function(e) {
+            try {
+                const data = JSON.parse(e.data);
+                handleTableUpdate(data);
+            } catch (error) {
+                console.error('Error parsing table update:', error);
+            }
+        });
+
+        console.log('Table SSE updates configured');
+    }
+}
+
+/**
+ * Handle real-time table updates
+ */
+function handleTableUpdate(data) {
+    const { table_id, total, orders, status } = data;
+
+    // Update local table sessions
+    if (!tableSessions[table_id]) {
+        tableSessions[table_id] = {};
+    }
+    tableSessions[table_id].total = total;
+    tableSessions[table_id].orders = orders;
+    tableSessions[table_id].status = status;
+
+    // Update table display
+    updateTableCardDisplay(table_id, total, orders);
+
+    // Update status summary
+    updateTableStatusSummary();
+
+    console.log(`Table ${table_id} updated: €${total.toFixed(2)}, ${orders.length} orders`);
+}
+
+/**
+ * Update specific table card in real-time
+ */
+function updateTableCardDisplay(tableId, total, orders) {
+    const tableCard = document.querySelector(`[data-table-id="${tableId}"]`);
+    if (!tableCard) return;
+
+    const status = total > 0 ? 'occupied' : 'available';
+    const orderCount = orders.length;
+
+    // Update classes
+    tableCard.className = `table-card ${status} p-4 rounded-lg border-2 cursor-pointer hover:shadow-lg transition-all`;
+    if (status === 'available') {
+        tableCard.classList.add('border-green-300', 'bg-green-50', 'hover:bg-green-100');
+    } else {
+        tableCard.classList.add('border-red-300', 'bg-red-50', 'hover:bg-red-100');
+    }
+
+    // Update content
+    const statusDisplay = tableCard.querySelector('.text-sm.font-medium');
+    const infoDisplay = tableCard.querySelector('.text-xs.text-gray-600');
+
+    if (statusDisplay) {
+        statusDisplay.textContent = status === 'available' ? 'Available' : `€${total.toFixed(2)}`;
+        statusDisplay.className = `text-sm font-medium ${status === 'available' ? 'text-green-700' : 'text-red-700'} mb-1`;
+    }
+
+    if (infoDisplay) {
+        const table = tableConfig[tableId];
+        infoDisplay.textContent = status === 'available' ?
+            `${table?.seats || 4} seats` :
+            `${orderCount} order${orderCount !== 1 ? 's' : ''}`;
+    }
+}
+
+/**
+ * Update mode-specific UI elements
+ */
+function updateModeSpecificUI() {
+    // Show/hide elements based on mode
+    const tableOnlyElements = document.querySelectorAll('.table-mode-only');
+    const simpleOnlyElements = document.querySelectorAll('.simple-mode-only');
+
+    if (tableManagementEnabled) {
+        tableOnlyElements.forEach(el => {
+            // Skip modals - they should be controlled by their own show/hide functions
+            if (el.classList.contains('fixed') && el.classList.contains('inset-0')) {
+                return; // This is likely a modal, don't override its display
+            }
+            el.style.display = 'block';
+        });
+        simpleOnlyElements.forEach(el => el.style.display = 'none');
+    } else {
+        tableOnlyElements.forEach(el => {
+            // Skip modals - they should be controlled by their own show/hide functions
+            if (el.classList.contains('fixed') && el.classList.contains('inset-0')) {
+                return; // This is likely a modal, don't override its display
+            }
+            el.style.display = 'none';
+        });
+        simpleOnlyElements.forEach(el => el.style.display = 'block');
+    }
+}
+
+// ==================================================================================
+// TABLE MANAGEMENT UI FUNCTIONS
+// ==================================================================================
+
+/**
+ * Show table selection modal
+ */
+function showTableSelectionModal() {
+    if (!tableManagementEnabled) return;
+
+    updateTableDisplay();
+    const modal = document.getElementById('tableSelectionModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+/**
+ * Close table selection modal
+ */
+function closeTableSelectionModal() {
+    const modal = document.getElementById('tableSelectionModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+/**
+ * Adjust party size in table selection modal
+ */
+function adjustPartySize(increment) {
+    const input = document.getElementById('partySizeInput');
+    if (!input) return;
+
+    const currentValue = parseInt(input.value) || 2;
+    const newValue = Math.max(1, Math.min(20, currentValue + increment));
+
+    input.value = newValue;
+    updateTableSuggestions();
+}
+
+/**
+ * Update table suggestions based on party size
+ */
+async function updateTableSuggestions() {
+    const partySize = parseInt(document.getElementById('partySizeInput')?.value) || 2;
+    const statusElement = document.getElementById('suggestionStatus');
+    const loadingElement = document.getElementById('tableLoadingState');
+    const suggestionsSection = document.getElementById('suggestionsSection');
+    const suggestedTablesGrid = document.getElementById('suggestedTables');
+
+    if (!tableManagementEnabled || !tableConfig) return;
+
+    // Show loading state
+    if (loadingElement) loadingElement.classList.remove('hidden');
+    if (statusElement) statusElement.textContent = 'Finding best tables...';
+
+    try {
+        // Simulate API call to get suggestions
+        const suggestions = await getTableSuggestions(partySize);
+
+        if (suggestions && suggestions.length > 0) {
+            // Display suggestions
+            displayTableSuggestions(suggestions);
+            if (statusElement) statusElement.textContent = `${suggestions.length} recommended table${suggestions.length > 1 ? 's' : ''} found`;
+            if (suggestionsSection) suggestionsSection.classList.remove('hidden');
+        } else {
+            if (statusElement) statusElement.textContent = 'No specific recommendations';
+            if (suggestionsSection) suggestionsSection.classList.add('hidden');
+        }
+
+        // Update all tables display with match indicators
+        updateTableDisplay();
+
+    } catch (error) {
+        console.error('Error getting table suggestions:', error);
+        if (statusElement) statusElement.textContent = 'Unable to load suggestions';
+        if (suggestionsSection) suggestionsSection.classList.add('hidden');
+    } finally {
+        if (loadingElement) loadingElement.classList.add('hidden');
+    }
+}
+
+/**
+ * Get table suggestions for party size
+ */
+async function getTableSuggestions(partySize) {
+    if (!tableConfig) return [];
+
+    const suggestions = [];
+
+    Object.keys(tableConfig).forEach(tableId => {
+        const table = tableConfig[tableId];
+        const session = tableSessions[tableId] || {};
+        const isAvailable = !session.total || session.total === 0;
+
+        if (!isAvailable) return; // Only suggest available tables
+
+        const capacity = table.capacity || 4;
+        let matchQuality = 'none';
+        let score = 0;
+
+        // Calculate match quality
+        if (capacity === partySize) {
+            matchQuality = 'perfect';
+            score = 100;
+        } else if (capacity >= partySize && capacity <= partySize + 2) {
+            matchQuality = 'good';
+            score = 80 - Math.abs(capacity - partySize) * 5;
+        } else if (capacity >= partySize) {
+            matchQuality = 'acceptable';
+            score = 60 - Math.abs(capacity - partySize) * 2;
+        }
+
+        if (matchQuality !== 'none') {
+            suggestions.push({
+                table_id: tableId,
+                table: table,
+                match_quality: matchQuality,
+                score: score,
+                capacity: capacity,
+                reason: getMatchReason(partySize, capacity, matchQuality)
+            });
+        }
+    });
+
+    // Sort by score (best matches first)
+    suggestions.sort((a, b) => b.score - a.score);
+
+    return suggestions.slice(0, 8); // Return top 8 suggestions
+}
+
+/**
+ * Get reason text for match quality
+ */
+function getMatchReason(partySize, capacity, matchQuality) {
+    switch (matchQuality) {
+        case 'perfect': return `Perfect fit for ${partySize} people`;
+        case 'good': return `Good option (${capacity} seats)`;
+        case 'acceptable': return `Available (${capacity} seats)`;
+        default: return '';
+    }
+}
+
+/**
+ * Display table suggestions in the suggestions grid
+ */
+function displayTableSuggestions(suggestions) {
+    const grid = document.getElementById('suggestedTables');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+
+    suggestions.forEach(suggestion => {
+        const { table_id, table, match_quality, reason } = suggestion;
+        const session = tableSessions[table_id] || {};
+
+        const card = createTableCard(table_id, table, session, true, match_quality, reason);
+        grid.appendChild(card);
+    });
+}
+
+/**
+ * Filter tables by search term
+ */
+function filterTables() {
+    const searchTerm = document.getElementById('tableSearchInput')?.value.toLowerCase() || '';
+    updateTableDisplay(searchTerm);
+}
+
+/**
+ * Filter tables by status
+ */
+function filterTablesByStatus(status) {
+    setActiveFilter(status);
+    updateTableDisplay();
+}
+
+/**
+ * Set active filter button
+ */
+function setActiveFilter(status) {
+    // Remove active class from all filter buttons
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-white', 'text-gray-700', 'border-gray-300');
+    });
+
+    // Add active class to selected filter
+    const activeButton = document.getElementById(`filter${status.charAt(0).toUpperCase() + status.slice(1)}`);
+    if (activeButton) {
+        activeButton.classList.remove('bg-white', 'text-gray-700', 'border-gray-300');
+        activeButton.classList.add('bg-blue-600', 'text-white');
+    }
+
+    // Store current filter
+    window.currentTableFilter = status;
+}
+
+/**
+ * Refresh table display
+ */
+async function refreshTableDisplay() {
+    const refreshBtn = document.querySelector('[onclick="refreshTableDisplay()"]');
+    if (refreshBtn) {
+        const icon = refreshBtn.querySelector('i');
+        if (icon) icon.classList.add('fa-spin');
+    }
+
+    try {
+        // Refresh table data from server
+        await loadTableData();
+        updateTableDisplay();
+        updateTableSuggestions();
+        showToast('Tables refreshed', 'success');
+    } catch (error) {
+        console.error('Error refreshing tables:', error);
+        showToast('Failed to refresh tables', 'error');
+    } finally {
+        if (refreshBtn) {
+            const icon = refreshBtn.querySelector('i');
+            if (icon) icon.classList.remove('fa-spin');
+        }
+    }
+}
+
+/**
+ * Select table for new order
+ */
+function selectTableForNewOrder(tableId) {
+    selectedTableNumber = tableId;
+
+    // Update header input
+    const headerTableInput = document.getElementById('header-table-input');
+    if (headerTableInput) {
+        headerTableInput.value = tableId;
+    }
+
+    // Save to state
+    updateSelectedTable();
+
+    // Close modal
+    closeTableSelectionModal();
+
+    console.log(`Selected table ${tableId} for new order`);
+}
+
+/**
+ * Show table management modal
+ */
+function showTableManagementModal(tableId) {
+    selectedTableForAction = tableId;
+    const session = tableSessions[tableId] || {};
+
+    // Update modal content
+    document.getElementById('tableManagementNumber').textContent = tableId;
+    document.getElementById('tableStatusDisplay').textContent = session.total > 0 ? 'Occupied' : 'Available';
+    document.getElementById('tableCurrentTotal').textContent = `€${(session.total || 0).toFixed(2)}`;
+    document.getElementById('tableActiveOrders').textContent = session.orders ? session.orders.length : 0;
+
+    // Show modal
+    const modal = document.getElementById('tableManagementModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+/**
+ * Close table management modal
+ */
+function closeTableManagementModal() {
+    selectedTableForAction = null;
+    const modal = document.getElementById('tableManagementModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        // Remove any inline styles that might interfere with hiding
+        modal.style.display = '';
+    }
+}
+
+/**
+ * Add order to selected table
+ */
+function addOrderToTable() {
+    if (!selectedTableForAction) return;
+
+    // Set the table for the current order
+    selectedTableNumber = selectedTableForAction;
+    const headerTableInput = document.getElementById('header-table-input');
+    if (headerTableInput) {
+        headerTableInput.value = selectedTableForAction;
+    }
+    updateSelectedTable();
+
+    // Close modals
+    closeTableManagementModal();
+    closeTableSelectionModal();
+
+    showToast(`Ready to add order to Table ${selectedTableForAction}`, 'success');
+}
+
+/**
+ * View table bill
+ */
+async function viewTableBill() {
+    if (!selectedTableForAction) return;
+
+    try {
+        const response = await fetch(`/api/tables/${selectedTableForAction}/bill`);
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showTableBillModal(data.bill);
+        } else {
+            showToast(data.message || 'Failed to load table bill', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading table bill:', error);
+        showToast('Failed to load table bill', 'error');
+    }
+}
+
+/**
+ * Close table (mark as paid)
+ */
+async function closeTable() {
+    if (!selectedTableForAction) return;
+
+    if (!confirm(`Close Table ${selectedTableForAction}? This will mark it as paid.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/tables/${selectedTableForAction}/close`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showToast(`Table ${selectedTableForAction} closed successfully`, 'success');
+            closeTableManagementModal();
+            // Refresh table display
+            await loadTableSessions();
+            updateTableDisplay();
+        } else {
+            showToast(data.message || 'Failed to close table', 'error');
+        }
+    } catch (error) {
+        console.error('Error closing table:', error);
+        showToast('Failed to close table', 'error');
+    }
+}
+
+/**
+ * Clear table for next customers
+ */
+async function clearTable() {
+    if (!selectedTableForAction) return;
+
+    if (!confirm(`Clear Table ${selectedTableForAction}? This will remove all orders and reset the table.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/tables/${selectedTableForAction}/clear`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showToast(`Table ${selectedTableForAction} cleared successfully`, 'success');
+            closeTableManagementModal();
+            // Refresh table display
+            await loadTableSessions();
+            updateTableDisplay();
+        } else {
+            showToast(data.message || 'Failed to clear table', 'error');
+        }
+    } catch (error) {
+        console.error('Error clearing table:', error);
+        showToast('Failed to clear table', 'error');
+    }
+}
+
+/**
+ * Show table bill in modal
+ */
+function showTableBillModal(billData) {
+    // Create bill modal if it doesn't exist
+    if (!document.getElementById('tableBillModal')) {
+        const modalHTML = `
+            <div id="tableBillModal" class="fixed inset-0 bg-black bg-opacity-70 z-[95] hidden items-center justify-center p-4">
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                    <div class="p-4 border-b border-gray-300 flex justify-between items-center">
+                        <h2 class="text-xl font-semibold">Table Bill</h2>
+                        <button onclick="closeTableBillModal()" class="text-gray-500 hover:text-black">
+                            <i class="fas fa-times text-2xl"></i>
+                        </button>
+                    </div>
+                    <div class="flex-grow overflow-y-auto p-4" id="tableBillContent">
+                        <!-- Bill content will be populated here -->
+                    </div>
+                    <div class="p-4 border-t border-gray-300">
+                        <button onclick="closeTableBillModal()" class="w-full py-2 px-4 btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    // Populate bill content
+    const billContent = document.getElementById('tableBillContent');
+    if (billContent) {
+        billContent.innerHTML = `
+            <div class="space-y-4">
+                <div class="text-center border-b pb-4">
+                    <h3 class="text-lg font-bold">Table ${billData.table_id}</h3>
+                    <p class="text-gray-600">${new Date().toLocaleDateString()}</p>
+                </div>
+
+                <div class="space-y-3">
+                    ${billData.orders.map(order => `
+                        <div class="border-b pb-3">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="font-medium">Order #${order.order_number}</span>
+                                <span class="text-sm text-gray-600">${order.timestamp}</span>
+                            </div>
+                            <div class="space-y-1 ml-4">
+                                ${order.items.map(item => `
+                                    <div class="flex justify-between text-sm">
+                                        <span>${item.quantity}x ${item.name}${item.options ? ` (${item.options})` : ''}</span>
+                                        <span>€${(item.quantity * item.price).toFixed(2)}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div class="flex justify-between font-medium mt-2 pt-2 border-t">
+                                <span>Order Total:</span>
+                                <span>€${order.total.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <div class="border-t pt-4">
+                    <div class="flex justify-between text-xl font-bold">
+                        <span>Table Total:</span>
+                        <span>€${billData.total.toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Show modal
+    const modal = document.getElementById('tableBillModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+/**
+ * Close table bill modal
+ */
+function closeTableBillModal() {
+    const modal = document.getElementById('tableBillModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+// ==================================================================================
+// TABLE MOBILE NAVIGATION SYSTEM
+// ==================================================================================
+
+let currentMobileTab = 'menu'; // 'menu', 'tables', 'orders'
+
+/**
+ * Switch to menu tab on mobile
+ */
+function switchToMenuTab() {
+    if (!tableManagementEnabled) return;
+
+    currentMobileTab = 'menu';
+    updateMobileTabDisplay();
+
+    // Show main content, hide table selection
+    document.getElementById('main-content').style.display = 'block';
+    const tableModal = document.getElementById('tableSelectionModal');
+    if (tableModal) {
+        tableModal.classList.add('hidden');
+        tableModal.classList.remove('flex');
+    }
+
+    // Hide order panel
+    const orderPanel = document.getElementById('order-panel');
+    if (orderPanel) {
+        orderPanel.classList.remove('translate-y-0');
+        orderPanel.classList.add('translate-y-full');
+    }
+    const backdrop = document.getElementById('order-panel-backdrop');
+    if (backdrop) {
+        backdrop.classList.add('hidden');
+    }
+}
+
+/**
+ * Switch to tables tab on mobile
+ */
+function switchToTablesTab() {
+    if (!tableManagementEnabled) return;
+
+    currentMobileTab = 'tables';
+    updateMobileTabDisplay();
+
+    // Hide main content, show table selection
+    showTableSelectionModal();
+}
+
+/**
+ * Switch to orders tab on mobile
+ */
+function switchToOrdersTab() {
+    if (!tableManagementEnabled) return;
+
+    currentMobileTab = 'orders';
+    updateMobileTabDisplay();
+
+    // Show order panel
+    toggleMobileOrderPanel(true);
+}
+
+/**
+ * Update mobile tab visual state
+ */
+function updateMobileTabDisplay() {
+    const tabs = ['menuTabBtn', 'tablesTabBtn', 'ordersTabBtn'];
+
+    tabs.forEach(tabId => {
+        const tab = document.getElementById(tabId);
+        if (tab) {
+            tab.classList.remove('text-black', 'bg-gray-100', 'font-semibold');
+            tab.classList.add('text-gray-600');
+        }
+    });
+
+    // Highlight active tab
+    const activeTabId = currentMobileTab + 'TabBtn';
+    const activeTab = document.getElementById(activeTabId);
+    if (activeTab) {
+        activeTab.classList.remove('text-gray-600');
+        activeTab.classList.add('text-black', 'bg-gray-100', 'font-semibold');
+    }
+}
+
+
+// ==================================================================================
+// END TABLE MOBILE NAVIGATION SYSTEM
+// ==================================================================================
+
+// ==================================================================================
+// END TABLE MANAGEMENT SYSTEM
+// ==================================================================================
 
 function startClock() {
     if (!elements.realtimeClock) return;
@@ -1834,6 +3079,16 @@ async function clearOrderData() {
 
     updateOrderDisplay();
     fetchAndUpdateOrderNumber();
+
+    // Refresh table data if table management is enabled
+    if (tableManagementEnabled) {
+        try {
+            await loadTableSessions();
+            updateTableDisplay();
+        } catch (error) {
+            console.error('Failed to refresh table data after order clear:', error);
+        }
+    }
 }
 
 async function newOrder() {
@@ -1909,7 +3164,8 @@ async function sendOrder() {
 
         if (response.ok) {
             if (result.status === "success") {
-                showToast(result.message || `Order #${result.order_number} sent, all copies printed, and logged!`, 'success');
+                const tableMessage = tableManagementEnabled && tableNumberForOrder ? ` for Table ${tableNumberForOrder}` : '';
+                showToast(result.message || `Order #${result.order_number}${tableMessage} sent, all copies printed, and logged!`, 'success');
             } else if (result.status === "warning_print_copy2_failed" || result.status === "warning_print_partial_failed") {
                 showToast(result.message || `Order #${result.order_number}: Some copies FAILED.`, 'warning', 7000);
             } else if (result.status === "error_print_failed_copy1") {
@@ -1967,23 +3223,49 @@ function toggleMobileOrderPanel() {
         elements.orderPanelBackdrop.classList.remove('hidden');
         if (elements.settingsGearContainer) elements.settingsGearContainer.classList.add('hidden');
         document.body.style.overflow = 'hidden';
+
+        // Update table mode mobile navigation
+        if (tableManagementEnabled) {
+            currentMobileTab = 'orders';
+            updateMobileTabDisplay();
+        }
     } else {
         elements.orderPanel.classList.add('translate-y-full');
         elements.orderPanelBackdrop.classList.add('hidden');
         if (elements.settingsGearContainer) elements.settingsGearContainer.classList.remove('hidden');
         document.body.style.overflow = '';
         hideNumpad();
+
+        // Update table mode mobile navigation
+        if (tableManagementEnabled && currentMobileTab === 'orders') {
+            currentMobileTab = 'menu';
+            updateMobileTabDisplay();
+        }
     }
 }
 
 function updateMobileOrderBadge() {
-    if (!elements.mobileOrderCountBadge) return;
     const count = currentOrder.reduce((sum, item) => sum + item.quantity, 0);
-    if (count > 0) {
-        elements.mobileOrderCountBadge.textContent = count;
-        elements.mobileOrderCountBadge.classList.remove('hidden');
-    } else {
-        elements.mobileOrderCountBadge.classList.add('hidden');
+
+    // Update simple mode badge
+    if (elements.mobileOrderCountBadge) {
+        if (count > 0) {
+            elements.mobileOrderCountBadge.textContent = count;
+            elements.mobileOrderCountBadge.classList.remove('hidden');
+        } else {
+            elements.mobileOrderCountBadge.classList.add('hidden');
+        }
+    }
+
+    // Update table mode badge
+    const tableModeBadge = document.getElementById('mobile-order-count-badge-table');
+    if (tableModeBadge) {
+        if (count > 0) {
+            tableModeBadge.textContent = count;
+            tableModeBadge.classList.remove('hidden');
+        } else {
+            tableModeBadge.classList.add('hidden');
+        }
     }
 }
 
@@ -8583,4 +9865,124 @@ if (document.readyState === 'loading') {
 
 // =============================================================================
 // END NON-INTRUSIVE LICENSING NOTIFICATION SYSTEM
+// =============================================================================
+
+// =============================================================================
+// TABLE MANAGEMENT TOGGLE FUNCTIONALITY
+// =============================================================================
+
+/**
+ * Toggle table management feature on/off
+ */
+async function toggleTableManagement(enabled) {
+    try {
+        // Show loading indicator
+        const toggle = document.getElementById('tableManagementToggle');
+        if (toggle) {
+            toggle.disabled = true;
+        }
+
+        // Send update to backend
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                table_management_enabled: enabled
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to update table management setting');
+        }
+
+        // Update global state
+        tableManagementEnabled = enabled;
+
+        // Show success message
+        const message = enabled ?
+            'Table management enabled! Please refresh the page to see table features.' :
+            'Table management disabled! Please refresh the page to return to simple mode.';
+
+        showToast(message, 'success', 5000);
+
+        // Suggest page refresh for immediate effect
+        setTimeout(() => {
+            if (confirm('Would you like to refresh the page now to apply the changes?')) {
+                window.location.reload();
+            }
+        }, 1000);
+
+    } catch (error) {
+        console.error('Error toggling table management:', error);
+
+        // Revert toggle state
+        const toggle = document.getElementById('tableManagementToggle');
+        if (toggle) {
+            toggle.checked = !enabled;
+        }
+
+        showToast('Failed to update table management setting. Please try again.', 'error', 4000);
+    } finally {
+        // Re-enable toggle
+        const toggle = document.getElementById('tableManagementToggle');
+        if (toggle) {
+            toggle.disabled = false;
+        }
+    }
+}
+
+/**
+ * Initialize table management toggle state
+ */
+async function initializeTableManagementToggle() {
+    try {
+        // Get current config
+        const response = await fetch('/api/config');
+        const config = await response.json();
+
+        // Update toggle state
+        const toggle = document.getElementById('tableManagementToggle');
+        if (toggle) {
+            toggle.checked = !!config.table_management_enabled;
+        }
+
+        // Update global state
+        tableManagementEnabled = !!config.table_management_enabled;
+
+    } catch (error) {
+        console.error('Error initializing table management toggle:', error);
+    }
+}
+
+// Initialize toggle on page load and when management modal opens
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize immediately on page load
+    setTimeout(() => {
+        initializeTableManagementToggle();
+    }, 500);
+
+    // Also initialize when settings panel is opened (for consistency)
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                const target = mutation.target;
+                if (target.id === 'hardwarePrintingManagement' &&
+                    !target.classList.contains('hidden')) {
+                    // Settings panel opened, re-initialize toggle to ensure consistency
+                    initializeTableManagementToggle();
+                }
+            }
+        });
+    });
+
+    const settingsPanel = document.getElementById('hardwarePrintingManagement');
+    if (settingsPanel) {
+        observer.observe(settingsPanel, { attributes: true });
+    }
+});
+
+// =============================================================================
+// END TABLE MANAGEMENT TOGGLE FUNCTIONALITY
 // =============================================================================

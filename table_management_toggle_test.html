@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Table Management Toggle Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease-in-out;
+        }
+        .toast.success {
+            background-color: #10b981;
+            color: white;
+        }
+        .toast.error {
+            background-color: #ef4444;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-md mx-auto bg-white rounded-lg shadow-lg p-6">
+        <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Table Management Toggle Test</h1>
+
+        <div class="space-y-4">
+            <div class="flex items-center space-x-3">
+                <input type="checkbox" id="tableManagementToggle"
+                       class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                       onchange="toggleTableManagement(this.checked)">
+                <span class="font-medium text-gray-700">Enable Table Management</span>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <h3 class="font-semibold mb-2">Test Status:</h3>
+                <div id="testStatus" class="text-sm text-gray-600">Initializing...</div>
+            </div>
+
+            <div class="flex space-x-2">
+                <button onclick="refreshConfig()"
+                        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition">
+                    Refresh Config
+                </button>
+                <button onclick="testToggle()"
+                        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition">
+                    Test Toggle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let tableManagementEnabled = false;
+
+        function showToast(message, type = 'success', duration = 4000) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => document.body.removeChild(toast), 300);
+            }, duration);
+        }
+
+        function updateStatus(message, isError = false) {
+            const status = document.getElementById('testStatus');
+            status.textContent = message;
+            status.className = `text-sm ${isError ? 'text-red-600' : 'text-gray-600'}`;
+        }
+
+        async function toggleTableManagement(enabled) {
+            try {
+                updateStatus('Updating table management setting...');
+
+                // Show loading indicator
+                const toggle = document.getElementById('tableManagementToggle');
+                if (toggle) {
+                    toggle.disabled = true;
+                }
+
+                // Send update to backend
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        table_management_enabled: enabled
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update table management setting');
+                }
+
+                const result = await response.json();
+
+                // Update global state
+                tableManagementEnabled = enabled;
+
+                // Show success message
+                const message = enabled ?
+                    'Table management enabled successfully!' :
+                    'Table management disabled successfully!';
+
+                showToast(message, 'success', 5000);
+                updateStatus(`Success: ${message} (State: ${enabled})`);
+
+            } catch (error) {
+                console.error('Error toggling table management:', error);
+
+                // Revert toggle state
+                const toggle = document.getElementById('tableManagementToggle');
+                if (toggle) {
+                    toggle.checked = !enabled;
+                }
+
+                showToast('Failed to update table management setting. Please try again.', 'error', 4000);
+                updateStatus(`Error: ${error.message}`, true);
+            } finally {
+                // Re-enable toggle
+                const toggle = document.getElementById('tableManagementToggle');
+                if (toggle) {
+                    toggle.disabled = false;
+                }
+            }
+        }
+
+        async function initializeTableManagementToggle() {
+            try {
+                updateStatus('Loading current configuration...');
+
+                // Get current config
+                const response = await fetch('/api/config');
+                const config = await response.json();
+
+                // Update toggle state
+                const toggle = document.getElementById('tableManagementToggle');
+                if (toggle) {
+                    toggle.checked = !!config.table_management_enabled;
+                }
+
+                // Update global state
+                tableManagementEnabled = !!config.table_management_enabled;
+
+                updateStatus(`Initialized: Table management is ${tableManagementEnabled ? 'enabled' : 'disabled'}`);
+
+            } catch (error) {
+                console.error('Error initializing table management toggle:', error);
+                updateStatus(`Initialization error: ${error.message}`, true);
+            }
+        }
+
+        async function refreshConfig() {
+            await initializeTableManagementToggle();
+        }
+
+        async function testToggle() {
+            const currentState = tableManagementEnabled;
+            const newState = !currentState;
+
+            updateStatus(`Testing toggle: switching from ${currentState} to ${newState}...`);
+
+            const toggle = document.getElementById('tableManagementToggle');
+            toggle.checked = newState;
+            await toggleTableManagement(newState);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                initializeTableManagementToggle();
+            }, 500);
+        });
+    </script>
+</body>
+</html>
