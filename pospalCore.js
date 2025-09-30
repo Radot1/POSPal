@@ -9986,3 +9986,468 @@ document.addEventListener('DOMContentLoaded', () => {
 // =============================================================================
 // END TABLE MANAGEMENT TOGGLE FUNCTIONALITY
 // =============================================================================
+
+// =============================================================================
+// STAFF TABLE MANAGEMENT UI FUNCTIONALITY
+// =============================================================================
+
+let currentTableData = null;
+let currentTableId = null;
+let allTablesData = [];
+let currentTableFilter = 'all';
+
+// Helper functions for table management
+function formatCurrency(amount) {
+    return `€${(amount || 0).toFixed(2)}`;
+}
+
+function formatOrderTime(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Open Tables Modal
+function openTablesModal() {
+    const modal = document.getElementById('tablesModal');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+
+    // Reset to grid view and load tables
+    showTablesGrid();
+    loadAllTables();
+}
+
+// Close Tables Modal
+function closeTablesModal() {
+    const modal = document.getElementById('tablesModal');
+    if (!modal) return;
+
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.body.style.overflow = '';
+
+    // Reset state
+    currentTableData = null;
+    currentTableId = null;
+}
+
+// Load all tables from API
+async function loadAllTables() {
+    const loading = document.getElementById('tablesLoading');
+    const gridView = document.getElementById('tablesGridView');
+    const grid = document.getElementById('tablesGrid');
+    const emptyState = document.getElementById('tablesEmptyState');
+
+    if (loading) loading.classList.remove('hidden');
+    if (gridView) gridView.classList.add('hidden');
+
+    try {
+        const response = await fetch('/api/tables');
+        if (!response.ok) throw new Error('Failed to fetch tables');
+
+        const data = await response.json();
+        // Convert tables object to array
+        const tablesObj = data.tables || {};
+        allTablesData = Object.keys(tablesObj).map(id => ({
+            id: id,
+            ...tablesObj[id]
+        }));
+
+        if (loading) loading.classList.add('hidden');
+        if (gridView) gridView.classList.remove('hidden');
+
+        if (allTablesData.length === 0) {
+            if (grid) grid.classList.add('hidden');
+            if (emptyState) emptyState.classList.remove('hidden');
+        } else {
+            if (grid) grid.classList.remove('hidden');
+            if (emptyState) emptyState.classList.add('hidden');
+            renderTablesGrid();
+        }
+    } catch (error) {
+        console.error('Error loading tables:', error);
+        if (loading) loading.classList.add('hidden');
+        if (gridView) gridView.classList.remove('hidden');
+        if (grid) grid.innerHTML = '<div class="col-span-full text-center py-8 text-red-500">Error loading tables. Please try again.</div>';
+    }
+}
+
+// Render tables grid
+function renderTablesGrid() {
+    const grid = document.getElementById('tablesGrid');
+    if (!grid) return;
+
+    const filteredTables = currentTableFilter === 'all'
+        ? allTablesData
+        : allTablesData.filter(t => t.status === currentTableFilter);
+
+    if (filteredTables.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No tables match this filter</div>';
+        return;
+    }
+
+    grid.innerHTML = filteredTables.map(table => {
+        const statusClass = table.status === 'available' ? 'table-status-available' :
+                          table.status === 'occupied' ? 'table-status-occupied' :
+                          'table-status-paid';
+
+        const statusText = table.status === 'available' ? 'Available' :
+                         table.status === 'occupied' ? 'Occupied' :
+                         'Needs Clearing';
+
+        const statusIcon = table.status === 'available' ? 'fa-check-circle' :
+                          table.status === 'occupied' ? 'fa-clock' :
+                          'fa-exclamation-circle';
+
+        const tableName = table.name || `Table ${table.id}`;
+        const totalAmount = table.session?.total_amount || 0;
+
+        return `
+            <div class="table-card ${statusClass} rounded-lg p-4 flex flex-col items-center justify-center" onclick="showTableDetail('${table.id}')">
+                <div class="text-3xl font-bold mb-2">${tableName}</div>
+                <div class="flex items-center gap-1 text-xs font-medium mb-2">
+                    <i class="fas ${statusIcon}"></i>
+                    <span>${statusText}</span>
+                </div>
+                ${totalAmount > 0 ? `<div class="text-lg font-semibold">€${totalAmount.toFixed(2)}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+// Filter tables
+function filterTables(status) {
+    currentTableFilter = status;
+
+    // Update button states
+    document.querySelectorAll('.table-filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    renderTablesGrid();
+}
+
+// Refresh tables
+async function refreshTables() {
+    const btn = event.target.closest('button');
+    const icon = btn?.querySelector('i');
+
+    if (icon) {
+        icon.classList.add('fa-spin');
+    }
+
+    await loadAllTables();
+
+    if (icon) {
+        icon.classList.remove('fa-spin');
+    }
+
+    showToast('Tables refreshed');
+}
+
+// Show table detail view
+async function showTableDetail(tableId) {
+    currentTableId = tableId;
+
+    const gridView = document.getElementById('tablesGridView');
+    const detailView = document.getElementById('tableDetailView');
+    const loading = document.getElementById('tablesLoading');
+
+    if (gridView) gridView.classList.add('hidden');
+    if (detailView) detailView.classList.add('hidden');
+    if (loading) loading.classList.remove('hidden');
+
+    try {
+        // Fetch table session data
+        const response = await fetch(`/api/tables/${tableId}/session`);
+        if (!response.ok) throw new Error('Failed to fetch table data');
+
+        const data = await response.json();
+        currentTableData = data;
+
+        if (loading) loading.classList.add('hidden');
+        if (detailView) detailView.classList.remove('hidden');
+
+        renderTableDetail();
+    } catch (error) {
+        console.error('Error loading table detail:', error);
+        if (loading) loading.classList.add('hidden');
+        showToast('Error loading table details', 'error');
+        showTablesGrid();
+    }
+}
+
+// Render table detail view
+function renderTableDetail() {
+    if (!currentTableData) return;
+
+    const table = allTablesData.find(t => t.id === currentTableId);
+    if (!table) return;
+
+    // Update table number
+    const tableNumber = document.getElementById('detailTableNumber');
+    if (tableNumber) tableNumber.textContent = table.name || `Table ${table.id}`;
+
+    // Update status badge
+    const statusBadge = document.getElementById('detailTableStatus');
+    if (statusBadge) {
+        const statusClass = table.status === 'available' ? 'bg-green-100 text-green-800' :
+                          table.status === 'occupied' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800';
+
+        const statusText = table.status === 'available' ? 'Available' :
+                         table.status === 'occupied' ? 'Occupied' :
+                         'Needs Clearing';
+
+        statusBadge.className = `inline-block px-3 py-1 rounded-full text-sm font-medium ${statusClass}`;
+        statusBadge.textContent = statusText;
+    }
+
+    // Update total
+    const totalElement = document.getElementById('detailTableTotal');
+    if (totalElement) {
+        const total = currentTableData.session?.total_amount || 0;
+        totalElement.textContent = `€${total.toFixed(2)}`;
+    }
+
+    // Render orders list
+    const ordersList = document.getElementById('tableOrdersList');
+    const ordersEmpty = document.getElementById('tableOrdersEmpty');
+
+    const orders = currentTableData.session?.orders || [];
+    if (orders && orders.length > 0) {
+        if (ordersList) ordersList.classList.remove('hidden');
+        if (ordersEmpty) ordersEmpty.classList.add('hidden');
+
+        if (ordersList) {
+            ordersList.innerHTML = orders.map(order => `
+                <div class="bg-white border border-gray-200 rounded-lg p-4">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <p class="font-medium text-gray-800">Order #${order.id}</p>
+                            <p class="text-xs text-gray-500">${formatOrderTime(order.created_at)}</p>
+                        </div>
+                        <p class="font-semibold text-lg">${formatCurrency(order.total)}</p>
+                    </div>
+                    <div class="space-y-1">
+                        ${order.items.map(item => `
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">${item.quantity}x ${item.name}</span>
+                                <span class="text-gray-800 font-medium">${formatCurrency(item.price * item.quantity)}</span>
+                            </div>
+                            ${item.options ? `<div class="text-xs text-gray-500 ml-4">${item.options}</div>` : ''}
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+    } else {
+        if (ordersList) ordersList.classList.add('hidden');
+        if (ordersEmpty) ordersEmpty.classList.remove('hidden');
+    }
+
+    // Update button states
+    const hasOrders = orders && orders.length > 0;
+    const isPaid = table.status === 'paid';
+
+    const splitBillBtn = document.getElementById('splitBillBtn');
+    const markPaidBtn = document.getElementById('markPaidBtn');
+    const clearTableBtn = document.getElementById('clearTableBtn');
+
+    if (splitBillBtn) {
+        splitBillBtn.disabled = !hasOrders || isPaid;
+        splitBillBtn.classList.toggle('opacity-50', !hasOrders || isPaid);
+        splitBillBtn.classList.toggle('cursor-not-allowed', !hasOrders || isPaid);
+    }
+
+    if (markPaidBtn) {
+        markPaidBtn.disabled = !hasOrders || isPaid;
+        markPaidBtn.classList.toggle('opacity-50', !hasOrders || isPaid);
+        markPaidBtn.classList.toggle('cursor-not-allowed', !hasOrders || isPaid);
+    }
+
+    if (clearTableBtn) {
+        clearTableBtn.disabled = !isPaid && hasOrders;
+        clearTableBtn.classList.toggle('opacity-50', !isPaid && hasOrders);
+        clearTableBtn.classList.toggle('cursor-not-allowed', !isPaid && hasOrders);
+    }
+}
+
+// Show tables grid view
+function showTablesGrid() {
+    const gridView = document.getElementById('tablesGridView');
+    const detailView = document.getElementById('tableDetailView');
+
+    if (gridView) gridView.classList.remove('hidden');
+    if (detailView) detailView.classList.add('hidden');
+
+    currentTableData = null;
+    currentTableId = null;
+}
+
+// View table bill
+async function viewTableBill() {
+    if (!currentTableId) return;
+
+    try {
+        const response = await fetch(`/api/tables/${currentTableId}/bill`);
+        if (!response.ok) throw new Error('Failed to fetch bill');
+
+        const billData = await response.json();
+
+        // Open a new window with the bill
+        const billWindow = window.open('', '_blank', 'width=400,height=600');
+        if (billWindow) {
+            billWindow.document.write(billData.html || '<pre>' + billData.text + '</pre>');
+            billWindow.document.close();
+        }
+    } catch (error) {
+        console.error('Error viewing bill:', error);
+        showToast('Error loading bill', 'error');
+    }
+}
+
+// Mark table as paid
+async function markTableAsPaid() {
+    if (!currentTableId || !currentTableData) return;
+
+    const table = allTablesData.find(t => t.id === currentTableId);
+    if (!table) return;
+
+    const tableName = table.name || `Table ${table.id}`;
+    const total = currentTableData.session?.total_amount || 0;
+
+    if (!confirm(`Mark ${tableName} as paid (€${total.toFixed(2)})?`)) return;
+
+    try {
+        const response = await fetch(`/api/tables/${currentTableId}/add-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                amount: total,
+                payment_method: 'cash'
+            })
+        });
+
+        if (!response.ok) throw new Error('Failed to mark as paid');
+
+        showToast('Table marked as paid');
+
+        // Refresh table data
+        await showTableDetail(currentTableId);
+        await loadAllTables();
+    } catch (error) {
+        console.error('Error marking table as paid:', error);
+        showToast('Error marking table as paid', 'error');
+    }
+}
+
+// Clear table
+async function clearTable() {
+    if (!currentTableId) return;
+
+    const table = allTablesData.find(t => t.id === currentTableId);
+    if (!table) return;
+
+    const tableName = table.name || `Table ${table.id}`;
+    if (!confirm(`Clear ${tableName}? This will reset the table to available status.`)) return;
+
+    try {
+        const response = await fetch(`/api/tables/${currentTableId}/clear`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) throw new Error('Failed to clear table');
+
+        showToast('Table cleared');
+
+        // Go back to grid view and refresh
+        showTablesGrid();
+        await loadAllTables();
+    } catch (error) {
+        console.error('Error clearing table:', error);
+        showToast('Error clearing table', 'error');
+    }
+}
+
+// Split bill modal functions
+function showSplitBillModal() {
+    const total = currentTableData?.session?.total_amount || 0;
+    if (!currentTableData || total <= 0) return;
+
+    const modal = document.getElementById('splitBillModal');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    // Reset input
+    const input = document.getElementById('splitWaysInput');
+    if (input) input.value = '2';
+
+    updateSplitPreview();
+}
+
+function closeSplitBillModal() {
+    const modal = document.getElementById('splitBillModal');
+    if (!modal) return;
+
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+function updateSplitPreview() {
+    if (!currentTableData) return;
+
+    const input = document.getElementById('splitWaysInput');
+    const preview = document.getElementById('splitPreview');
+
+    if (!input || !preview) return;
+
+    const ways = parseInt(input.value) || 2;
+    const total = currentTableData.session?.total_amount || 0;
+    const perPerson = total / ways;
+
+    preview.innerHTML = `
+        <div class="text-center">
+            <p class="text-lg font-semibold text-gray-800 mb-4">Total: ${formatCurrency(total)}</p>
+            <p class="text-2xl font-bold text-gray-900 mb-2">${formatCurrency(perPerson)}</p>
+            <p class="text-sm text-gray-600">per person (${ways} ways)</p>
+        </div>
+    `;
+}
+
+function confirmSplitBill() {
+    const input = document.getElementById('splitWaysInput');
+    const ways = parseInt(input?.value || '2');
+    const perPerson = (currentTableData?.total || 0) / ways;
+
+    showToast(`Bill split ${ways} ways: ${formatCurrency(perPerson)} each`);
+    closeSplitBillModal();
+}
+
+// Helper function to format order time
+function formatOrderTime(timestamp) {
+    if (!timestamp) return '';
+
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    } catch (error) {
+        return timestamp;
+    }
+}
+
+// =============================================================================
+// END STAFF TABLE MANAGEMENT UI FUNCTIONALITY
+// =============================================================================

@@ -18,5 +18,5 @@
     "cloudflare_store_slug": "cafetest",
     "cloudflare_store_slug_locked": false,
     "cloudflare_public_base": "https://menus-5ar.pages.dev/",
-    "table_management_enabled": true
+    "table_management_enabled": false
 }

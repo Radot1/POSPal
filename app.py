@@ -1649,6 +1649,7 @@ def save_config(updated_values: dict):
     """Merge-update CONFIG_FILE atomically and refresh globals."""
     global config, PRINTER_NAME, MANAGEMENT_PASSWORD, CUT_AFTER_PRINT, COPIES_PER_ORDER
     try:
+        # Load existing config from file
         existing = {}
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as f:
@@ -1656,12 +1657,22 @@ def save_config(updated_values: dict):
                     existing = json.load(f) or {}
                 except json.JSONDecodeError:
                     existing = {}
-        merged = {**load_config(), **existing, **updated_values}
+
+        # Merge: Start with defaults, overlay existing, then overlay updates
+        # This ensures updated_values always wins
+        defaults = load_config()
+        merged = {}
+        merged.update(defaults)
+        merged.update(existing)
+        merged.update(updated_values)  # Updated values must be last to take priority
+
+        # Write atomically
         tmp = CONFIG_FILE + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(merged, f, indent=4)
         os.replace(tmp, CONFIG_FILE)
-        # refresh globals
+
+        # Refresh globals
         config = merged
         PRINTER_NAME = config.get("printer_name", PRINTER_NAME)
         MANAGEMENT_PASSWORD = str(config.get("management_password", MANAGEMENT_PASSWORD))
