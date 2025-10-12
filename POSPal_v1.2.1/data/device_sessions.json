@@ -1,20 +1,11 @@
 {
-  "device_1759261142473_1jmewf868": {
+  "device_1760288398265_bvni0v6ny": {
     "info": {
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
       "ip": "127.0.0.1",
-      "timestamp": "2025-09-30T22:39:02.494250"
+      "timestamp": "2025-10-12T19:59:58.315335"
     },
-    "last_seen": "2025-09-30T22:39:02.494976",
-    "active": true
-  },
-  "device_1759261153725_oejtf3j6u": {
-    "info": {
-      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-      "ip": "127.0.0.1",
-      "timestamp": "2025-09-30T22:39:13.731900"
-    },
-    "last_seen": "2025-09-30T22:39:13.733044",
+    "last_seen": "2025-10-12T19:59:58.315946",
     "active": true
   }
 }

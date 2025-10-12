@@ -1,7 +1,7 @@
 # POSPal AI Project Briefing
-**Last Updated**: September 2025  
-**Version**: 1.0  
-**Status**: Production Ready (Mandatory Fixes Complete)
+**Last Updated**: October 2025
+**Version**: 2.0
+**Status**: LIVE IN PRODUCTION (Fully Operational)
 
 ## 🎯 Project Overview
 POSPal is a Point-of-Sale (POS) application for restaurants with a subscription-based licensing system. The system handles payment processing, license validation, and customer management through a hybrid Flask/Cloudflare Workers architecture.
@@ -119,18 +119,32 @@ idx_audit_customer, idx_sessions_cleanup
 
 ## 📍 Current Status & Completed Work
 
-### ✅ COMPLETED (Production Ready)
-1. **Security Audit** - All secrets secured with environment variables
-2. **Database Preparation** - Complete schema with indexes and backup procedures
-3. **Integration Testing** - Full Flask-Workers communication tested
-4. **Performance Testing** - System handles 20+ concurrent users efficiently
-5. **Documentation** - Complete deployment and troubleshooting guides
+### ✅ PRODUCTION DEPLOYMENT STATUS
+**Live URL**: `https://pospal-licensing-v2-production.bzoumboulis.workers.dev`
+**API Version**: 2.0.0
+**Environment**: Production
+**Last Deployment**: September 15, 2025
+**Health Status**: ✅ Operational (Database: 56ms response time)
 
-### 🚧 IN PROGRESS / PENDING
-- **Real Stripe Payment Processing** (currently in fallback mode)
-- **Advanced License Delivery** system
-- **Customer Portal** enhancements
-- **Additional security features** (webhook signature verification)
+### ✅ COMPLETED & DEPLOYED
+1. **Real Stripe Payment Processing** - ✅ LIVE with idempotent webhook handling
+2. **Unified Validation API (v2.0)** - ✅ Circuit breaker protection, intelligent caching
+3. **NO GRACE PERIOD Policy** - ✅ Immediate suspension/reactivation on payment events
+4. **Session Management** - ✅ Prevent multi-device usage with active session tracking
+5. **Customer Portal Integration** - ✅ Direct Stripe portal access with fallback handling
+6. **Email Automation** - ✅ Welcome, suspension, reactivation emails via Resend.com
+7. **Security Hardening** - ✅ All secrets in environment variables, webhook idempotency
+8. **Machine Fingerprinting** - ✅ Hardware-locked licenses with hash storage
+9. **Comprehensive Audit Logging** - ✅ All actions logged with metadata
+10. **Database Schema v3** - ✅ Optimized indexes, webhook_events table for idempotency
+
+### 🎯 PRODUCTION FEATURES
+- **Monthly Subscription Model**: €20/month recurring billing
+- **Instant Post-Payment Validation**: Zero-delay license activation
+- **Automatic Renewal Processing**: Stripe handles recurring charges
+- **Failed Payment Handling**: Immediate suspension (no grace period)
+- **Machine Switch Detection**: Email alerts for security
+- **Duplicate Prevention**: Blocks multiple active subscriptions per email
 
 ## 🛠️ Development Environment Setup
 
@@ -167,73 +181,113 @@ curl http://127.0.0.1:8787/health
 - `POST /api/create-subscription-session` - Start payment flow
 - `POST /api/create-portal-session` - Customer portal access
 
-### Cloudflare Workers (localhost:8787)
-- `GET /health` - Service health check
-- `POST /webhook` - Stripe webhook handler
-- `POST /validate` - Cloud license validation
-- `POST /create-checkout-session` - Stripe session creation
-- `POST /create-portal-session` - Portal session management
+### Cloudflare Workers API v2.0 (Production)
+**Base URL**: `https://pospal-licensing-v2-production.bzoumboulis.workers.dev`
+
+#### Core Endpoints
+- `GET /health` - Health check with circuit breaker status
+- `POST /webhook` - Stripe webhook handler (idempotent)
+- `POST /test-webhook` - Development webhook testing
+
+#### Validation Endpoints (v2.0)
+- `POST /validate-unified` - **NEW** Unified validation API with intelligent caching
+- `POST /validate` - Legacy license validation (still supported)
+- `POST /instant-validate` - Post-payment instant validation
+
+#### Session Management
+- `POST /session/start` - Start device session
+- `POST /session/heartbeat` - Keep session alive
+- `POST /session/end` - End session gracefully
+- `POST /session/takeover` - Force device switch (kick other session)
+
+#### Customer Portal
+- `POST /create-checkout-session` - Create Stripe checkout session
+- `POST /create-portal-session` - Generate Stripe billing portal URL
+- `POST /customer-portal` - Get customer subscription data
 
 ## 📊 Performance Characteristics
-- **Normal Load**: <20ms average response time
-- **Database Queries**: 2-4ms average
-- **Concurrent Users**: Handles 20+ efficiently
-- **Breaking Point**: ~50+ concurrent requests
-- **Fallback Mode**: Graceful degradation when services unavailable
+- **Production API Response**: 56ms average (measured via /health endpoint)
+- **Database Queries**: 2-4ms average on Cloudflare D1
+- **Concurrent Users**: Tested with 20+ users, performs efficiently
+- **Circuit Breaker**: Protects against database failures (state: CLOSED = healthy)
+- **Intelligent Caching**:
+  - Aggressive: 1 hour for recently validated licenses
+  - Moderate: 30 minutes for active subscriptions
+  - Conservative: 15 minutes for older validations
+  - Minimal: 5 minutes for inactive subscriptions
 
 ## 🚨 Common Issues & Solutions
 
-### "dotenv module not found"
-- **Cause**: Running compiled (PyInstaller) version missing dependencies
-- **Solution**: Use `python app.py` instead of compiled executable
+### "Subscription is not active"
+- **Cause**: Payment failed and immediate suspension policy triggered
+- **Solution**: Customer must update payment method via Stripe portal (NO GRACE PERIOD)
 
-### "Payment system temporarily unavailable" 
-- **Cause**: Cloudflare Workers API not accessible
-- **Solution**: Check Workers status, verify environment variables
+### "Another device is currently using this license"
+- **Cause**: Session conflict - license already active on another device
+- **Solution**: Use `/session/takeover` endpoint or wait 2 minutes for session timeout
 
-### "Invalid hardware ID format"
-- **Cause**: Hardware ID doesn't meet validation (10-128 chars, alphanumeric + dashes/underscores)
-- **Solution**: Generate proper hardware fingerprint
+### "Invalid email or unlock token"
+- **Cause**: Wrong credentials or subscription not found in database
+- **Solution**: Verify email/token combination, check database for customer record
 
-### High failure rates under load
-- **Expected**: Flask single-instance has connection limits >50 concurrent
-- **Solution**: Normal for development; production needs load balancing
+### "Customer portal is temporarily unavailable"
+- **Cause**: Missing Stripe customer_id or portal not configured
+- **Solution**: System auto-creates Stripe customer as fallback, retry after 30 seconds
+
+### Webhook Event Already Processed
+- **Expected Behavior**: Idempotency protection prevents duplicate processing
+- **Solution**: This is normal, webhook system working correctly
 
 ## 🧪 Testing & Verification
 
-### Automated Test Suites Available
-- `performance-test-suite.js` - Comprehensive performance testing
-- `high-load-test.js` - Load and stress testing  
-- `test-stripe-integration.js` - Payment integration testing
+### Production Health Check
+```bash
+curl https://pospal-licensing-v2-production.bzoumboulis.workers.dev/health
+# Expected: {"status":"healthy","services":{"database":{"status":"healthy",...}}
+```
 
-### Manual Testing Checklist
-- [ ] Flask app starts without errors
-- [ ] Cloudflare Workers responds to /health
-- [ ] Payment flow creates checkout session (fallback mode OK)
-- [ ] License validation works locally
-- [ ] Customer portal validates subscription status
+### Test Webhook Processing
+```bash
+# Use /test-webhook endpoint for development testing (bypasses signature verification)
+curl -X POST https://pospal-licensing-v2-production.bzoumboulis.workers.dev/test-webhook \
+  -H "Content-Type: application/json" \
+  -d '{"type":"checkout.session.completed",...}'
+```
 
-## 📈 Business Model
-- **One-time license purchase** (€49-99 range)
-- **Hardware-locked licensing** (one license = one machine)
-- **Email delivery** of license files
-- **Customer portal** for subscription management
-- **Refund system** for customer support
+### Verify Customer Record
+```bash
+cd cloudflare-licensing
+npx wrangler d1 execute pospal-subscriptions \
+  --command "SELECT email, subscription_status, unlock_token FROM customers WHERE email='test@example.com'" \
+  --env production --remote
+```
 
-## 🎯 Next Development Priorities
-1. **Complete Phase 3**: Real Stripe payment processing
-2. **Phase 4**: Automated license delivery system
-3. **Phase 5**: Enhanced customer portal
-4. **Phase 6**: Security hardening and compliance
-5. **Phase 7**: Production deployment and monitoring
+## 📈 Business Model (LIVE)
+- **Monthly Subscription**: €20/month recurring billing via Stripe
+- **Hardware-locked licensing**: One license = one active device session
+- **Automatic Email Delivery**: Welcome email with unlock_token on signup
+- **Stripe Customer Portal**: Direct billing management integration
+- **NO GRACE PERIOD**: Immediate suspension on payment failure
+- **Instant Reactivation**: Subscription restores immediately upon successful payment
+- **Duplicate Prevention**: System blocks multiple active subscriptions per email
+
+## 🎯 Production Monitoring & Maintenance
+1. **Health Monitoring**: Check `/health` endpoint for system status
+2. **Database Backups**: Use `backup-database.bat` for D1 snapshots
+3. **Webhook Logs**: Query `webhook_events` table for idempotency tracking
+4. **Audit Trail**: Review `audit_log` table for customer actions
+5. **Email Delivery**: Monitor `email_log` table for delivery failures
+6. **Session Management**: Check `active_sessions` for device conflicts
 
 ## 💡 AI Assistant Notes
-- **System is production-ready** with current implementation
-- **Mandatory fixes completed** - no blockers for deployment
-- **Focus on feature enhancement** rather than fixing critical issues
-- **Comprehensive testing suites** available for validation
-- **Fallback modes** ensure system reliability
-- **Documentation** is complete and up-to-date
+- **System is LIVE IN PRODUCTION** - actively processing subscriptions
+- **All core features deployed** - payment, validation, session management operational
+- **Source of Truth**: `cloudflare-licensing/src/index.js` (deployed code)
+- **API Version**: 2.0 with unified validation endpoints
+- **NO GRACE PERIOD Policy**: Immediate suspension/reactivation implemented
+- **Circuit Breaker**: Database protection layer active (state: CLOSED = healthy)
+- **Idempotency**: All webhooks protected against duplicate processing
+- **Fallback Handling**: Auto-creates Stripe customers when customer_id missing
 
 ## 🔗 Important File References
 - **Main Application**: `app.py` (lines 1-4400+)

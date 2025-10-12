@@ -288,7 +288,7 @@ DEVICE_SESSIONS_FILE = os.path.join(DATA_DIR, 'device_sessions.json')
 USAGE_ANALYTICS_FILE = os.path.join(DATA_DIR, 'usage_analytics.json')
 
 # --- Cloudflare Worker API Integration ---
-CLOUDFLARE_WORKER_URL = "https://pospal-licensing-v2-development.bzoumboulis.workers.dev"
+CLOUDFLARE_WORKER_URL = "https://pospal-licensing-v2-production.bzoumboulis.workers.dev"
 
 # Global session for connection pooling
 _api_session = None
@@ -7039,6 +7039,438 @@ def validate_license_api():
                 "_timestamp": datetime.now().isoformat(),
                 "code": "CRITICAL_SYSTEM_ERROR"
             }), 500
+
+# --- License Disconnect Endpoint and Helper Functions ---
+
+# Global rate limiting for disconnect operations
+_disconnect_rate_limit_data = {}
+_disconnect_rate_limit_lock = threading.Lock()
+
+def check_disconnect_rate_limit(email):
+    """
+    Rate limiting for license disconnect operations
+    Max 3 attempts per 5 minutes per email
+
+    Args:
+        email: User email address
+
+    Returns:
+        tuple: (bool, str) - (allowed, error_message)
+    """
+    current_time = time.time()
+    key = f"disconnect:{email}"
+
+    with _disconnect_rate_limit_lock:
+        if key not in _disconnect_rate_limit_data:
+            _disconnect_rate_limit_data[key] = []
+
+        # Clean old requests outside the 5-minute window
+        _disconnect_rate_limit_data[key] = [req_time for req_time in _disconnect_rate_limit_data[key]
+                                             if current_time - req_time < 300]  # 300 seconds = 5 minutes
+
+        # Check if limit exceeded
+        if len(_disconnect_rate_limit_data[key]) >= 3:
+            return False, "Rate limit exceeded. Maximum 3 disconnect attempts per 5 minutes. Please try again later."
+
+        # Add current request
+        _disconnect_rate_limit_data[key].append(current_time)
+        return True, ""
+
+def get_current_device_session_id():
+    """
+    Get the current device's session ID from device_sessions.json
+
+    Returns:
+        str or None: Session ID if found, None otherwise
+    """
+    try:
+        state = load_centralized_state()
+        device_sessions = state.get('device_sessions', {})
+
+        # Get the first active session (current device)
+        # In practice, there should only be one session for the current device
+        for session_id, session_data in device_sessions.items():
+            if session_data.get('active'):
+                app.logger.info(f"Found active device session: {session_id}")
+                return session_id
+
+        app.logger.warning("No active device session found")
+        return None
+
+    except Exception as e:
+        app.logger.error(f"Error getting current device session ID: {e}")
+        return None
+
+def end_cloud_session(email, unlock_token, session_id):
+    """
+    Call Cloudflare /session/end endpoint to end cloud session
+
+    Args:
+        email: Customer email
+        unlock_token: License unlock token
+        session_id: Device session ID
+
+    Returns:
+        tuple: (bool, str) - (success, error_message)
+    """
+    try:
+        if not session_id:
+            app.logger.warning("No session ID provided for cloud session end")
+            return False, "No session ID available"
+
+        # Call existing Cloudflare /session/end endpoint
+        payload = {
+            "sessionId": session_id,
+            "sendEmail": True  # Trigger email notification to customer
+        }
+
+        app.logger.info(f"Calling Cloudflare /session/end for session: {session_id}")
+        response = call_cloudflare_api('/session/end', payload, timeout=10)
+
+        if response and response.get('success'):
+            app.logger.info(f"Cloud session ended successfully: {session_id}")
+            return True, ""
+        else:
+            error_msg = response.get('error', 'Unknown error') if response else 'API call failed'
+            app.logger.warning(f"Cloud session end failed: {error_msg}")
+            return False, error_msg
+
+    except Exception as e:
+        app.logger.error(f"Error ending cloud session: {e}")
+        return False, str(e)
+
+def clear_local_device_sessions():
+    """
+    Clear device_sessions.json file
+
+    Returns:
+        tuple: (bool, str) - (success, error_message)
+    """
+    max_retries = 3
+    retry_delay = 0.5
+
+    for attempt in range(max_retries):
+        try:
+            # Clear device sessions by saving empty dict
+            success = save_centralized_state('device_sessions', {})
+            if success:
+                app.logger.info("Device sessions cleared successfully")
+                return True, ""
+            else:
+                app.logger.warning(f"Failed to clear device sessions (attempt {attempt + 1}/{max_retries})")
+
+        except Exception as e:
+            app.logger.error(f"Error clearing device sessions (attempt {attempt + 1}/{max_retries}): {e}")
+
+        # Wait before retry
+        if attempt < max_retries - 1:
+            time.sleep(retry_delay)
+
+    return False, "Failed to clear device sessions after multiple attempts"
+
+def clear_license_cache_files():
+    """
+    Clear encrypted license cache files from both DATA_DIR and PROGRAM_DATA_DIR
+
+    Returns:
+        tuple: (bool, list) - (success, list of cleared files)
+    """
+    cache_files = [
+        LICENSE_CACHE_FILE,  # data/license_cache.enc
+        LICENSE_CACHE_BACKUP  # C:\ProgramData\POSPal\license_cache.enc
+    ]
+
+    cleared_files = []
+    max_retries = 3
+    retry_delay = 0.5
+
+    for cache_file in cache_files:
+        if not os.path.exists(cache_file):
+            app.logger.debug(f"License cache file does not exist: {cache_file}")
+            continue
+
+        # Try to delete with retries
+        for attempt in range(max_retries):
+            try:
+                os.remove(cache_file)
+                cleared_files.append(cache_file)
+                app.logger.info(f"Cleared license cache: {cache_file}")
+                break
+
+            except PermissionError:
+                app.logger.warning(f"Permission denied clearing cache (attempt {attempt + 1}/{max_retries}): {cache_file}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+            except Exception as e:
+                app.logger.error(f"Error clearing license cache (attempt {attempt + 1}/{max_retries}): {cache_file} - {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+    # Return success if at least one file was cleared or if no files existed
+    success = len(cleared_files) > 0 or len(cache_files) == 0
+    return success, cleared_files
+
+def clear_trial_data():
+    """
+    Clear trial.json files from both DATA_DIR and PROGRAM_DATA_DIR
+
+    Returns:
+        tuple: (bool, list) - (success, list of cleared files)
+    """
+    trial_files = [
+        TRIAL_INFO_FILE,  # data/trial.json
+        PROGRAM_TRIAL_FILE  # C:\ProgramData\POSPal\trial.json
+    ]
+
+    cleared_files = []
+    max_retries = 3
+    retry_delay = 0.5
+
+    for trial_file in trial_files:
+        if not os.path.exists(trial_file):
+            app.logger.debug(f"Trial file does not exist: {trial_file}")
+            continue
+
+        # Try to delete with retries
+        for attempt in range(max_retries):
+            try:
+                os.remove(trial_file)
+                cleared_files.append(trial_file)
+                app.logger.info(f"Cleared trial data: {trial_file}")
+                break
+
+            except PermissionError:
+                app.logger.warning(f"Permission denied clearing trial data (attempt {attempt + 1}/{max_retries}): {trial_file}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+            except Exception as e:
+                app.logger.error(f"Error clearing trial data (attempt {attempt + 1}/{max_retries}): {trial_file} - {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+
+    # Return success if at least one file was cleared or if no files existed
+    success = len(cleared_files) > 0 or len(trial_files) == 0
+    return success, cleared_files
+
+def log_disconnect_event(email, cleanup_summary):
+    """
+    Log disconnect event to file for auditing
+
+    Args:
+        email: Customer email
+        cleanup_summary: Dict containing cleanup results
+    """
+    try:
+        log_file = os.path.join(DATA_DIR, 'disconnect_log.json')
+
+        # Load existing logs
+        logs = []
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    logs = json.load(f)
+                    if not isinstance(logs, list):
+                        logs = []
+            except:
+                logs = []
+
+        # Add new log entry
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'email': email,
+            'cleanup_summary': cleanup_summary
+        }
+        logs.append(log_entry)
+
+        # Keep only last 100 entries
+        logs = logs[-100:]
+
+        # Save logs
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(logs, f, indent=2)
+
+        app.logger.info(f"Disconnect event logged for: {email}")
+
+    except Exception as e:
+        app.logger.error(f"Error logging disconnect event: {e}")
+
+@app.route('/api/disconnect-license', methods=['POST'])
+def disconnect_license():
+    """
+    Disconnect license from this device
+
+    This endpoint coordinates local file cleanup with cloud session termination.
+    It calls the existing Cloudflare /session/end endpoint and clears all local
+    license-related files to allow the user to move the license to another device.
+
+    Request JSON:
+        {
+            "email": "user@example.com",
+            "unlock_token": "POSPAL-XXXX-XXXX-XXXX",
+            "confirm_password": "9999"
+        }
+
+    Returns:
+        JSON response with cleanup summary and unlock token
+    """
+    try:
+        # Rate limiting
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
+        if not check_rate_limit(client_ip, 'disconnect-license', max_requests=5, window_seconds=300):
+            app.logger.warning(f"Rate limit exceeded for disconnect-license from {client_ip}")
+            return jsonify({
+                "error": "Too many requests. Please try again later.",
+                "code": "RATE_LIMIT"
+            }), 429
+
+        # Parse and validate request
+        try:
+            data = request.get_json()
+            if not data or not isinstance(data, dict):
+                return jsonify({
+                    "error": "Invalid request format",
+                    "code": "INVALID_REQUEST"
+                }), 400
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return jsonify({
+                "error": "Invalid JSON in request",
+                "code": "INVALID_JSON"
+            }), 400
+
+        # Validate required fields
+        email = data.get('email')
+        unlock_token = data.get('unlock_token')
+        confirm_password = data.get('confirm_password')
+
+        if not email or not unlock_token or not confirm_password:
+            return jsonify({
+                "error": "Missing required fields: email, unlock_token, confirm_password",
+                "code": "MISSING_FIELDS"
+            }), 400
+
+        # Sanitize inputs
+        email = sanitize_string_input(email, 254)
+        unlock_token = sanitize_string_input(unlock_token, 512)
+        confirm_password = sanitize_string_input(confirm_password, 100)
+
+        # Validate email format
+        if not validate_email(email):
+            return jsonify({
+                "error": "Invalid email format",
+                "code": "INVALID_EMAIL"
+            }), 400
+
+        # Check disconnect-specific rate limiting (3 per 5 minutes per email)
+        rate_ok, rate_msg = check_disconnect_rate_limit(email)
+        if not rate_ok:
+            app.logger.warning(f"Disconnect rate limit exceeded for email: {email}")
+            return jsonify({
+                "error": rate_msg,
+                "code": "DISCONNECT_RATE_LIMIT"
+            }), 429
+
+        # Verify management password from config.json
+        try:
+            with open(os.path.join(DATA_DIR, 'config.json'), 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                stored_password = config_data.get('management_password', '9999')
+        except Exception as e:
+            app.logger.error(f"Error reading management password: {e}")
+            stored_password = '9999'  # Default fallback
+
+        if confirm_password != stored_password:
+            app.logger.warning(f"Invalid management password for disconnect attempt: {email}")
+            return jsonify({
+                "error": "Invalid management password",
+                "code": "INVALID_PASSWORD"
+            }), 401
+
+        app.logger.info(f"Starting license disconnect for: {email}")
+
+        # Initialize cleanup summary
+        cleanup_summary = {
+            "local_files_cleared": False,
+            "trial_data_cleared": False,
+            "device_sessions_cleared": False,
+            "cloud_session_ended": False,
+            "license_cache_cleared": False
+        }
+        warnings = []
+
+        # Step 1: Get current device session ID
+        session_id = get_current_device_session_id()
+        if not session_id:
+            warnings.append("No active device session found to end")
+
+        # Step 2: End cloud session (if online)
+        if session_id:
+            cloud_success, cloud_error = end_cloud_session(email, unlock_token, session_id)
+            cleanup_summary["cloud_session_ended"] = cloud_success
+            if not cloud_success:
+                warnings.append(f"Cloud session end failed: {cloud_error}. Session will auto-expire in 2 minutes.")
+        else:
+            warnings.append("No session ID available for cloud cleanup")
+
+        # Step 3: Clear local files (continue even if cloud failed)
+
+        # Clear license cache files
+        cache_success, cleared_cache_files = clear_license_cache_files()
+        cleanup_summary["license_cache_cleared"] = cache_success
+        if not cache_success and len(cleared_cache_files) == 0:
+            warnings.append("Failed to clear license cache files")
+
+        # Clear trial data
+        trial_success, cleared_trial_files = clear_trial_data()
+        cleanup_summary["trial_data_cleared"] = trial_success
+        if not trial_success and len(cleared_trial_files) == 0:
+            warnings.append("Failed to clear trial data")
+
+        # Clear device sessions
+        sessions_success, sessions_error = clear_local_device_sessions()
+        cleanup_summary["device_sessions_cleared"] = sessions_success
+        if not sessions_success:
+            warnings.append(f"Failed to clear device sessions: {sessions_error}")
+
+        # Overall local files status
+        cleanup_summary["local_files_cleared"] = (
+            cleanup_summary["license_cache_cleared"] and
+            cleanup_summary["trial_data_cleared"] and
+            cleanup_summary["device_sessions_cleared"]
+        )
+
+        # Step 4: Log disconnect event
+        log_disconnect_event(email, cleanup_summary)
+
+        # Determine overall success
+        # Success if local files are cleared, even if cloud failed (offline mode)
+        success = cleanup_summary["local_files_cleared"]
+
+        # Prepare response
+        response_data = {
+            "success": success,
+            "message": "License disconnected successfully" if success else "License disconnection completed with warnings",
+            "disconnected_at": datetime.now().isoformat(),
+            "cleanup_summary": cleanup_summary,
+            "unlock_token": unlock_token,
+            "warnings": warnings
+        }
+
+        if success:
+            app.logger.info(f"License disconnected successfully for: {email}")
+            return jsonify(response_data), 200
+        else:
+            app.logger.warning(f"License disconnection completed with issues for: {email}")
+            return jsonify(response_data), 207  # Multi-Status (partial success)
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error during license disconnect: {e}")
+        return jsonify({
+            "error": "Internal server error during disconnect",
+            "code": "SERVER_ERROR",
+            "details": str(e)
+        }), 500
 
 @app.route('/api/system_status')
 def get_system_status():

@@ -389,3 +389,92 @@ export function getMachineSwitchEmailTemplate(customerName, newMachineInfo) {
   
   return { subject, html };
 }
+/**
+ * License disconnection confirmation email template
+ */
+export function getLicenseDisconnectionEmailTemplate(customerName, unlockToken, customerEmail, deviceInfo = {}) {
+  const subject = 'POSPal License Disconnected from Device';
+  
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; border-bottom: 2px solid #f59e0b; padding-bottom: 20px; margin-bottom: 30px;">
+        <h1 style="color: #f59e0b; margin: 0;">License Disconnected</h1>
+        <p style="color: #6b7280; margin: 5px 0 0 0;">Your POSPal license has been removed from a device</p>
+      </div>
+      
+      <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 20px; margin: 20px 0;">
+        <h2 style="color: #92400e; margin: 0 0 10px 0;">🔄 Device Disconnected</h2>
+        <p style="margin: 0; color: #374151;">Dear ${customerName}, your POSPal license was successfully disconnected from a device.</p>
+      </div>
+      
+      <h3 style="color: #374151;">What Happened</h3>
+      <p style="color: #6b7280; line-height: 1.6;">
+        Your POSPal license was manually disconnected from a device. This allows you to activate POSPal on a different computer.
+      </p>
+      
+      <div style="background: #f0fdf4; border: 1px solid #16a34a; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <h4 style="color: #15803d; margin: 0 0 10px 0;">✅ Your License is Safe</h4>
+        <ul style="color: #15803d; margin: 0; padding-left: 20px;">
+          <li><strong>Subscription active:</strong> Your POSPal subscription continues</li>
+          <li><strong>Data preserved:</strong> All menu items and settings are saved</li>
+          <li><strong>Ready to reactivate:</strong> Use your unlock token on any computer</li>
+          <li><strong>No charges:</strong> This doesn't affect your billing</li>
+        </ul>
+      </div>
+      
+      <h3 style="color: #374151;">🔑 Your Unlock Token</h3>
+      <p style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">
+        Use this token to activate POSPal on your new device:
+      </p>
+      <div style="background: #1f2937; color: #f9fafb; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+        <div style="font-family: monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; color: #10b981;">
+          ${unlockToken}
+        </div>
+      </div>
+      
+      <h3 style="color: #374151;">🚀 Activate on New Device</h3>
+      <ol style="color: #6b7280; line-height: 1.6;">
+        <li><strong>Install POSPal</strong> on your new computer</li>
+        <li>Open POSPal and click <strong>"Already paid? Enter unlock code"</strong></li>
+        <li><strong>Enter your email:</strong> ${customerEmail}</li>
+        <li><strong>Enter unlock token:</strong> ${unlockToken}</li>
+        <li>Click <strong>"Unlock"</strong> - POSPal will activate immediately!</li>
+      </ol>
+      
+      <div style="background: #fff7ed; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <h4 style="color: #92400e; margin: 0 0 10px 0;">⚠️ If You Didn't Do This</h4>
+        <p style="color: #92400e; margin: 0 0 10px 0;">
+          If you didn't disconnect your license, someone else may have access to your account.
+        </p>
+        <ul style="color: #92400e; margin: 0; padding-left: 20px;">
+          <li>Contact support immediately: support@pospal.gr</li>
+          <li>We'll help secure your account and investigate</li>
+          <li>Your subscription won't be charged during investigation</li>
+        </ul>
+      </div>
+      
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="https://pospal.gr/download" 
+           style="background: #16a34a; color: white; padding: 15px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+          Download POSPal
+        </a>
+      </div>
+      
+      <div style="background: #eff6ff; border: 1px solid #3b82f6; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <h4 style="color: #1d4ed8; margin: 0 0 10px 0;">📞 Need Help?</h4>
+        <p style="color: #1e40af; margin: 0;">
+          Having trouble reactivating POSPal on your new device? Reply to this email and we'll assist you.
+        </p>
+      </div>
+      
+      <div style="text-align: center; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 30px;">
+        <p style="color: #9ca3af; font-size: 14px; margin: 0;">
+          POSPal License Management<br>
+          <a href="https://pospal.gr" style="color: #16a34a;">pospal.gr</a> • Modern Point of Sale System
+        </p>
+      </div>
+    </div>
+  `;
+  
+  return { subject, html };
+}

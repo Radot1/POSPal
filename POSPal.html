@@ -312,6 +312,161 @@
             color: #111827 !important;
             font-weight: 600 !important;
         }
+
+        /* ==================================================================================
+           MOBILE TABLE SELECTION - HEADER BADGE & BOTTOM SHEET
+           ================================================================================== */
+
+        /* Header Badge for Table Selection */
+        #mobileTableBadge {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 200px;
+            max-width: 250px;
+        }
+
+        #mobileTableBadge:active {
+            transform: scale(0.97);
+        }
+
+        #mobileTableBadge.no-selection {
+            background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+            border: 2px solid #6b7280;
+        }
+
+        #mobileTableBadge.table-selected {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            border: 2px solid #4b5563;
+        }
+
+        #mobileTableBadge.takeaway-selected {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border: 2px solid #1d4ed8;
+        }
+
+        /* Bottom Sheet Overlay */
+        #tablePickerOverlay {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        #tablePickerOverlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Bottom Sheet */
+        #tablePickerSheet {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 1.5rem 1.5rem 0 0;
+            max-height: 70vh;
+            z-index: 1000;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+        }
+
+        #tablePickerSheet.active {
+            transform: translateY(0);
+        }
+
+        /* Sheet Handle */
+        .sheet-handle {
+            width: 48px;
+            height: 4px;
+            background-color: #d1d5db;
+            border-radius: 2px;
+            margin: 0.75rem auto 0.5rem;
+        }
+
+        /* Table Card in Sheet */
+        .table-picker-card {
+            border: 2px solid #e5e7eb;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            min-height: 120px;
+            justify-content: center;
+        }
+
+        .table-picker-card:active {
+            transform: scale(0.95);
+        }
+
+        .table-picker-card.available {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            border-color: #10b981;
+        }
+
+        .table-picker-card.occupied {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            border-color: #ef4444;
+        }
+
+        .table-picker-card.takeaway {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-color: #3b82f6;
+        }
+
+        .table-picker-card.selected {
+            border-width: 3px;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            font-weight: 600;
+        }
+
+        .table-picker-card .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.375rem;
+            border: 2px solid white;
+        }
+
+        .table-picker-card .status-dot.available {
+            background-color: #10b981;
+        }
+
+        .table-picker-card .status-dot.occupied {
+            background-color: #ef4444;
+            animation: mobileDotBlink 2s ease-in-out infinite;
+        }
+
+        @keyframes mobileDotBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Slide up animation */
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        .animate-slide-up {
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
     </style>
 </head>
 <body class="bg-white text-gray-800">
@@ -325,11 +480,21 @@
                 <div class="flex items-center space-x-4">
                     <div class="text-right">
                         <div class="text-xs text-gray-400"><span data-i18n="ui.order.headerNumber">Order #</span><span id="header-order-number" class="font-semibold">...</span></div>
-                        <div id="header-table-container" class="table-mode-only mt-1 flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 transition-colors px-3 py-1 rounded-md">
+
+                        <!-- Simple Mode: Classic Table Input -->
+                        <div id="header-table-container" class="simple-mode-only mt-1 flex items-center space-x-2 bg-gray-700 hover:bg-gray-600 transition-colors px-3 py-1 rounded-md">
                             <label for="header-table-input" class="cursor-pointer">
                                 <i class="fas fa-chair text-white"></i>
                             </label>
                             <input type="text" id="header-table-input" class="bg-transparent text-white font-semibold w-24 focus:outline-none placeholder-gray-400" data-i18n-attr='{"placeholder":"ui.table.placeholder"}' placeholder="Table #">
+                        </div>
+
+                        <!-- Table Mode: Selection Badge -->
+                        <div id="mobileTableBadge" class="table-mode-only no-selection mt-1 px-4 py-2 rounded-lg text-white text-sm font-semibold" onclick="openMobileTablePicker()">
+                            <div id="mobileTableBadgeContent" class="flex items-center justify-center gap-2">
+                                <i class="fas fa-utensils"></i>
+                                <span>Tap to Select Table</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -705,7 +870,7 @@
                         <!-- Trial/Expired Actions (shown for trial/expired users) -->
                         <div id="trial-actions" class="hidden text-center">
                             <div class="mb-6">
-                                <button type="button" class="btn-primary px-8 py-3 rounded-lg text-base font-semibold mb-3 hover:transform hover:scale-105 transition-all duration-200 shadow-md" onclick="window.open('subscribe.html', '_blank')">
+                                <button type="button" class="btn-primary px-8 py-3 rounded-lg text-base font-semibold mb-3 hover:transform hover:scale-105 transition-all duration-200 shadow-md" onclick="showEmbeddedPayment()">
                                     <i class="fas fa-credit-card mr-3"></i>
                                     Subscribe - €20/month
                                 </button>
@@ -818,6 +983,27 @@
                                 </label>
                                 <span class="text-xs text-gray-500">(For restaurants with table service)</span>
                             </div>
+
+                            <!-- Table Configuration Section (shown when table management is enabled) -->
+                            <div id="tableConfigSection" style="display: none;" class="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h5 class="font-medium text-gray-700 text-sm flex items-center">
+                                        <i class="fas fa-chair mr-2"></i>Configure Tables
+                                    </h5>
+                                    <button onclick="addNewTable()" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-medium flex items-center gap-1">
+                                        <i class="fas fa-plus"></i> Add Table
+                                    </button>
+                                </div>
+
+                                <div id="tableConfigList" class="space-y-2 max-h-64 overflow-y-auto">
+                                    <!-- Table items will be dynamically loaded here -->
+                                </div>
+
+                                <div class="mt-3 pt-3 border-t border-gray-300 text-xs text-gray-500">
+                                    <i class="fas fa-info-circle mr-1"></i>Tables configured here will be available in the Table Mode view
+                                </div>
+                            </div>
+
                             <div class="my-3 border-t border-gray-200"></div>
                             <div class="flex items-center gap-4 flex-wrap">
                                 <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" id="cutAfterPrintToggle" class="h-4 w-4"> <span data-i18n="ui.printing.cutAfterPrint">Cut after print</span></label>
@@ -1031,7 +1217,7 @@
                 <div class="mt-6 pt-4 border-t border-gray-200 text-center">
                     <p class="text-sm text-gray-600 mb-3">Don't have an unlock code yet?</p>
                     <div class="space-y-2">
-                        <button onclick="window.open('subscribe.html', '_blank')"
+                        <button onclick="hideUnlockDialog(); showEmbeddedPayment();"
                                 class="block w-full text-green-600 hover:text-green-700 font-medium text-sm">
                             <i class="fas fa-credit-card mr-1"></i>
                             Subscribe for €20/month
@@ -1233,6 +1419,95 @@
         </div>
     </div>
 
+    <!-- Add Table Modal -->
+    <div id="addTableModal" class="fixed inset-0 bg-black bg-opacity-50 z-[75] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col">
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-xl font-semibold text-gray-800">
+                    <i class="fas fa-chair mr-2 text-green-600"></i>Add New Table
+                </h3>
+                <button onclick="closeAddTableModal()" class="text-gray-500 hover:text-black">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label for="newTableName" class="block text-sm font-medium text-gray-700 mb-2">
+                        Table Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="newTableName" placeholder="e.g., Table 4, VIP Lounge"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                           onkeypress="if(event.key==='Enter') document.getElementById('newTableSeats').focus()"
+                           required>
+                    <p class="text-xs text-gray-500 mt-1">Enter a unique name for this table</p>
+                </div>
+                <div>
+                    <label for="newTableSeats" class="block text-sm font-medium text-gray-700 mb-2">
+                        Number of Seats <span class="text-red-500">*</span>
+                    </label>
+                    <input type="number" id="newTableSeats" min="1" max="20" value="4"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                           onkeypress="if(event.key==='Enter') saveNewTable()"
+                           required>
+                    <p class="text-xs text-gray-500 mt-1">Enter the seating capacity (1-20)</p>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-200 flex gap-3">
+                <button onclick="closeAddTableModal()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg font-medium transition">
+                    Cancel
+                </button>
+                <button onclick="saveNewTable()" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg font-medium transition">
+                    <i class="fas fa-check mr-2"></i>Add Table
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Table Modal -->
+    <div id="editTableModal" class="fixed inset-0 bg-black bg-opacity-50 z-[75] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col">
+            <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-xl font-semibold text-gray-800">
+                    <i class="fas fa-edit mr-2 text-blue-600"></i>Edit Table
+                </h3>
+                <button onclick="closeEditTableModal()" class="text-gray-500 hover:text-black">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="editTableId">
+                <div>
+                    <label for="editTableName" class="block text-sm font-medium text-gray-700 mb-2">
+                        Table Name <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="editTableName" placeholder="e.g., Table 4, VIP Lounge"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           onkeypress="if(event.key==='Enter') document.getElementById('editTableSeats').focus()"
+                           required>
+                    <p class="text-xs text-gray-500 mt-1">Enter a unique name for this table</p>
+                </div>
+                <div>
+                    <label for="editTableSeats" class="block text-sm font-medium text-gray-700 mb-2">
+                        Number of Seats <span class="text-red-500">*</span>
+                    </label>
+                    <input type="number" id="editTableSeats" min="1" max="20" value="4"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           onkeypress="if(event.key==='Enter') saveEditedTable()"
+                           required>
+                    <p class="text-xs text-gray-500 mt-1">Enter the seating capacity (1-20)</p>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-200 flex gap-3">
+                <button onclick="closeEditTableModal()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg font-medium transition">
+                    Cancel
+                </button>
+                <button onclick="saveEditedTable()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition">
+                    <i class="fas fa-save mr-2"></i>Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Item Form Modal -->
     <div id="itemFormModal" class="fixed inset-0 bg-black bg-opacity-70 z-[80] hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -1361,139 +1636,182 @@
     </div>
 
     <!-- Subscription Modal -->
-    <div id="subscriptionModal" class="fixed inset-0 bg-black bg-opacity-70 z-[110] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto relative">
-            <!-- Header -->
-            <div class="gradient-bg text-white p-6 rounded-t-xl relative">
-                <!-- Close Button - Inside Header -->
-                <button onclick="closeSubscriptionModal()" class="absolute top-4 right-4 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full w-8 h-8 flex items-center justify-center transition-all duration-200 hover:scale-110">
-                    <i class="fas fa-times text-white text-sm"></i>
+    <!-- Subscription Modal - Stacked Card Design -->
+    <div id="subscriptionModal" class="fixed inset-0 bg-black bg-opacity-90 z-[110] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-[520px] max-h-[90vh] overflow-hidden flex flex-col">
+            <!-- Modal Header -->
+            <div class="relative bg-gradient-to-br from-emerald-500 to-blue-600 p-6 text-white">
+                <!-- Close Button -->
+                <button onclick="closeSubscriptionModal()"
+                        class="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors p-2 rounded-full hover:bg-white/10">
+                    <i class="fas fa-times text-xl"></i>
                 </button>
-                
-                <div class="text-center pr-8">
-                    <div class="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <i class="fas fa-unlock text-white text-xl"></i>
+
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="text-3xl">
+                        <i class="fas fa-crown"></i>
                     </div>
-                    <h2 class="text-xl font-bold mb-1">Unlock POSPal Pro</h2>
-                    <p class="text-gray-200 text-sm">Continue using your restaurant system</p>
+                    <div>
+                        <h2 class="text-2xl font-bold">POSPal Professional</h2>
+                        <p class="text-emerald-50 text-sm">Unlock your restaurant's full potential</p>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Content -->
-            <div class="p-6 space-y-6">
-                <!-- Pricing -->
-                <div class="text-center bg-gray-50 rounded-lg p-4">
-                    <div class="text-3xl font-bold text-gray-900 mb-1">€20<span class="text-lg text-gray-500 font-normal">/month</span></div>
-                    <div class="text-sm text-gray-600">Cancel anytime • No setup fees</div>
-                </div>
 
-                <!-- Features - Compact -->
-                <div class="grid grid-cols-2 gap-2 text-sm">
-                    <div class="flex items-center text-gray-700">
-                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
-                        Unlimited orders
-                    </div>
-                    <div class="flex items-center text-gray-700">
-                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
-                        Kitchen printing
-                    </div>
-                    <div class="flex items-center text-gray-700">
-                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
-                        Works offline
-                    </div>
-                    <div class="flex items-center text-gray-700">
-                        <i class="fas fa-check text-green-600 mr-2 text-xs"></i>
-                        Email support
-                    </div>
-                </div>
+            <!-- Modal Content - Scrollable -->
+            <div class="overflow-y-auto flex-1">
+                <div class="p-6">
+                    <!-- Subscription Form -->
+                    <form id="subscriptionForm" class="space-y-4">
+                        <!-- Restaurant Name -->
+                        <div>
+                            <label for="sub-restaurant-name" class="block text-sm font-semibold text-gray-700 mb-1.5">
+                                Restaurant Name <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text"
+                                   id="sub-restaurant-name"
+                                   required
+                                   class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all outline-none"
+                                   placeholder="e.g., The Golden Fork">
+                        </div>
 
-                <!-- Form -->
-                <form id="subscriptionForm" class="space-y-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <!-- Customer Name -->
                         <div>
-                            <input type="text" id="sub-restaurant-name" required 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
-                                   placeholder="Restaurant name *">
+                            <label for="sub-customer-name" class="block text-sm font-semibold text-gray-700 mb-1.5">
+                                Your Name <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text"
+                                   id="sub-customer-name"
+                                   required
+                                   class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none"
+                                   placeholder="John Smith">
                         </div>
+
+                        <!-- Email Address -->
                         <div>
-                            <input type="text" id="sub-customer-name" required 
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
-                                   placeholder="Your name *">
+                            <label for="sub-customer-email" class="block text-sm font-semibold text-gray-700 mb-1.5">
+                                Email Address <span class="text-red-500">*</span>
+                            </label>
+                            <input type="email"
+                                   id="sub-customer-email"
+                                   required
+                                   class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none"
+                                   placeholder="your@email.com">
+
+                            <!-- Duplicate validation messages (preserved from original) -->
+                            <div id="email-validation-loading" class="hidden mt-2 text-sm text-gray-600 flex items-center">
+                                <i class="fas fa-spinner fa-spin mr-2"></i>
+                                Checking email...
+                            </div>
+                            <div id="email-duplicate-active" class="hidden mt-2 p-3 bg-blue-50 border-l-4 border-blue-500 text-blue-800 text-sm rounded-lg flex items-start gap-2">
+                                <i class="fas fa-info-circle mt-0.5 flex-shrink-0"></i>
+                                <span>You already have an active subscription. <a href="#" id="redirect-to-portal" class="underline font-semibold hover:text-blue-900">Manage your subscription here</a>.</span>
+                            </div>
+                            <div id="email-duplicate-returning" class="hidden mt-2 p-3 bg-green-50 border-l-4 border-green-500 text-green-800 text-sm rounded-lg flex items-start gap-2">
+                                <i class="fas fa-check-circle mt-0.5 flex-shrink-0"></i>
+                                <span>Welcome back! You can resubscribe to continue using POSPal.</span>
+                            </div>
+                            <div id="email-validation-error" class="hidden mt-2 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 text-sm rounded-lg flex items-start gap-2">
+                                <i class="fas fa-exclamation-triangle mt-0.5 flex-shrink-0"></i>
+                                <span>Unable to validate email. You can still proceed with subscription.</span>
+                            </div>
+                            <div id="email-validation-success" class="hidden mt-2 p-3 bg-green-50 border-l-4 border-green-500 text-green-800 text-sm rounded-lg flex items-start gap-2">
+                                <i class="fas fa-check-circle mt-0.5 flex-shrink-0"></i>
+                                <span>Email is available for new subscription.</span>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <input type="email" id="sub-customer-email" required 
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
-                               placeholder="Email address *">
-                        <!-- Duplicate validation messages -->
-                        <div id="email-validation-loading" class="hidden mt-2 text-sm text-gray-600">
+
+                        <!-- Phone Number -->
+                        <div>
+                            <label for="sub-customer-phone" class="block text-sm font-semibold text-gray-700 mb-1.5">
+                                Phone Number <span class="text-gray-400 text-xs font-normal">(Optional)</span>
+                            </label>
+                            <input type="tel"
+                                   id="sub-customer-phone"
+                                   class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none"
+                                   placeholder="+30 123 456 7890">
+                        </div>
+
+                        <!-- Error & Loading Messages -->
+                        <div id="subscription-error" class="hidden bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+                            <i class="fas fa-exclamation-circle mt-0.5 flex-shrink-0"></i>
+                            <span id="subscription-error-text"></span>
+                        </div>
+
+                        <div id="subscription-loading" class="hidden text-center text-gray-600 py-3 text-sm">
                             <i class="fas fa-spinner fa-spin mr-2"></i>
-                            Checking email...
+                            Creating secure checkout session...
                         </div>
-                        <div id="email-duplicate-active" class="hidden mt-2 p-3 bg-blue-50 border-l-4 border-blue-400 text-blue-800 text-sm rounded">
-                            <i class="fas fa-info-circle mr-2"></i>
-                            <span>You already have an active subscription. <a href="#" id="redirect-to-portal" class="underline font-semibold">Manage your subscription here</a>.</span>
-                        </div>
-                        <div id="email-duplicate-returning" class="hidden mt-2 p-3 bg-green-50 border-l-4 border-green-400 text-green-800 text-sm rounded">
-                            <i class="fas fa-check-circle mr-2"></i>
-                            <span>Welcome back! You can resubscribe to continue using POSPal.</span>
-                        </div>
-                        <div id="email-validation-error" class="hidden mt-2 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 text-sm rounded">
-                            <i class="fas fa-exclamation-triangle mr-2"></i>
-                            <span>Unable to validate email. You can still proceed with subscription.</span>
-                        </div>
-                        <div id="email-validation-success" class="hidden mt-2 p-3 bg-green-50 border-l-4 border-green-400 text-green-800 text-sm rounded">
-                            <i class="fas fa-check-circle mr-2"></i>
-                            <span>Email is available for new subscription.</span>
-                        </div>
-                    </div>
-                    <div>
-                        <input type="tel" id="sub-customer-phone" 
-                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:border-gray-600 focus:ring-1 focus:ring-gray-600 text-sm"
-                               placeholder="Phone (optional)">
-                    </div>
-                    
-                    <!-- Error/Loading Messages -->
-                    <div id="subscription-error" class="hidden bg-red-50 border-l-4 border-red-400 p-3 text-red-700 text-sm rounded">
-                        <i class="fas fa-exclamation-triangle mr-2"></i>
-                        <span>Something went wrong. Please try again.</span>
-                    </div>
-                    <div id="subscription-loading" class="hidden text-center text-gray-600 py-2 text-sm">
-                        <i class="fas fa-spinner fa-spin mr-2"></i>
-                        Creating secure checkout...
-                    </div>
-                    
-                    <!-- Submit Button -->
-                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 px-6 rounded-md font-semibold transition-all duration-200 hover:transform hover:scale-105 shadow-lg">
-                        <i class="fas fa-lock mr-2"></i>
-                        Continue to Stripe Checkout
-                    </button>
-                </form>
 
-                <!-- Security Footer with Stripe Branding -->
-                <div class="text-center pt-4 border-t border-gray-100 space-y-3">
-                    <!-- Stripe Badge -->
-                    <div class="flex items-center justify-center space-x-2">
-                        <span class="text-xs text-gray-500">Powered by</span>
-                        <div class="bg-gray-900 text-white px-3 py-1 rounded text-xs font-semibold tracking-wider">
-                            <i class="fab fa-stripe mr-1"></i>STRIPE
+                        <!-- Submit Button with Price -->
+                        <div class="pt-2">
+                            <button type="submit"
+                                    class="w-full bg-gradient-to-r from-green-600 to-green-500 text-white py-4 px-6 rounded-xl font-bold text-lg hover:from-green-700 hover:to-green-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]">
+                                <div class="flex items-center justify-center gap-2">
+                                    <i class="fas fa-lock text-sm"></i>
+                                    <span>Subscribe for €20/month</span>
+                                </div>
+                            </button>
+                            <p class="text-center text-xs text-gray-500 mt-2">
+                                Secure payment via Stripe • Cancel anytime
+                            </p>
+                        </div>
+                    </form>
+
+                    <!-- Features Section -->
+                    <div class="mt-6 pt-6 border-t border-gray-200">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">What's Included</h3>
+                        <div class="grid grid-cols-1 gap-2.5">
+                            <div class="flex items-center gap-3 text-gray-700">
+                                <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-check text-green-600 text-xs"></i>
+                                </div>
+                                <span class="text-sm">Unlimited tables & orders</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-gray-700">
+                                <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-check text-green-600 text-xs"></i>
+                                </div>
+                                <span class="text-sm">Kitchen printing & order management</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-gray-700">
+                                <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-check text-green-600 text-xs"></i>
+                                </div>
+                                <span class="text-sm">Offline operation (no internet required)</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-gray-700">
+                                <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-check text-green-600 text-xs"></i>
+                                </div>
+                                <span class="text-sm">Priority email support</span>
+                            </div>
+                            <div class="flex items-center gap-3 text-gray-700">
+                                <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-check text-green-600 text-xs"></i>
+                                </div>
+                                <span class="text-sm">Cancel anytime, no commitment</span>
+                            </div>
                         </div>
                     </div>
-                    
-                    <!-- Security Indicators -->
-                    <div class="flex items-center justify-center text-xs text-gray-500 space-x-4">
-                        <span class="flex items-center">
-                            <i class="fas fa-shield-alt mr-1 text-blue-500"></i>
-                            256-bit SSL
-                        </span>
-                        <span class="flex items-center">
-                            <i class="fas fa-credit-card mr-1 text-green-500"></i>
-                            All cards
-                        </span>
-                        <span class="flex items-center">
-                            <i class="fas fa-times mr-1 text-red-500"></i>
-                            Cancel anytime
-                        </span>
+
+                    <!-- Trust Badges -->
+                    <div class="mt-6 pt-6 border-t border-gray-200 text-center">
+                        <div class="flex items-center justify-center gap-2 text-gray-500 text-sm">
+                            <i class="fab fa-stripe text-2xl text-blue-600"></i>
+                            <span class="text-xs">Secured by Stripe</span>
+                        </div>
+                        <div class="mt-2 flex items-center justify-center gap-3 text-gray-400 text-xs">
+                            <span class="flex items-center gap-1">
+                                <i class="fas fa-shield-alt"></i>
+                                SSL Encrypted
+                            </span>
+                            <span>•</span>
+                            <span class="flex items-center gap-1">
+                                <i class="fas fa-credit-card"></i>
+                                All cards accepted
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1502,6 +1820,22 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="i18n.js"></script>
+    <!-- Mobile Table Picker Bottom Sheet -->
+    <div id="tablePickerOverlay" onclick="closeMobileTablePicker()"></div>
+    <div id="tablePickerSheet">
+        <div class="sheet-handle"></div>
+        <div class="p-4 border-b border-gray-200">
+            <h3 class="text-lg font-bold text-gray-800 text-center">
+                <i class="fas fa-utensils mr-2 text-green-600"></i>Select Table
+            </h3>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+            <div id="tablePickerGrid" class="grid grid-cols-2 gap-3">
+                <!-- Table cards will be inserted here by JavaScript -->
+            </div>
+        </div>
+    </div>
+
     <script src="enhanced-error-handler.js"></script>
     <script src="enhanced-ux-manager.js"></script>
     <script src="notification-manager.js"></script>

@@ -40,6 +40,10 @@ let tableConfig = null;
 let tableSessions = {};
 let selectedTableForAction = null;
 
+// --- Table Selection State (for persistent table assignment) ---
+let selectedTableId = null; // null = no table/takeaway, or table ID for persistent selection
+let allTablesData = []; // Cache of all tables for selection UI
+
 // --- Centralized Timer Management System ---
 const TimerManager = {
     timers: new Map(),
@@ -171,7 +175,34 @@ const StatusDisplayManager = {
                     showTrialActions: false,
                     animate: true
                 };
-                
+
+            case 'inactive':
+            case 'cancelled':
+                const statusText = statusType === 'cancelled' ? 'Cancelled' : 'Inactive';
+                return {
+                    html: `
+                        <div class="flex items-center space-x-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                            <div class="flex-shrink-0">
+                                <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16c-.77.833.192 2.5 1.732 2.5z"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-orange-800">License ${statusText}</h3>
+                                <p class="text-orange-700">Your license is registered but subscription is ${statusType}.</p>
+                                ${customerName ? `<p class="text-sm text-orange-600">Licensed to: ${customerName}</p>` : ''}
+                                <p class="text-sm text-orange-600 mt-1">Renew your subscription to unlock all features.</p>
+                            </div>
+                        </div>
+                    `,
+                    badge: `License ${statusText}`,
+                    badgeClass: 'bg-orange-100 text-orange-800',
+                    footer: `<i class="fas fa-exclamation-circle text-orange-500 mr-1"></i>Subscription ${statusType} - Renew required`,
+                    showSubscription: true, // Show the subscription card with Manage Subscription button
+                    showTrialActions: false, // Hide trial/subscribe buttons
+                    animate: true
+                };
+
             case 'trial':
                 return {
                     html: `
@@ -514,22 +545,41 @@ const FrontendLicenseManager = {
             
             // Check cached license data
             const licenseData = LicenseStorage.getLicenseData();
-            
-            if (licenseData.unlockToken && licenseData.customerEmail && licenseData.licenseStatus === 'active') {
-                console.log('Valid cached license found');
-                
-                // Show active status immediately from cache
-                this.updateUIForActiveStatus(licenseData);
-                
-                // Validate in background if online
-                if (this.cache.isOnline) {
-                    this.performBackgroundValidation(licenseData);
+
+            if (licenseData.unlockToken && licenseData.customerEmail) {
+                // License exists (active or inactive)
+                console.log(`Cached license found with status: ${licenseData.licenseStatus}`);
+
+                if (licenseData.licenseStatus === 'active') {
+                    // Show active status immediately from cache
+                    this.updateUIForActiveStatus(licenseData);
+
+                    // Validate in background if online
+                    if (this.cache.isOnline) {
+                        this.performBackgroundValidation(licenseData);
+                    } else {
+                        this.handleOfflineGracePeriod(licenseData);
+                    }
                 } else {
-                    this.handleOfflineGracePeriod(licenseData);
+                    // License is inactive/cancelled - show inactive UI
+                    console.log(`License is ${licenseData.licenseStatus} - showing inactive UI`);
+                    this.currentValidationState = {
+                        status: licenseData.licenseStatus || 'inactive',
+                        customerName: licenseData.customerName,
+                        timestamp: Date.now()
+                    };
+
+                    this.throttledUIUpdate(() => {
+                        StatusDisplayManager.updateLicenseStatus(licenseData.licenseStatus || 'inactive', {
+                            customerName: licenseData.customerName,
+                            isOnline: true
+                        });
+                        this.showPortalButtons();
+                    });
                 }
-                
+
             } else {
-                // No valid cached license, check trial status
+                // No license at all, check trial status
                 await this.checkTrialStatus();
             }
             
@@ -875,8 +925,8 @@ const FrontendLicenseManager = {
             }
         }
 
-        // Hide loading state and show subscription details if we have valid license data
-        if (licenseData.licenseStatus === 'active' || licenseData.unlockToken) {
+        // Hide loading state and show subscription details if we have valid license data (active or inactive)
+        if (licenseData.unlockToken) {
             const loadingElement = document.getElementById('license-loading');
             const detailsElement = document.getElementById('subscription-details');
 
@@ -887,14 +937,84 @@ const FrontendLicenseManager = {
                 detailsElement.classList.remove('hidden');
                 detailsElement.style.display = 'block';
             }
+
+            // Update subscription status display based on actual status
+            const statusDisplay = document.getElementById('subscription-status-display');
+            if (statusDisplay) {
+                const status = licenseData.licenseStatus || 'unknown';
+                statusDisplay.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+
+                // Update styling based on status
+                const parentDiv = statusDisplay.closest('div');
+                if (parentDiv) {
+                    if (status === 'active') {
+                        parentDiv.className = 'bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-center';
+                        statusDisplay.className = 'text-lg font-bold text-emerald-800';
+                    } else if (status === 'inactive' || status === 'cancelled') {
+                        parentDiv.className = 'bg-orange-50 p-4 rounded-lg border border-orange-200 text-center';
+                        statusDisplay.className = 'text-lg font-bold text-orange-800';
+                    } else {
+                        parentDiv.className = 'bg-gray-50 p-4 rounded-lg border border-gray-200 text-center';
+                        statusDisplay.className = 'text-lg font-bold text-gray-800';
+                    }
+                }
+            }
         }
     },
     
     showPortalButtons() {
         const quickPortalBtn = document.getElementById('quick-portal-btn');
+        const manageSubBtn = document.getElementById('manage-subscription-btn');
         // Note: footer-portal-btn removed - only using quick access button in license modal
 
         if (quickPortalBtn) quickPortalBtn.classList.remove('hidden');
+
+        // Update button text based on license status
+        const licenseData = LicenseStorage.getLicenseData();
+        const subscriptionId = localStorage.getItem('pospal_subscription_id');
+        const licenseStatus = licenseData.licenseStatus || localStorage.getItem('pospal_license_status');
+
+        const isManualSubscription = subscriptionId && subscriptionId.includes('manual');
+        const isInactive = licenseStatus && (licenseStatus === 'inactive' || licenseStatus === 'cancelled');
+
+        if (manageSubBtn) {
+            if (isManualSubscription || isInactive) {
+                // Change button to "Reactivate Subscription" for inactive/manual licenses
+                const icon = manageSubBtn.querySelector('i');
+                const text = manageSubBtn.childNodes[manageSubBtn.childNodes.length - 1];
+
+                if (icon) icon.className = 'fas fa-credit-card mr-3';
+                if (text && text.nodeType === Node.TEXT_NODE) {
+                    text.textContent = 'Reactivate Subscription';
+                } else {
+                    // Fallback if structure is different
+                    manageSubBtn.innerHTML = '<i class="fas fa-credit-card mr-3"></i>Reactivate Subscription';
+                }
+
+                // Update description text
+                const descText = manageSubBtn.nextElementSibling;
+                if (descText && descText.tagName === 'P') {
+                    descText.textContent = 'Pay now to reactivate your subscription and unlock all features';
+                }
+            } else {
+                // Active subscription - show normal "Manage Subscription" button
+                const icon = manageSubBtn.querySelector('i');
+                const text = manageSubBtn.childNodes[manageSubBtn.childNodes.length - 1];
+
+                if (icon) icon.className = 'fas fa-cog mr-3';
+                if (text && text.nodeType === Node.TEXT_NODE) {
+                    text.textContent = 'Manage Subscription';
+                } else {
+                    manageSubBtn.innerHTML = '<i class="fas fa-cog mr-3"></i>Manage Subscription';
+                }
+
+                // Update description text
+                const descText = manageSubBtn.nextElementSibling;
+                if (descText && descText.tagName === 'P') {
+                    descText.textContent = 'Cancel, update payment method, or view billing history';
+                }
+            }
+        }
     },
     
     hidePortalButtons() {
@@ -1349,8 +1469,15 @@ async function initializeTableFeatures() {
         // Initialize table UI components
         initializeTableUI();
 
+        // Load table selection state and data
+        loadSelectedTableFromStorage();
+        await loadTablesForSelection();
+
         // Initialize mobile navigation
         updateMobileTabDisplay();
+
+        // Initialize keyboard shortcuts for table selector modal
+        initTableSelectorKeyboardShortcuts();
 
         console.log('Table management features initialized successfully');
 
@@ -1888,6 +2015,17 @@ function handleTableUpdate(data) {
 
     // Update status summary
     updateTableStatusSummary();
+
+    // Update table in allTablesData cache and refresh selection UIs
+    const tableIndex = allTablesData.findIndex(t => t.id === table_id);
+    if (tableIndex !== -1) {
+        allTablesData[tableIndex].total = total;
+        allTablesData[tableIndex].status = status;
+
+        // Refresh selection UIs with updated data
+        renderDesktopTableBar();
+        renderMobileTableBadge();
+    }
 
     console.log(`Table ${table_id} updated: €${total.toFixed(2)}, ${orders.length} orders`);
 }
@@ -2431,6 +2569,378 @@ function closeTableBillModal() {
         modal.classList.add('hidden');
         modal.classList.remove('flex');
     }
+}
+
+// ==================================================================================
+// TABLE SELECTION SYSTEM - Persistent Table Assignment for Orders
+// ==================================================================================
+
+/**
+ * Load all tables data for selection interfaces
+ * Called when table mode is enabled
+ */
+async function loadTablesForSelection() {
+    try {
+        const response = await fetch('/api/tables');
+        if (!response.ok) throw new Error('Failed to load tables');
+
+        const data = await response.json();
+
+        // Convert tables object to array with IDs
+        const tablesObj = data.tables || {};
+        allTablesData = Object.keys(tablesObj).map(id => ({
+            id: id,
+            table_number: id,
+            ...tablesObj[id]
+        }));
+
+        // Render both desktop and mobile selection UIs
+        renderDesktopTableBar();
+        renderMobileTableBadge();
+
+        console.log('Tables loaded for selection:', allTablesData.length);
+    } catch (error) {
+        console.error('Error loading tables for selection:', error);
+        showToast('Failed to load tables', 'error');
+    }
+}
+
+/**
+ * Render desktop quick select bar (NEW: Updates both indicator badge and modal grid)
+ */
+function renderDesktopTableBar() {
+    const indicator = document.getElementById('tableIndicatorBadge');
+    const grid = document.getElementById('tableSelectorGrid');
+
+    if (!indicator || !grid) return;
+
+    // Clear grid if table management is disabled or no tables exist
+    if (!tableManagementEnabled || allTablesData.length === 0) {
+        grid.innerHTML = '';
+        return;
+    }
+
+    // Update indicator badge text
+    updateTableIndicatorBadge();
+
+    // Sort tables by number/name
+    const sortedTables = [...allTablesData].sort((a, b) => {
+        const aNum = parseInt(a.table_number) || 0;
+        const bNum = parseInt(b.table_number) || 0;
+        return aNum - bNum;
+    });
+
+    let html = '';
+
+    // Add Takeaway/No Table button first
+    const isTakeawaySelected = selectedTableId === null;
+    html += `
+        <button class="table-select-btn takeaway ${isTakeawaySelected ? 'selected' : ''}"
+                onclick="selectTableFromModal(null)">
+            <div class="table-name">
+                <i class="fas fa-shopping-bag"></i> Takeaway
+            </div>
+            <div class="table-info">No Table</div>
+        </button>
+    `;
+
+    // Add table buttons
+    sortedTables.forEach(table => {
+        const isSelected = selectedTableId === table.id;
+        const status = table.status || 'available';
+        const statusClass = status === 'available' ? 'available' : 'occupied';
+        const total = table.total || 0;
+        const seats = table.seats || 0;
+
+        html += `
+            <button class="table-select-btn ${isSelected ? 'selected' : ''}"
+                    onclick="selectTableFromModal(${table.id})">
+                <div class="table-name">
+                    <span class="status-dot ${statusClass}"></span>
+                    T${table.table_number}
+                </div>
+                <div class="table-info" style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">
+                    ${seats} seats | €${total.toFixed(2)}
+                </div>
+            </button>
+        `;
+    });
+
+    grid.innerHTML = html;
+}
+
+/**
+ * Update the indicator badge to show current selection
+ */
+function updateTableIndicatorBadge() {
+    const indicator = document.getElementById('tableIndicatorBadge');
+    if (!indicator) return;
+
+    const iconSpan = indicator.querySelector('.indicator-icon');
+    const textSpan = indicator.querySelector('.indicator-text');
+
+    if (!iconSpan || !textSpan) return;
+
+    if (selectedTableId === null) {
+        // Takeaway mode
+        iconSpan.textContent = '🥡';
+        textSpan.textContent = 'Takeaway';
+    } else {
+        // Table selected
+        const table = allTablesData.find(t => t.id === selectedTableId);
+        if (table) {
+            const total = table.total || 0;
+            iconSpan.textContent = '📍';
+            textSpan.textContent = `T${table.table_number} | €${total.toFixed(2)}`;
+        } else {
+            // Fallback: show table ID even if full data not available
+            iconSpan.textContent = '📍';
+            textSpan.textContent = `T${selectedTableId} | €0.00`;
+        }
+    }
+}
+
+/**
+ * Open table selector modal
+ */
+function openTableSelector() {
+    const modal = document.getElementById('tableSelectorModal');
+    if (!modal) return;
+
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden'; // Prevent background scroll
+}
+
+/**
+ * Close table selector modal
+ */
+function closeTableSelector() {
+    const modal = document.getElementById('tableSelectorModal');
+    if (!modal) return;
+
+    modal.classList.remove('open');
+    document.body.style.overflow = ''; // Restore scroll
+}
+
+/**
+ * Select table from modal and auto-close
+ */
+function selectTableFromModal(tableId) {
+    selectTable(tableId);
+    closeTableSelector();
+}
+
+/**
+ * Initialize keyboard shortcuts for modal
+ */
+function initTableSelectorKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        const modal = document.getElementById('tableSelectorModal');
+        if (!modal) return;
+
+        // Close modal on Escape key
+        if (e.key === 'Escape' && modal.classList.contains('open')) {
+            closeTableSelector();
+        }
+    });
+}
+
+/**
+ * Render mobile header badge
+ */
+function renderMobileTableBadge() {
+    const badge = document.getElementById('mobileTableBadge');
+    const content = document.getElementById('mobileTableBadgeContent');
+
+    if (!badge || !content) return;
+
+    if (!tableManagementEnabled) {
+        return;
+    }
+
+    // Update badge based on selection
+    if (selectedTableId === null) {
+        // No table / Takeaway mode
+        badge.className = 'table-mode-only takeaway-selected mt-1 px-4 py-2 rounded-lg text-white text-sm font-semibold';
+        content.innerHTML = `
+            <i class="fas fa-shopping-bag"></i>
+            <span>Takeaway</span>
+        `;
+    } else {
+        // Table selected
+        const table = allTablesData.find(t => t.id === selectedTableId);
+        if (table) {
+            const status = table.status || 'available';
+            const statusClass = status === 'available' ? 'available' : 'occupied';
+            const statusText = status === 'available' ? 'Available' : 'Occupied';
+            const total = table.total || 0;
+
+            badge.className = 'table-mode-only table-selected mt-1 px-4 py-2 rounded-lg text-white text-sm font-semibold';
+            content.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="status-dot ${statusClass}"></span>
+                    <span>Table ${table.table_number}</span>
+                    <span class="text-yellow-300">€${total.toFixed(2)}</span>
+                </div>
+            `;
+        } else {
+            // Table not found, reset to takeaway
+            selectTable(null);
+        }
+    }
+}
+
+/**
+ * Open mobile table picker bottom sheet
+ */
+function openMobileTablePicker() {
+    const overlay = document.getElementById('tablePickerOverlay');
+    const sheet = document.getElementById('tablePickerSheet');
+
+    if (!overlay || !sheet) return;
+
+    // Render table grid
+    renderMobileTablePickerGrid();
+
+    // Show overlay and sheet
+    overlay.classList.add('active');
+    sheet.classList.add('active');
+
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+/**
+ * Close mobile table picker
+ */
+function closeMobileTablePicker() {
+    const overlay = document.getElementById('tablePickerOverlay');
+    const sheet = document.getElementById('tablePickerSheet');
+
+    if (!overlay || !sheet) return;
+
+    overlay.classList.remove('active');
+    sheet.classList.remove('active');
+
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+/**
+ * Render mobile table picker grid
+ */
+function renderMobileTablePickerGrid() {
+    const grid = document.getElementById('tablePickerGrid');
+    if (!grid) return;
+
+    // Sort tables
+    const sortedTables = [...allTablesData].sort((a, b) => {
+        const aNum = parseInt(a.table_number) || 0;
+        const bNum = parseInt(b.table_number) || 0;
+        return aNum - bNum;
+    });
+
+    let html = '';
+
+    // Add Takeaway card first
+    const isTakeawaySelected = selectedTableId === null;
+    html += `
+        <div class="table-picker-card takeaway ${isTakeawaySelected ? 'selected' : ''}"
+             onclick="selectTable(null)">
+            <div class="text-3xl mb-2">
+                <i class="fas fa-shopping-bag"></i>
+            </div>
+            <div class="font-bold text-lg">Takeaway</div>
+            <div class="text-sm text-gray-600">No Table</div>
+            <div class="text-lg font-bold mt-1">€0.00</div>
+        </div>
+    `;
+
+    // Add table cards
+    sortedTables.forEach(table => {
+        const isSelected = selectedTableId === table.id;
+        const status = table.status || 'available';
+        const statusClass = status === 'available' ? 'available' : 'occupied';
+        const statusText = status === 'available' ? 'Available' : 'Occupied';
+        const total = table.total || 0;
+        const seats = table.seats || 0;
+
+        html += `
+            <div class="table-picker-card ${statusClass} ${isSelected ? 'selected' : ''}"
+                 onclick="selectTable(${table.id})">
+                <div class="text-3xl font-bold mb-2">
+                    <span class="status-dot ${statusClass}"></span>
+                    ${table.table_number}
+                </div>
+                <div class="font-bold text-sm">Table ${table.table_number}</div>
+                <div class="text-xs text-gray-600">${seats} seats</div>
+                <div class="text-sm text-gray-700">${statusText}</div>
+                <div class="text-lg font-bold mt-1 text-yellow-600">€${total.toFixed(2)}</div>
+            </div>
+        `;
+    });
+
+    grid.innerHTML = html;
+}
+
+/**
+ * Select a table (or null for takeaway)
+ * @param {number|null} tableId - Table ID or null for takeaway
+ */
+function selectTable(tableId) {
+    selectedTableId = tableId;
+
+    // Save to localStorage for persistence
+    if (tableId === null) {
+        localStorage.setItem(SELECTED_TABLE_KEY, 'takeaway');
+    } else {
+        localStorage.setItem(SELECTED_TABLE_KEY, tableId.toString());
+    }
+
+    // Update UIs
+    renderDesktopTableBar();
+    renderMobileTableBadge();
+
+    // Close mobile picker if open
+    closeMobileTablePicker();
+
+    console.log('Table selected:', tableId);
+}
+
+/**
+ * Get selected table for order submission
+ * @returns {string|null} Table number or null
+ */
+function getSelectedTableForOrder() {
+    if (selectedTableId === null) {
+        return null; // Takeaway/No table
+    }
+
+    const table = allTablesData.find(t => t.id === selectedTableId);
+    return table ? table.table_number : null;
+}
+
+/**
+ * Update table selection UI (refresh after order submission)
+ */
+async function updateTableSelectionUI() {
+    // Reload tables data to get updated totals
+    await loadTablesForSelection();
+}
+
+/**
+ * Load selected table from localStorage on app start
+ */
+function loadSelectedTableFromStorage() {
+    const stored = localStorage.getItem(SELECTED_TABLE_KEY);
+
+    if (stored === 'takeaway' || stored === null) {
+        selectedTableId = null;
+    } else {
+        selectedTableId = parseInt(stored) || null;
+    }
+
+    console.log('Loaded selected table from storage:', selectedTableId);
 }
 
 // ==================================================================================
@@ -3106,20 +3616,28 @@ async function sendOrder() {
         showToast('Order is empty!', 'warning');
         return;
     }
-    
+
     const isDesktopUI = document.body.classList.contains('desktop-ui');
     let tableNumberForOrder = selectedTableNumber;
 
-    // Require a table number on all UIs; no browser prompts
-    if (!tableNumberForOrder || tableNumberForOrder.trim() === "") {
-        showToast('Please select a table.', 'warning');
-        if (elements.headerTableContainer) {
-            elements.headerTableContainer.classList.add('ring-2', 'ring-red-500');
-            setTimeout(() => {
-                elements.headerTableContainer.classList.remove('ring-2', 'ring-red-500');
-            }, 2000);
+    // In table mode, use the selected table from the selection system
+    if (tableManagementEnabled) {
+        tableNumberForOrder = getSelectedTableForOrder();
+
+        // In table mode, null is allowed for takeaway orders
+        // So we don't require a table number
+    } else {
+        // In simple mode, require a table number on all UIs; no browser prompts
+        if (!tableNumberForOrder || tableNumberForOrder.trim() === "") {
+            showToast('Please select a table.', 'warning');
+            if (elements.headerTableContainer) {
+                elements.headerTableContainer.classList.add('ring-2', 'ring-red-500');
+                setTimeout(() => {
+                    elements.headerTableContainer.classList.remove('ring-2', 'ring-red-500');
+                }, 2000);
+            }
+            return;
         }
-        return;
     }
 
 
@@ -3178,6 +3696,11 @@ async function sendOrder() {
 
             if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "warning_print_partial_failed" || result.status === "error_log_failed_after_print") {
                 clearOrderData();
+
+                // Update table selection UI to refresh totals
+                if (tableManagementEnabled) {
+                    updateTableSelectionUI();
+                }
             }
 
         } else {
@@ -6051,34 +6574,61 @@ async function loadLicenseInfo() {
         // Update license status badge
         const statusBadge = document.getElementById('license-status-badge');
         if (statusBadge) {
-            if (licenseData.licenseStatus === 'active') {
-                statusBadge.textContent = 'Active License';
-                statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
-            } else {
-                // Check trial status
-                const trialData = TrialManager.getTrialStatus();
-                if (trialData.isActive) {
-                    statusBadge.textContent = `Trial (${trialData.daysLeft} days left)`;
-                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800';
-                } else {
-                    statusBadge.textContent = 'Trial Expired';
+            if (licenseData.unlockToken) {
+                // Has a license - show actual status
+                if (licenseData.licenseStatus === 'active') {
+                    statusBadge.textContent = 'Active License';
+                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
+                } else if (licenseData.licenseStatus === 'inactive') {
+                    statusBadge.textContent = 'Inactive - Renew to Activate';
+                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800';
+                } else if (licenseData.licenseStatus === 'cancelled') {
+                    statusBadge.textContent = 'Cancelled - Resubscribe';
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+                } else {
+                    statusBadge.textContent = `License: ${licenseData.licenseStatus}`;
+                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800';
+                }
+            } else {
+                // No license - check trial status
+                const trialStarted = localStorage.getItem('pospal_trial_started');
+                if (trialStarted) {
+                    const trialDays = 30;
+                    const daysSinceStart = (Date.now() - parseInt(trialStarted)) / (1000 * 60 * 60 * 24);
+                    const daysLeft = Math.max(0, Math.ceil(trialDays - daysSinceStart));
+
+                    if (daysLeft > 0) {
+                        statusBadge.textContent = `Trial (${daysLeft} days left)`;
+                        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800';
+                    } else {
+                        statusBadge.textContent = 'Trial Expired';
+                        statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+                    }
+                } else {
+                    statusBadge.textContent = 'No License';
+                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800';
                 }
             }
         }
 
-        // If we have active license data, populate the billing information
-        if (licenseData.licenseStatus === 'active' && licenseData.unlockToken) {
-            console.log('Active license found, updating billing display...');
+        // If we have ANY license data (active or inactive), populate the billing information
+        if (licenseData.unlockToken) {
+            console.log(`License found (status: ${licenseData.licenseStatus}), updating billing display...`);
+
+            // Update the status display based on license status
+            StatusDisplayManager.updateLicenseStatus(licenseData.licenseStatus || 'inactive', {
+                customerName: licenseData.customerName,
+                isOnline: true
+            });
 
             // Use the enhanced updateBillingDateDisplay function
             FrontendLicenseManager.updateBillingDateDisplay(licenseData);
 
-            // Show portal buttons
+            // Show portal buttons (they can manage/renew even if inactive)
             FrontendLicenseManager.showPortalButtons();
 
         } else {
-            console.log('No active license found, showing default state');
+            console.log('No license found, showing default state');
 
             // Hide subscription details and show loading message
             const loadingElement = document.getElementById('license-loading');
@@ -6094,9 +6644,18 @@ async function loadLicenseInfo() {
                 // Update the loading message to be more informative
                 const loadingSpan = loadingElement.querySelector('span');
                 if (loadingSpan) {
-                    const trialData = TrialManager.getTrialStatus();
-                    if (trialData.isActive) {
-                        loadingSpan.textContent = `Trial active (${trialData.daysLeft} days remaining)`;
+                    // Check trial status from localStorage
+                    const trialStarted = localStorage.getItem('pospal_trial_started');
+                    if (trialStarted) {
+                        const trialDays = 30;
+                        const daysSinceStart = (Date.now() - parseInt(trialStarted)) / (1000 * 60 * 60 * 24);
+                        const daysLeft = Math.max(0, Math.ceil(trialDays - daysSinceStart));
+
+                        if (daysLeft > 0) {
+                            loadingSpan.textContent = `Trial active (${daysLeft} days remaining)`;
+                        } else {
+                            loadingSpan.textContent = 'Trial expired. Please purchase a license.';
+                        }
                     } else {
                         loadingSpan.textContent = 'No active subscription found. Please purchase a license.';
                     }
@@ -6276,6 +6835,319 @@ function clearLicenseCache() {
     localStorage.removeItem('pospal_license_status');
     console.log('License cache cleared');
     location.reload(); // Reload to refresh UI
+}
+
+// --- License Disconnect Functions ---
+// Global variable to store countdown interval
+let disconnectCountdownInterval = null;
+
+/**
+ * Shows the disconnect license warning modal
+ * Populates with current license data from localStorage
+ */
+function showDisconnectLicenseModal() {
+    // Get current license data from localStorage
+    const licenseData = LicenseStorage.getLicenseData();
+
+    // Populate modal with current email
+    const emailElement = document.getElementById('disconnect-modal-email');
+    if (emailElement) {
+        emailElement.textContent = licenseData.customerEmail || 'Not found';
+    }
+
+    // Populate modal with device name
+    const deviceElement = document.getElementById('disconnect-modal-device');
+    if (deviceElement) {
+        // Try to get device name from various sources
+        const deviceName = licenseData.deviceName ||
+                          sessionStorage.getItem('pospal_device_name') ||
+                          window.navigator.userAgent.match(/Windows/) ? 'Windows PC' : 'This Device';
+        deviceElement.textContent = deviceName;
+    }
+
+    // Show the warning modal
+    const modal = document.getElementById('disconnectLicenseModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    // Reset checkbox
+    const checkbox = document.getElementById('disconnect-confirm-checkbox');
+    if (checkbox) {
+        checkbox.checked = false;
+    }
+
+    // Disable confirm button initially
+    const confirmBtn = document.getElementById('confirm-disconnect-btn');
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+    }
+
+    // Set up checkbox event listener
+    if (checkbox && confirmBtn) {
+        checkbox.onchange = function() {
+            confirmBtn.disabled = !this.checked;
+        };
+    }
+}
+
+/**
+ * Closes the disconnect license warning modal
+ */
+function closeDisconnectLicenseModal() {
+    const modal = document.getElementById('disconnectLicenseModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    // Reset checkbox
+    const checkbox = document.getElementById('disconnect-confirm-checkbox');
+    if (checkbox) {
+        checkbox.checked = false;
+    }
+}
+
+/**
+ * Confirms and executes the license disconnection
+ * Calls backend API and handles the response
+ */
+async function confirmDisconnectLicense() {
+    const confirmBtn = document.getElementById('confirm-disconnect-btn');
+
+    // Disable button and show loading state
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Disconnecting...';
+    }
+
+    try {
+        // Get license data from localStorage
+        const licenseData = LicenseStorage.getLicenseData();
+
+        if (!licenseData.customerEmail || !licenseData.unlockToken) {
+            showToast('No active license found to disconnect', 'error');
+            closeDisconnectLicenseModal();
+            return;
+        }
+
+        // Get management password from config
+        let managementPassword = '9999'; // Default password
+        try {
+            const configResponse = await fetch('/api/config');
+            if (configResponse.ok) {
+                const config = await configResponse.json();
+                managementPassword = config.management_password || '9999';
+            }
+        } catch (err) {
+            console.log('Using default management password');
+        }
+
+        // Call backend disconnect endpoint
+        const response = await fetch('/api/disconnect-license', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: licenseData.customerEmail,
+                unlock_token: licenseData.unlockToken,
+                confirm_password: managementPassword
+            })
+        });
+
+        // Handle response
+        if (!response.ok) {
+            const error = await response.json();
+
+            // Handle specific error types
+            if (error.code === 'DISCONNECT_RATE_LIMIT') {
+                showToast('Too many disconnect attempts. Please wait 5 minutes.', 'error');
+            } else if (response.status === 401) {
+                showToast('Invalid credentials or password', 'error');
+            } else if (response.status === 429) {
+                showToast('Rate limit exceeded. Please try again later.', 'error');
+            } else {
+                showToast(error.error || 'Failed to disconnect license', 'error');
+            }
+
+            // Re-enable button
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="fas fa-unlink mr-2"></i>Disconnect License';
+            }
+            return;
+        }
+
+        // Success response
+        const result = await response.json();
+
+        if (result.success || response.status === 200) {
+            // Clear localStorage using existing function
+            LicenseStorage.clearLicenseData();
+
+            // Also clear session storage
+            sessionStorage.removeItem('pospal_session_id');
+
+            // Close warning modal
+            closeDisconnectLicenseModal();
+
+            // Show success modal with unlock token
+            showDisconnectSuccessModal(result.unlock_token);
+
+            // Show any warnings if present
+            if (result.warnings && result.warnings.length > 0) {
+                console.warn('Disconnect warnings:', result.warnings);
+                result.warnings.forEach(warning => {
+                    showToast(warning, 'warning');
+                });
+            }
+        } else {
+            // Partial success (207 status or success: false)
+            showToast('License disconnected with warnings. Check console for details.', 'warning');
+
+            if (result.warnings) {
+                console.warn('Disconnect warnings:', result.warnings);
+            }
+
+            // Still clear local storage
+            LicenseStorage.clearLicenseData();
+            sessionStorage.removeItem('pospal_session_id');
+
+            // Show success modal
+            showDisconnectSuccessModal(result.unlock_token);
+        }
+
+    } catch (error) {
+        console.error('Disconnect error:', error);
+
+        // Check if it's a network error (offline)
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            showToast('Cannot connect to server. Please check your internet connection.', 'error');
+        } else {
+            showToast('An error occurred during disconnection: ' + error.message, 'error');
+        }
+
+        // Re-enable button
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="fas fa-unlink mr-2"></i>Disconnect License';
+        }
+    }
+}
+
+/**
+ * Shows the success modal after successful disconnection
+ * Displays unlock token and starts countdown timer
+ * @param {string} unlockToken - The unlock token to display
+ */
+function showDisconnectSuccessModal(unlockToken) {
+    const modal = document.getElementById('disconnectSuccessModal');
+    if (!modal) return;
+
+    // Display unlock token
+    const tokenElement = document.getElementById('disconnect-unlock-token');
+    if (tokenElement) {
+        tokenElement.textContent = unlockToken || 'Not available';
+    }
+
+    // Show modal
+    modal.style.display = 'flex';
+
+    // Start countdown timer (30 seconds)
+    let countdown = 30;
+    const countdownElement = document.getElementById('restart-countdown');
+
+    if (countdownElement) {
+        countdownElement.textContent = countdown;
+    }
+
+    // Clear any existing interval
+    if (disconnectCountdownInterval) {
+        clearInterval(disconnectCountdownInterval);
+    }
+
+    // Start new countdown
+    disconnectCountdownInterval = setInterval(() => {
+        countdown--;
+
+        if (countdownElement) {
+            countdownElement.textContent = countdown;
+        }
+
+        if (countdown <= 0) {
+            clearInterval(disconnectCountdownInterval);
+            disconnectCountdownInterval = null;
+            // Reload the page to restart the app
+            window.location.reload();
+        }
+    }, 1000);
+}
+
+/**
+ * Copies the disconnect unlock token to clipboard
+ */
+function copyDisconnectToken() {
+    const tokenElement = document.getElementById('disconnect-unlock-token');
+    if (!tokenElement) return;
+
+    const token = tokenElement.textContent;
+
+    // Use modern clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(token).then(() => {
+            showToast('Unlock token copied to clipboard', 'success');
+        }).catch(err => {
+            console.error('Failed to copy token:', err);
+            // Fallback to older method
+            copyToClipboardFallback(token);
+        });
+    } else {
+        // Fallback for older browsers
+        copyToClipboardFallback(token);
+    }
+}
+
+/**
+ * Fallback method to copy text to clipboard
+ * @param {string} text - Text to copy
+ */
+function copyToClipboardFallback(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showToast('Unlock token copied to clipboard', 'success');
+        } else {
+            showToast('Failed to copy token. Please copy manually.', 'error');
+        }
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+        showToast('Failed to copy token. Please copy manually.', 'error');
+    }
+
+    document.body.removeChild(textArea);
+}
+
+/**
+ * Restarts the application immediately (skips countdown)
+ */
+function restartAppNow() {
+    // Clear countdown interval if running
+    if (disconnectCountdownInterval) {
+        clearInterval(disconnectCountdownInterval);
+        disconnectCountdownInterval = null;
+    }
+
+    // Reload the page
+    window.location.reload();
 }
 
 // Debug function to test customer validation
@@ -6600,17 +7472,70 @@ async function openCustomerPortal() {
     try {
         const customerEmail = localStorage.getItem('pospal_customer_email');
         const unlockToken = localStorage.getItem('pospal_unlock_token');
-        
+
         if (!customerEmail || !unlockToken) {
             showToast('No active subscription found. Please subscribe first.', 'warning');
             return;
         }
-        
-        // Show loading state and disable portal buttons
+
+        // Check if subscription is inactive or manual - redirect to checkout for reactivation
+        const licenseData = LicenseStorage.getLicenseData();
+        const subscriptionId = localStorage.getItem('pospal_subscription_id');
+        const licenseStatus = licenseData.licenseStatus || localStorage.getItem('pospal_license_status');
+
+        // Detect manual/test subscriptions or inactive status
+        const isManualSubscription = subscriptionId && subscriptionId.includes('manual');
+        const isInactive = licenseStatus && (licenseStatus === 'inactive' || licenseStatus === 'cancelled');
+
+        if (isManualSubscription || isInactive) {
+            console.log(`Detected ${isManualSubscription ? 'manual' : 'inactive'} subscription - redirecting to checkout for reactivation`);
+
+            // Show appropriate message
+            showPortalLoading(true, 'Preparing subscription reactivation...');
+            showToast('Opening payment page to reactivate your subscription...', 'info');
+
+            // Get customer information
+            const customerName = licenseData.customerName || localStorage.getItem('pospal_customer_name') || 'Customer';
+            const restaurantName = localStorage.getItem('pospal_restaurant_name') || 'My Restaurant';
+            const phone = localStorage.getItem('pospal_customer_phone') || '';
+
+            // Create checkout session for reactivation
+            const checkoutResponse = await fetch(`${WORKER_URL}/create-checkout-session`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    restaurantName: restaurantName,
+                    name: customerName,
+                    email: customerEmail,
+                    phone: phone
+                })
+            });
+
+            if (!checkoutResponse.ok) {
+                const error = await checkoutResponse.json();
+                throw new Error(error.error || 'Failed to create checkout session');
+            }
+
+            const checkoutData = await checkoutResponse.json();
+
+            if (checkoutData.checkoutUrl) {
+                showPortalLoading(false);
+                showToast('Redirecting to payment page...', 'success');
+
+                // Redirect to Stripe Checkout
+                window.location.href = checkoutData.checkoutUrl;
+                return;
+            } else {
+                throw new Error('No checkout URL received');
+            }
+        }
+
+        // Normal flow for active Stripe subscriptions - open Customer Portal
         showPortalLoading(true, 'Connecting to POSPal Customer Portal...');
-        
         showToast('Opening POSPal Customer Portal...', 'info');
-        
+
         const response = await fetch(`${WORKER_URL}/create-portal-session`, {
             method: 'POST',
             headers: {
@@ -6919,32 +7844,28 @@ document.addEventListener('DOMContentLoaded', function() {
                     localStorage.setItem('pospal_unlock_token', token);
                     localStorage.setItem('pospal_customer_email', email);
                     localStorage.setItem('pospal_customer_name', result.customerName);
-                    localStorage.setItem('pospal_license_status', 'active');
-                    
+
+                    // Store subscription status from API response
+                    const subscriptionStatus = result.subscriptionInfo?.status || 'active';
+                    const isActive = result.subscriptionInfo?.isActive !== false;
+                    localStorage.setItem('pospal_license_status', subscriptionStatus);
+                    localStorage.setItem('pospal_subscription_active', isActive.toString());
+
                     // Turn off loading state
                     setUnlockLoading(false);
-                    
-                    // Show success message with customer portal option
-                    const welcomeMessage = `🎉 Welcome to POSPal Pro, ${result.customerName}!\n\nYour subscription has been successfully activated.\n\nYou now have access to all premium features including:\n• Advanced analytics and reporting\n• Priority customer support\n• Enhanced customization options\n• Automatic data backup\n\nWould you like to access your customer portal to manage your subscription and billing?`;
-                    
-                    // Hide dialog first
-                    hideUnlockDialog();
-                    
-                    // Immediately update UI to show active license
-                    showActiveLicenseStatus();
-                    
-                    // Add a brief celebration effect
+
+                    // Show success message based on status
+                    if (!isActive) {
+                        showToast(`⚠️ License added - Subscription ${subscriptionStatus}. Refreshing...`, 'warning', 2000);
+                    } else {
+                        showToast('🎉 License activated successfully! Refreshing...', 'success', 2000);
+                    }
+
+                    // Refresh the entire page to update all UI elements
                     setTimeout(() => {
-                        showToast('🎉 POSPal Pro activated successfully! All premium features are now available.', 'success', 5000);
-                    }, 500);
-                    
-                    // Show welcome message and offer customer portal access
-                    setTimeout(() => {
-                        if (confirm(welcomeMessage)) {
-                            openCustomerPortal();
-                        }
+                        window.location.reload();
                     }, 1000);
-                    
+
                 } else {
                     showUnlockError(result.error || 'Invalid email or unlock token. Please check and try again.');
                 }
@@ -7166,7 +8087,7 @@ async function submitLicenseRecovery(email) {
             throw new Error(`Please wait ${remainingSeconds} seconds before requesting another recovery.`);
         }
         
-        const response = await fetch('https://pospal-licensing-v2-production.bzoumboulis.workers.dev/recover-license', {
+        const response = await fetch(`${WORKER_URL}/recover-license`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -8586,11 +9507,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 errorDiv.style.display = 'block';
                 return;
             }
-            
+
             // Wait for any ongoing validation to complete
             if (emailValidationState.isValidating) {
                 showToast('Please wait for email validation to complete', 'info');
                 return;
+            }
+
+            // If email hasn't been validated yet, validate it now before proceeding
+            if (email && email !== emailValidationState.lastValidatedEmail) {
+                showEmailValidationMessage('loading');
+                const validationResult = await checkEmailDuplicate(email);
+
+                if (validationResult === null) {
+                    // Validation failed - block submission
+                    errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Unable to verify email. Please check your internet connection and try again.';
+                    errorDiv.style.display = 'block';
+                    showEmailValidationMessage('clear');
+                    return;
+                }
+
+                emailValidationState.lastValidatedEmail = email;
+
+                if (validationResult.isDuplicate) {
+                    emailValidationState.isDuplicate = true;
+                    emailValidationState.isReturningCustomer = validationResult.isReturningCustomer;
+
+                    if (!validationResult.isReturningCustomer) {
+                        showEmailValidationMessage('active', validationResult.portalUrl);
+                        errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>You already have an active subscription. Please manage your existing subscription instead.';
+                        errorDiv.style.display = 'block';
+                        return;
+                    }
+                }
             }
             
             // Show loading state
@@ -9900,6 +10849,14 @@ async function toggleTableManagement(enabled) {
         // Update global state
         tableManagementEnabled = enabled;
 
+        // Show/hide table configuration section
+        if (enabled) {
+            await loadTableConfigForManagement();
+            showTableConfigSection();
+        } else {
+            hideTableConfigSection();
+        }
+
         // Show success message
         const message = enabled ?
             'Table management enabled! Please refresh the page to see table features.' :
@@ -9951,10 +10908,421 @@ async function initializeTableManagementToggle() {
         // Update global state
         tableManagementEnabled = !!config.table_management_enabled;
 
+        // Load table configuration if enabled
+        if (tableManagementEnabled) {
+            await loadTableConfigForManagement();
+            showTableConfigSection();
+        }
+
     } catch (error) {
         console.error('Error initializing table management toggle:', error);
     }
 }
+
+// ==================================================================================
+// TABLE CONFIGURATION CRUD FUNCTIONS
+// ==================================================================================
+
+/**
+ * Show the table configuration section
+ */
+function showTableConfigSection() {
+    const section = document.getElementById('tableConfigSection');
+    if (section) {
+        section.style.display = 'block';
+    }
+}
+
+/**
+ * Hide the table configuration section
+ */
+function hideTableConfigSection() {
+    const section = document.getElementById('tableConfigSection');
+    if (section) {
+        section.style.display = 'none';
+    }
+}
+
+/**
+ * Load table configuration for management UI
+ */
+async function loadTableConfigForManagement() {
+    try {
+        const response = await fetch('/api/tables');
+        if (!response.ok) {
+            throw new Error('Failed to load table configuration');
+        }
+
+        const data = await response.json();
+        console.log('Loaded table config data:', data); // Debug logging
+        if (data.status === 'success') {
+            // Backend returns data.tables directly, not data.config.tables
+            renderTableConfigList(data.tables || {});
+        }
+    } catch (error) {
+        console.error('Error loading table configuration:', error);
+        showToast('Failed to load table configuration', 'error', 3000);
+    }
+}
+
+/**
+ * Render the table configuration list
+ */
+function renderTableConfigList(tables) {
+    const listContainer = document.getElementById('tableConfigList');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = '';
+
+    const tableIds = Object.keys(tables);
+    if (tableIds.length === 0) {
+        listContainer.innerHTML = `
+            <div class="text-center text-gray-400 py-4 text-sm">
+                <i class="fas fa-chair text-2xl mb-2"></i>
+                <p>No tables configured yet. Click "Add Table" to get started.</p>
+            </div>
+        `;
+        return;
+    }
+
+    tableIds.forEach(tableId => {
+        const table = tables[tableId];
+        const tableCard = createTableConfigCard(tableId, table);
+        listContainer.appendChild(tableCard);
+    });
+}
+
+/**
+ * Create a table configuration card element
+ */
+function createTableConfigCard(tableId, table) {
+    const card = document.createElement('div');
+    card.className = 'bg-white border border-gray-300 rounded-lg p-3 flex items-center justify-between hover:border-gray-400 transition';
+    card.innerHTML = `
+        <div class="flex items-center gap-3 flex-1">
+            <div class="bg-gray-700 text-white w-10 h-10 rounded flex items-center justify-center font-semibold">
+                <i class="fas fa-chair"></i>
+            </div>
+            <div class="flex-1">
+                <div class="font-medium text-gray-800">${table.name || 'Table ' + tableId}</div>
+                <div class="text-xs text-gray-500">
+                    <i class="fas fa-users mr-1"></i>${table.seats || 0} seats
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="editTableConfig('${tableId}')" class="text-blue-600 hover:text-blue-800 px-2 py-1 text-sm" title="Edit">
+                <i class="fas fa-edit"></i>
+            </button>
+            <button onclick="deleteTableConfig('${tableId}')" class="text-red-600 hover:text-red-800 px-2 py-1 text-sm" title="Delete">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+    return card;
+}
+
+/**
+ * Open the add table modal
+ */
+function addNewTable() {
+    // Clear the form
+    const nameInput = document.getElementById('newTableName');
+    const seatsInput = document.getElementById('newTableSeats');
+
+    if (nameInput) nameInput.value = '';
+    if (seatsInput) seatsInput.value = '4';
+
+    // Show the modal
+    const modal = document.getElementById('addTableModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        // Focus on the name input
+        setTimeout(() => {
+            if (nameInput) nameInput.focus();
+        }, 100);
+    }
+}
+
+/**
+ * Close the add table modal
+ */
+function closeAddTableModal() {
+    const modal = document.getElementById('addTableModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+/**
+ * Save the new table from the modal
+ */
+async function saveNewTable() {
+    const nameInput = document.getElementById('newTableName');
+    const seatsInput = document.getElementById('newTableSeats');
+
+    const tableName = nameInput ? nameInput.value.trim() : '';
+    const seats = seatsInput ? parseInt(seatsInput.value) : 0;
+
+    // Validation
+    if (!tableName) {
+        showToast('Please enter a table name', 'error', 3000);
+        if (nameInput) nameInput.focus();
+        return;
+    }
+
+    if (isNaN(seats) || seats <= 0 || seats > 20) {
+        showToast('Please enter a valid seat count (1-20)', 'error', 3000);
+        if (seatsInput) seatsInput.focus();
+        return;
+    }
+
+    try {
+        // Load current configuration
+        const response = await fetch('/api/tables');
+        if (!response.ok) {
+            throw new Error('Failed to load current configuration');
+        }
+
+        const data = await response.json();
+        // Backend returns data.tables and data.settings directly
+        const currentConfig = {
+            tables: data.tables || {},
+            settings: data.settings || {}
+        };
+
+        // Generate new table ID (find next available number)
+        const existingIds = Object.keys(currentConfig.tables).map(id => parseInt(id)).filter(id => !isNaN(id));
+        const nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+
+        // Add new table
+        currentConfig.tables[nextId.toString()] = {
+            name: tableName,
+            seats: seats,
+            status: 'available'
+        };
+
+        // Save configuration
+        await saveTableConfiguration(currentConfig);
+
+        showToast('Table added successfully!', 'success', 2000);
+        closeAddTableModal();
+        await loadTableConfigForManagement();
+
+    } catch (error) {
+        console.error('Error adding table:', error);
+        showToast('Failed to add table. Please try again.', 'error', 3000);
+    }
+}
+
+/**
+ * Edit table configuration
+ */
+async function editTableConfig(tableId) {
+    try {
+        // Load current configuration
+        const response = await fetch('/api/tables');
+        if (!response.ok) {
+            throw new Error('Failed to load current configuration');
+        }
+
+        const data = await response.json();
+        // Backend returns data.tables and data.settings directly
+        const currentConfig = {
+            tables: data.tables || {},
+            settings: data.settings || {}
+        };
+        const table = currentConfig.tables[tableId];
+
+        if (!table) {
+            showToast('Table not found', 'error', 3000);
+            return;
+        }
+
+        // Open the edit modal with current table data
+        openEditTableModal(tableId, table);
+
+    } catch (error) {
+        console.error('Error loading table for edit:', error);
+        showToast('Failed to load table data. Please try again.', 'error', 3000);
+    }
+}
+
+/**
+ * Open the edit table modal and populate with current data
+ */
+function openEditTableModal(tableId, tableData) {
+    // Get form elements
+    const tableIdInput = document.getElementById('editTableId');
+    const nameInput = document.getElementById('editTableName');
+    const seatsInput = document.getElementById('editTableSeats');
+
+    // Populate form with current data
+    if (tableIdInput) tableIdInput.value = tableId;
+    if (nameInput) nameInput.value = tableData.name || '';
+    if (seatsInput) seatsInput.value = tableData.seats || 4;
+
+    // Show the modal
+    const modal = document.getElementById('editTableModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        // Focus on the name input
+        setTimeout(() => {
+            if (nameInput) nameInput.focus();
+        }, 100);
+    }
+}
+
+/**
+ * Close the edit table modal
+ */
+function closeEditTableModal() {
+    const modal = document.getElementById('editTableModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+/**
+ * Save the edited table from the modal
+ */
+async function saveEditedTable() {
+    const tableIdInput = document.getElementById('editTableId');
+    const nameInput = document.getElementById('editTableName');
+    const seatsInput = document.getElementById('editTableSeats');
+
+    const tableId = tableIdInput ? tableIdInput.value : '';
+    const tableName = nameInput ? nameInput.value.trim() : '';
+    const seats = seatsInput ? parseInt(seatsInput.value) : 0;
+
+    // Validation
+    if (!tableName) {
+        showToast('Please enter a table name', 'error', 3000);
+        if (nameInput) nameInput.focus();
+        return;
+    }
+
+    if (isNaN(seats) || seats <= 0 || seats > 20) {
+        showToast('Please enter a valid seat count (1-20)', 'error', 3000);
+        if (seatsInput) seatsInput.focus();
+        return;
+    }
+
+    try {
+        // Load current configuration
+        const response = await fetch('/api/tables');
+        if (!response.ok) {
+            throw new Error('Failed to load current configuration');
+        }
+
+        const data = await response.json();
+        // Backend returns data.tables and data.settings directly
+        const currentConfig = {
+            tables: data.tables || {},
+            settings: data.settings || {}
+        };
+
+        const table = currentConfig.tables[tableId];
+        if (!table) {
+            showToast('Table not found', 'error', 3000);
+            closeEditTableModal();
+            return;
+        }
+
+        // Update table
+        currentConfig.tables[tableId] = {
+            ...table,
+            name: tableName,
+            seats: seats
+        };
+
+        // Save configuration
+        await saveTableConfiguration(currentConfig);
+
+        showToast('Table updated successfully!', 'success', 2000);
+        closeEditTableModal();
+        await loadTableConfigForManagement();
+
+    } catch (error) {
+        console.error('Error saving edited table:', error);
+        showToast('Failed to update table. Please try again.', 'error', 3000);
+    }
+}
+
+/**
+ * Delete table configuration
+ */
+async function deleteTableConfig(tableId) {
+    // Confirm deletion
+    if (!confirm('Are you sure you want to delete this table? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        // Load current configuration
+        const response = await fetch('/api/tables');
+        if (!response.ok) {
+            throw new Error('Failed to load current configuration');
+        }
+
+        const data = await response.json();
+        // Backend returns data.tables and data.settings directly
+        const currentConfig = {
+            tables: data.tables || {},
+            settings: data.settings || {}
+        };
+
+        if (!currentConfig.tables[tableId]) {
+            showToast('Table not found', 'error', 3000);
+            return;
+        }
+
+        // Remove table
+        delete currentConfig.tables[tableId];
+
+        // Save configuration
+        await saveTableConfiguration(currentConfig);
+
+        showToast('Table deleted successfully!', 'success', 2000);
+        await loadTableConfigForManagement();
+
+    } catch (error) {
+        console.error('Error deleting table:', error);
+        showToast('Failed to delete table. Please try again.', 'error', 3000);
+    }
+}
+
+/**
+ * Save table configuration to backend
+ */
+async function saveTableConfiguration(config) {
+    const response = await fetch('/api/tables/configure', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(config)
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to save table configuration');
+    }
+
+    const result = await response.json();
+    if (result.status !== 'success') {
+        throw new Error(result.message || 'Failed to save table configuration');
+    }
+
+    return result;
+}
+
+// ==================================================================================
+// END TABLE CONFIGURATION CRUD FUNCTIONS
+// ==================================================================================
 
 // Initialize toggle on page load and when management modal opens
 document.addEventListener('DOMContentLoaded', () => {
@@ -9987,13 +11355,11 @@ document.addEventListener('DOMContentLoaded', () => {
 // END TABLE MANAGEMENT TOGGLE FUNCTIONALITY
 // =============================================================================
 
-// =============================================================================
-// STAFF TABLE MANAGEMENT UI FUNCTIONALITY
-// =============================================================================
-
-let currentTableData = null;
-let currentTableId = null;
-let allTablesData = [];
+// Note: currentTableData, currentTableId, and allTablesData are already declared at top of file (lines 44-45)
+// Commenting out duplicate declarations to avoid syntax error
+// let currentTableData = null;
+// let currentTableId = null;
+// let allTablesData = [];
 let currentTableFilter = 'all';
 
 // Helper functions for table management

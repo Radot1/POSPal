@@ -27,13 +27,14 @@ import {
   retryOperation,
 } from './utils.js';
 
-import { 
-  getWelcomeEmailTemplate, 
+import {
+  getWelcomeEmailTemplate,
   getPaymentFailureEmailTemplate,
   getImmediateSuspensionEmailTemplate,
   getImmediateReactivationEmailTemplate,
   getRenewalReminderEmailTemplate,
-  getMachineSwitchEmailTemplate
+  getMachineSwitchEmailTemplate,
+  getLicenseDisconnectionEmailTemplate
 } from './email-templates.js';
 
 /**
@@ -100,6 +101,10 @@ export default {
         return handleCustomerPortal(request, env);
       case '/create-portal-session':
         return handleCreatePortalSession(request, env);
+      case '/check-duplicate':
+        return handleCheckDuplicate(request, env);
+      case '/recover-license':
+        return handleRecoverLicense(request, env);
       case '/health':
         return handleHealthCheck(request, env);
       default:
@@ -1344,7 +1349,10 @@ async function handleLicenseValidation(request, env) {
     
     // Get detailed subscription status for hybrid validation
     const detailedStatus = getDetailedSubscriptionStatus(customer);
-    
+
+    // IMPORTANT: Accept all licenses that exist in database (even inactive)
+    // Feature restrictions will be handled by frontend based on subscription status
+    // This supports seasonal businesses that cancel and reactivate
     if (!detailedStatus.isActive) {
       // Log validation attempt for inactive subscription
       await logValidationEvent(env.DB, customer.id, 'inactive_validation', {
@@ -1353,12 +1361,22 @@ async function handleLicenseValidation(request, env) {
         subscriptionStatus: customer.subscription_status,
         daysSinceLastSeen: detailedStatus.daysSinceLastSeen
       });
-      
-      return createValidationResponse({ 
-        valid: false, 
-        error: 'Subscription is not active',
-        errorCode: 'SUBSCRIPTION_INACTIVE',
-        subscriptionInfo: detailedStatus
+
+      // Return success with inactive subscription info - let frontend control features
+      console.log(`License validated for inactive subscription: ${email}, status: ${customer.subscription_status}`);
+
+      return createValidationResponse({
+        valid: true,
+        customerName: customer.name || customer.email.split('@')[0],
+        customerId: customer.id,
+        subscriptionInfo: detailedStatus,
+        machineChanged: false,
+        subscriptionWarning: 'Subscription is not active. Some features may be restricted.',
+        performance: {
+          responseTime: Date.now() - startTime,
+          cached: false,
+          validationRecommendation: detailedStatus.validationRecommendation
+        }
       }, 300); // Cache for 5 minutes
     }
     
@@ -1706,6 +1724,43 @@ async function sendMachineSwitchEmail(env, customerId, email, name) {
 }
 
 /**
+ * Send license disconnection confirmation email
+ */
+async function sendLicenseDisconnectionEmail(env, customerId, email, name, unlockToken) {
+  try {
+    const { subject, html } = getLicenseDisconnectionEmailTemplate(name, unlockToken, email);
+
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'license_disconnection', email, subject);
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal License Management <noreply@pospal.gr>',
+        to: [email],
+        subject: subject,
+        html: html,
+      }),
+    });
+
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`License disconnection email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send disconnection email:`, error);
+    }
+
+  } catch (error) {
+    console.error('License disconnection email error:', error);
+  }
+}
+
+/**
  * Handle session start (register new active session)
  */
 async function handleSessionStart(request, env) {
@@ -1833,31 +1888,51 @@ async function handleSessionHeartbeat(request, env) {
  */
 async function handleSessionEnd(request, env) {
   try {
-    const { sessionId } = await request.json();
-    
+    const { sessionId, sendEmail } = await request.json();
+
     if (!sessionId) {
-      return createResponse({ 
-        success: false, 
-        error: 'Missing session ID' 
+      return createResponse({
+        success: false,
+        error: 'Missing session ID'
       }, 400);
     }
-    
+
+    // Get session and customer info BEFORE ending session (for email)
+    const session = await env.DB.prepare(`
+      SELECT s.customer_id, c.email, c.name, c.unlock_token
+      FROM active_sessions s
+      JOIN customers c ON s.customer_id = c.id
+      WHERE s.session_id = ? AND s.status = 'active'
+    `).bind(sessionId).first();
+
     // Mark session as ended
     await env.DB.prepare(`
-      UPDATE active_sessions 
+      UPDATE active_sessions
       SET status = 'ended', last_heartbeat = datetime('now')
       WHERE session_id = ? AND status = 'active'
     `).bind(sessionId).run();
-    
-    return createResponse({ 
-      success: true
+
+    // Send email notification if requested and session was found
+    if (sendEmail && session) {
+      await sendLicenseDisconnectionEmail(
+        env,
+        session.customer_id,
+        session.email,
+        session.name || 'Customer',
+        session.unlock_token
+      );
+    }
+
+    return createResponse({
+      success: true,
+      emailSent: sendEmail && session ? true : false
     });
-    
+
   } catch (error) {
     console.error('Session end error:', error);
-    return createResponse({ 
-      success: false, 
-      error: 'Failed to end session' 
+    return createResponse({
+      success: false,
+      error: 'Failed to end session'
     }, 500);
   }
 }
@@ -2363,6 +2438,165 @@ async function handleCreateCheckoutSession(request, env) {
   } catch (error) {
     console.error('Checkout session creation error:', error);
     return createResponse({ error: 'Failed to create checkout session' }, 500);
+  }
+}
+
+/**
+ * Handle email duplicate check
+ */
+async function handleCheckDuplicate(request, env) {
+  try {
+    const { email } = await request.json();
+
+    if (!email || !isValidEmail(email)) {
+      return createResponse({ error: 'Valid email is required' }, 400);
+    }
+
+    // Check if customer exists
+    const customer = await env.DB.prepare(`
+      SELECT id, email, subscription_status, stripe_customer_id FROM customers WHERE email = ?
+    `).bind(email.toLowerCase()).first();
+
+    if (!customer) {
+      // Email not found - available for new subscription
+      return createResponse({
+        isDuplicate: false,
+        isReturningCustomer: false,
+        message: 'Email available for new subscription'
+      });
+    }
+
+    // Customer exists - check if they have active subscription
+    if (customer.subscription_status === 'active') {
+      // Active subscription - block new signup, offer portal
+      const stripe = {
+        async post(url, data) {
+          const response = await fetch(`https://api.stripe.com/v1${url}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(data).toString(),
+          });
+          return response.json();
+        }
+      };
+
+      let portalUrl = null;
+      if (customer.stripe_customer_id && customer.stripe_customer_id !== 'null') {
+        try {
+          const portalSession = await stripe.post('/billing_portal/sessions', {
+            customer: customer.stripe_customer_id,
+            return_url: 'http://127.0.0.1:5000'
+          });
+
+          if (!portalSession.error) {
+            portalUrl = portalSession.url;
+          }
+        } catch (portalError) {
+          console.error('Failed to generate portal URL:', portalError);
+        }
+      }
+
+      return createResponse({
+        isDuplicate: true,
+        isReturningCustomer: false,
+        subscriptionStatus: 'active',
+        portalUrl: portalUrl,
+        message: 'This email already has an active subscription'
+      });
+    } else {
+      // Inactive subscription - allow resubscription
+      return createResponse({
+        isDuplicate: true,
+        isReturningCustomer: true,
+        subscriptionStatus: customer.subscription_status,
+        message: 'Welcome back! You can resubscribe with this email'
+      });
+    }
+
+  } catch (error) {
+    console.error('Check duplicate error:', error);
+    return createResponse({ error: 'Failed to check email' }, 500);
+  }
+}
+
+/**
+ * Handle license recovery (resend unlock token to email)
+ */
+async function handleRecoverLicense(request, env) {
+  try {
+    const { email } = await request.json();
+
+    if (!email || !isValidEmail(email)) {
+      return createResponse({ error: 'Valid email is required' }, 400);
+    }
+
+    // Look up customer by email
+    const customer = await env.DB.prepare(`
+      SELECT id, email, name, unlock_token, subscription_status FROM customers WHERE email = ?
+    `).bind(email.toLowerCase()).first();
+
+    if (!customer) {
+      // Don't reveal whether email exists or not (security)
+      return createResponse({
+        success: true,
+        message: 'If this email exists in our system, you will receive your license key shortly.'
+      });
+    }
+
+    // Send recovery email with unlock token
+    try {
+      const { subject, html } = getWelcomeEmailTemplate(
+        customer.name || 'Customer',
+        customer.unlock_token,
+        customer.email
+      );
+
+      const emailLogId = await logEmailDelivery(env.DB, customer.id, 'license_recovery', customer.email, 'License Key Recovery');
+
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'POSPal <noreply@pospal.gr>',
+          to: [customer.email],
+          subject: 'Your POSPal License Key',
+          html: html,
+        }),
+      });
+
+      if (response.ok) {
+        await updateEmailStatus(env.DB, emailLogId, 'delivered');
+        console.log(`License recovery email sent to ${customer.email}`);
+      } else {
+        const error = await response.text();
+        await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+        console.error(`Failed to send recovery email to ${customer.email}:`, error);
+      }
+
+      // Log recovery attempt
+      await logAuditEvent(env.DB, customer.id, 'license_recovery_requested', {
+        requestedAt: new Date().toISOString()
+      });
+
+    } catch (emailError) {
+      console.error('Recovery email error:', emailError);
+      // Still return success to user (don't reveal internal errors)
+    }
+
+    return createResponse({
+      success: true,
+      message: 'If this email exists in our system, you will receive your license key shortly.'
+    });
+
+  } catch (error) {
+    console.error('License recovery error:', error);
+    return createResponse({ error: 'Failed to process recovery request' }, 500);
   }
 }
 

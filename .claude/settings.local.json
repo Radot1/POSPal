@@ -95,7 +95,13 @@
       "Read(//c/Users/bzoum/OneDrive/Projects/MOLD for House/Mold detailArounfWindowsPerimeter/**)",
       "Bash(cat:*)",
       "Bash(del \"C:\\PROJECTS\\POSPal\\POSPal\\data\\app_instance.lock\")",
-      "Bash(del table_modal_fix_test.html verify_modal_fix.js)"
+      "Bash(del table_modal_fix_test.html verify_modal_fix.js)",
+      "Read(//c/Users/bzoum/Pictures/Screenshots/**)",
+      "Bash(npx wrangler deployments list:*)",
+      "Read(//c/Users/**)",
+      "Bash(.build.bat)",
+      "Bash(npx wrangler secret:*)",
+      "Bash(npx wrangler tail:*)"
     ],
     "deny": [],
     "ask": []

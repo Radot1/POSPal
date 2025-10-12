@@ -142,13 +142,13 @@ export async function logEmailDelivery(db, customerId, emailType, recipientEmail
 export async function updateEmailStatus(db, emailLogId, status, errorMessage = null) {
   try {
     const stmt = db.prepare(`
-      UPDATE email_log 
-      SET status = ?, error_message = ?, delivered_at = datetime('now')
+      UPDATE email_log
+      SET delivery_status = ?, error_message = ?, delivered_at = datetime('now')
       WHERE id = ?
     `);
-    
+
     await stmt.bind(status, errorMessage, emailLogId).run();
-    
+
   } catch (error) {
     console.error('Failed to update email status:', error);
   }
@@ -170,9 +170,20 @@ export async function hashMachineFingerprint(fingerprint) {
  * Enhanced for hybrid validation with detailed status information
  */
 export function isSubscriptionActive(customer) {
-  // Only check subscription status - no payment failure grace period
-  // This ensures immediate suspension/reactivation based on payment status
-  return customer.subscription_status === 'active';
+  // Check subscription status AND billing period expiration
+  // No payment failure grace period - immediate suspension/reactivation
+  if (customer.subscription_status !== 'active') {
+    return false;
+  }
+
+  // CRITICAL: Also check if billing period has expired
+  const currentPeriodEnd = customer.current_period_end ? new Date(customer.current_period_end) : null;
+  if (currentPeriodEnd && currentPeriodEnd < new Date()) {
+    console.warn(`Subscription ${customer.subscription_id} billing period expired (${currentPeriodEnd.toISOString()})`);
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -195,9 +206,30 @@ export function getDetailedSubscriptionStatus(customer) {
     daysUntilRenewal = Math.ceil((nextBillingDate - now) / (1000 * 60 * 60 * 24));
   }
 
+  // CRITICAL FIX: Check if billing period has expired
+  // A subscription can have subscription_status='active' in the database
+  // but if current_period_end < now, it means the billing period has expired
+  // and the subscription should be treated as inactive/expired
+  let isActiveStatus = customer.subscription_status === 'active';
+  let statusOverride = null;
+  let billingPeriodExpired = false;
+
+  if (currentPeriodEnd && currentPeriodEnd < now) {
+    billingPeriodExpired = true;
+
+    // If subscription shows as active but billing period has expired,
+    // this indicates a payment failure or subscription that hasn't been renewed
+    if (isActiveStatus) {
+      isActiveStatus = false;
+      statusOverride = 'expired';
+      console.warn(`Subscription ${customer.subscription_id} (${customer.email}) has expired billing period. Period ended: ${currentPeriodEnd.toISOString()}, Current time: ${now.toISOString()}`);
+    }
+  }
+
   return {
-    isActive: customer.subscription_status === 'active',
-    status: customer.subscription_status,
+    isActive: isActiveStatus,
+    status: statusOverride || customer.subscription_status,
+    billingPeriodExpired: billingPeriodExpired,
     subscriptionId: customer.subscription_id,
     lastSeen: lastSeen ? lastSeen.toISOString() : null,
     lastValidation: lastValidation ? lastValidation.toISOString() : null,
