@@ -133,8 +133,6 @@ pyinstaller ^
     --add-data "..\POSPal_Demo.html;." ^
     --add-data "..\demo_generator.html;." ^
     --add-data "..\customer-portal.html;." ^
-    --add-data "..\success.html;." ^
-    --add-data "..\payment-failed.html;." ^
     --add-data "..\account.html;." ^
     --add-data "..\managementComponent.html;." ^
     --add-data "..\managementComponent.js;." ^
@@ -177,8 +175,6 @@ if defined BUILD_ONEDIR (
         --add-data "..\POSPal_Demo.html;." ^
         --add-data "..\demo_generator.html;." ^
             --add-data "..\customer-portal.html;." ^
-        --add-data "..\success.html;." ^
-        --add-data "..\payment-failed.html;." ^
         --add-data "..\account.html;." ^
         --add-data "..\managementComponent.html;." ^
         --add-data "..\managementComponent.js;." ^

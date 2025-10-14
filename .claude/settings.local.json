@@ -101,7 +101,8 @@
       "Read(//c/Users/**)",
       "Bash(.build.bat)",
       "Bash(npx wrangler secret:*)",
-      "Bash(npx wrangler tail:*)"
+      "Bash(npx wrangler tail:*)",
+      "Bash(del success.html payment-failed.html)"
     ],
     "deny": [],
     "ask": []

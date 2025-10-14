@@ -308,6 +308,83 @@
 
             // Initial QR
             updateQr();
+
+            // Handle payment success/cancellation from Stripe Checkout
+            const urlParams = new URLSearchParams(window.location.search);
+            const paymentSuccess = urlParams.get('payment_success');
+            const paymentCancelled = urlParams.get('payment_cancelled');
+
+            if (paymentSuccess === 'true') {
+                console.log('Payment successful - showing success notification');
+
+                // Set flag to force license revalidation on next page load
+                localStorage.setItem('pospal_payment_completed', Date.now().toString());
+
+                // Clear any cached license data to force fresh validation
+                localStorage.removeItem('pospal_license_data');
+                localStorage.removeItem('pospal_license_timestamp');
+
+                // Create and show success toast
+                const toast = document.createElement('div');
+                toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-4 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+                toast.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div>
+                            <div class="font-semibold">Subscription Activated!</div>
+                            <div class="text-sm opacity-90">Welcome back! Your subscription is now active.</div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(toast);
+
+                // Remove toast after 5 seconds
+                setTimeout(() => {
+                    toast.style.transform = 'translateX(400px)';
+                    toast.style.opacity = '0';
+                    setTimeout(() => toast.remove(), 300);
+                }, 5000);
+
+                // Clean URL
+                const cleanUrl = new URL(window.location);
+                cleanUrl.searchParams.delete('payment_success');
+                cleanUrl.searchParams.delete('session_id');
+                window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+            }
+
+            if (paymentCancelled === 'true') {
+                console.log('Payment cancelled by user');
+
+                // Create and show warning toast
+                const toast = document.createElement('div');
+                toast.className = 'fixed top-4 right-4 bg-orange-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 transform transition-all duration-300';
+                toast.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                        <div>
+                            <div class="font-semibold">Payment Cancelled</div>
+                            <div class="text-sm opacity-90">Your subscription remains inactive.</div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(toast);
+
+                // Remove toast after 4 seconds
+                setTimeout(() => {
+                    toast.style.transform = 'translateX(400px)';
+                    toast.style.opacity = '0';
+                    setTimeout(() => toast.remove(), 300);
+                }, 4000);
+
+                // Clean URL
+                const cleanUrl = new URL(window.location);
+                cleanUrl.searchParams.delete('payment_cancelled');
+                window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+            }
         })();
     </script>
 

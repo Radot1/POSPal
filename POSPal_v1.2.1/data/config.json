@@ -1,0 +1,22 @@
+{
+    "printer_name": "Microsoft Print to PDF",
+    "port": 5000,
+    "management_password": "9999",
+    "cut_after_print": true,
+    "copies_per_order": 2,
+    "language": "en",
+    "enable_multi_port": false,
+    "fallback_ports": [
+        8080,
+        3000,
+        8000,
+        9000
+    ],
+    "cloudflare_api_base": "https://menus-api.bzoumboulis.workers.dev/",
+    "cloudflare_api_key": "cf_menu_27d75491367e9b2680f0270fdd82e3433dc0d62c7dc8c12ddd553906d1e54fd7",
+    "cloudflare_api_key_enc": "",
+    "cloudflare_store_slug": "cafetest",
+    "cloudflare_store_slug_locked": false,
+    "cloudflare_public_base": "https://menus-5ar.pages.dev/",
+    "table_management_enabled": false
+}

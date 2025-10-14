@@ -550,14 +550,24 @@ const FrontendLicenseManager = {
                 // License exists (active or inactive)
                 console.log(`Cached license found with status: ${licenseData.licenseStatus}`);
 
+                // If force validation is requested, always fetch fresh data from server
+                if (forceValidation) {
+                    console.log('Force validation requested - fetching fresh data from server');
+                    const freshValidation = await this.performBackgroundValidation(licenseData);
+                    if (freshValidation) {
+                        this.isValidating = false;
+                        return this.currentValidationState;
+                    }
+                }
+
                 if (licenseData.licenseStatus === 'active') {
                     // Show active status immediately from cache
                     this.updateUIForActiveStatus(licenseData);
 
-                    // Validate in background if online
-                    if (this.cache.isOnline) {
+                    // Validate in background if online (unless already forced)
+                    if (this.cache.isOnline && !forceValidation) {
                         this.performBackgroundValidation(licenseData);
-                    } else {
+                    } else if (!this.cache.isOnline) {
                         this.handleOfflineGracePeriod(licenseData);
                     }
                 } else {
@@ -1293,8 +1303,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Starting clock...');
     startClock();
     console.log('Initializing unified license validation...');
-    FrontendLicenseManager.validateLicense();
-    
+
+    // Check if user just completed a payment - force fresh validation if so
+    const paymentCompleted = localStorage.getItem('pospal_payment_completed');
+    if (paymentCompleted) {
+        console.log('Payment recently completed - forcing fresh license validation');
+        localStorage.removeItem('pospal_payment_completed');
+        // Clear cached license data to ensure fresh validation
+        localStorage.removeItem('pospal_license_data');
+        localStorage.removeItem('pospal_license_timestamp');
+        await FrontendLicenseManager.validateLicense(true); // Force validation
+    } else {
+        FrontendLicenseManager.validateLicense();
+    }
+
     // Check for automatic activation after payment
     console.log('Checking for automatic license activation...');
     await checkAutomaticActivation();
@@ -6567,7 +6589,11 @@ async function loadLicenseInfo() {
     console.log('Loading license information for display...');
 
     try {
-        // Get license data from storage
+        // Force a license validation to get the latest status from the server
+        console.log('Forcing license validation to get latest status...');
+        await FrontendLicenseManager.forceValidation();
+
+        // Get license data from storage (now updated)
         const licenseData = LicenseStorage.getLicenseData();
         console.log('License data retrieved:', licenseData);
 
@@ -7457,11 +7483,50 @@ function cleanPortalReturnUrl() {
 
 // Initialize portal return handling when page loads
 function initializePortalReturnHandling() {
+    // Check for payment success/cancellation from Stripe Checkout
+    const urlParams = new URLSearchParams(window.location.search);
+    const paymentSuccess = urlParams.get('payment_success');
+    const paymentCancelled = urlParams.get('payment_cancelled');
+
+    if (paymentSuccess === 'true') {
+        console.log('Payment successful - showing success toast and refreshing license');
+
+        // Show success toast
+        showToast('🎉 Subscription activated! Welcome back!', 'success', 5000);
+
+        // Force license validation to get updated status
+        setTimeout(async () => {
+            await FrontendLicenseManager.forceValidation();
+
+            // Open License Management tab to show new active status
+            const licenseTab = document.querySelector('[data-tab="license"]');
+            if (licenseTab) {
+                licenseTab.click();
+            }
+        }, 1000);
+
+        // Clean URL by removing payment parameters
+        const cleanUrl = new URL(window.location);
+        cleanUrl.searchParams.delete('payment_success');
+        cleanUrl.searchParams.delete('session_id');
+        window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+    }
+
+    if (paymentCancelled === 'true') {
+        console.log('Payment cancelled by user');
+        showToast('Payment cancelled. Your subscription remains inactive.', 'warning', 4000);
+
+        // Clean URL
+        const cleanUrl = new URL(window.location);
+        cleanUrl.searchParams.delete('payment_cancelled');
+        window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+    }
+
     // Handle return immediately if URL indicates portal return
     if (handlePortalReturn()) {
         console.log('Handled portal return successfully');
     }
-    
+
     // Also listen for hash changes in case of SPA routing
     window.addEventListener('hashchange', () => {
         handlePortalReturn();

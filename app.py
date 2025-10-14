@@ -2147,6 +2147,10 @@ def update_config():
 def serve_index():
     return send_from_directory('.', 'UISelect.html')
 
+@app.route('/UISelect.html')
+def serve_uiselect():
+    return send_from_directory('.', 'UISelect.html')
+
 @app.route('/POSPal.html')
 def serve_pospal():
     return send_from_directory('.', 'POSPal.html')
@@ -2160,14 +2164,6 @@ def serve_pospal_desktop():
 def serve_customer_portal():
     return send_from_directory('.', 'customer-portal.html')
 
-
-@app.route('/success.html')
-def serve_success():
-    return send_from_directory('.', 'success.html')
-
-@app.route('/payment-failed.html')
-def serve_payment_failed():
-    return send_from_directory('.', 'payment-failed.html')
 
 @app.route('/account.html')
 def serve_account():

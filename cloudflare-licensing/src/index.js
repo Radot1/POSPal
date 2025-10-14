@@ -993,38 +993,48 @@ async function handleCheckoutCompleted(event, env) {
   }
 
   // Fetch subscription details from Stripe to get billing dates
-  let billingData = {};
+  // Initialize with default values (30 days from now) as fallback
+  const now = new Date();
+  const monthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  let billingData = {
+    current_period_start: now.toISOString(),
+    current_period_end: monthFromNow.toISOString(),
+    next_billing_date: monthFromNow.toISOString()
+  };
+
   if (subscriptionId) {
     try {
       // For test webhooks, use mock billing data instead of calling Stripe API
       if (subscriptionId.includes('test_phase2')) {
-        const now = new Date();
-        const monthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-        billingData = {
-          current_period_start: now.toISOString(),
-          current_period_end: monthFromNow.toISOString(),
-          next_billing_date: monthFromNow.toISOString()
-        };
-
-        console.log('Test billing data created:', billingData);
+        console.log('Using default billing data for test subscription');
       } else {
         const stripe = createStripeHelper(env);
         const subscription = await stripe.get(`/subscriptions/${subscriptionId}`);
 
-        if (!subscription.error) {
-          billingData = {
-            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            next_billing_date: new Date(subscription.current_period_end * 1000).toISOString()
-          };
+        if (!subscription.error && subscription.current_period_start && subscription.current_period_end) {
+          // Validate timestamps before creating dates
+          const periodStart = subscription.current_period_start * 1000;
+          const periodEnd = subscription.current_period_end * 1000;
 
-          console.log('Billing data captured:', billingData);
+          if (periodStart > 0 && periodEnd > 0) {
+            billingData = {
+              current_period_start: new Date(periodStart).toISOString(),
+              current_period_end: new Date(periodEnd).toISOString(),
+              next_billing_date: new Date(periodEnd).toISOString()
+            };
+
+            console.log('Billing data captured from Stripe:', billingData);
+          } else {
+            console.warn('Invalid timestamp values in subscription, using defaults');
+          }
+        } else {
+          console.warn('Subscription fetch returned error or missing data, using defaults');
         }
       }
     } catch (error) {
       console.error('Failed to fetch subscription billing data:', error);
-      // Continue without billing data - it can be backfilled later
+      console.log('Using default billing data as fallback');
     }
   }
 
@@ -2402,8 +2412,8 @@ async function handleCreateCheckoutSession(request, env) {
       'line_items[0][price]': env.STRIPE_PRICE_ID || 'price_1S26QQ1HM7SuDGcMAqFI7r9C',
       'line_items[0][quantity]': '1',
       mode: 'subscription',
-      success_url: `${baseUrl}/success.html?session_id={CHECKOUT_SESSION_ID}&email=${encodeURIComponent(email)}`,
-      cancel_url: `${baseUrl}/payment-failed.html?reason=cancelled`,
+      success_url: `${baseUrl}/UISelect.html?payment_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/UISelect.html?payment_cancelled=true`,
       customer_email: email,
       'metadata[restaurant_name]': restaurantName,
       'metadata[customer_name]': name,
