@@ -118,6 +118,7 @@ pyinstaller ^
     --name "POSPal" ^
     --clean ^
     --noupx ^
+    --collect-data limits ^
     --hidden-import dotenv ^
     --hidden-import python-dotenv ^
     --hidden-import cryptography ^
@@ -127,6 +128,10 @@ pyinstaller ^
     --hidden-import cryptography.hazmat.primitives.kdf ^
     --hidden-import cryptography.hazmat.primitives.kdf.pbkdf2 ^
     --hidden-import cryptography.hazmat.backends ^
+    --hidden-import limits.storage.memory ^
+    --hidden-import limits.strategies ^
+    --exclude-module asyncio.windows_events ^
+    --exclude-module asyncio.windows_utils ^
     --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
     --add-data "..\POSPalDesktop.html;." ^
@@ -160,21 +165,26 @@ if defined BUILD_ONEDIR (
         --name "POSPal" ^
         --clean ^
         --noupx ^
+        --collect-data limits ^
         --hidden-import dotenv ^
-    --hidden-import python-dotenv ^
-    --hidden-import cryptography ^
-    --hidden-import cryptography.fernet ^
-    --hidden-import cryptography.hazmat ^
-    --hidden-import cryptography.hazmat.primitives ^
-    --hidden-import cryptography.hazmat.primitives.kdf ^
-    --hidden-import cryptography.hazmat.primitives.kdf.pbkdf2 ^
-    --hidden-import cryptography.hazmat.backends ^
+        --hidden-import python-dotenv ^
+        --hidden-import cryptography ^
+        --hidden-import cryptography.fernet ^
+        --hidden-import cryptography.hazmat ^
+        --hidden-import cryptography.hazmat.primitives ^
+        --hidden-import cryptography.hazmat.primitives.kdf ^
+        --hidden-import cryptography.hazmat.primitives.kdf.pbkdf2 ^
+        --hidden-import cryptography.hazmat.backends ^
+        --hidden-import limits.storage.memory ^
+        --hidden-import limits.strategies ^
+        --exclude-module asyncio.windows_events ^
+        --exclude-module asyncio.windows_utils ^
         --add-data "..\UISelect.html;." ^
         --add-data "..\POSPal.html;." ^
         --add-data "..\POSPalDesktop.html;." ^
         --add-data "..\POSPal_Demo.html;." ^
         --add-data "..\demo_generator.html;." ^
-            --add-data "..\customer-portal.html;." ^
+        --add-data "..\customer-portal.html;." ^
         --add-data "..\account.html;." ^
         --add-data "..\managementComponent.html;." ^
         --add-data "..\managementComponent.js;." ^

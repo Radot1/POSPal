@@ -323,6 +323,7 @@
                 // Clear any cached license data to force fresh validation
                 localStorage.removeItem('pospal_license_data');
                 localStorage.removeItem('pospal_license_timestamp');
+                localStorage.removeItem('pospal_cached_status');
 
                 // Create and show success toast
                 const toast = document.createElement('div');

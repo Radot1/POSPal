@@ -26,6 +26,23 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+# Global subprocess configuration: Run all subprocesses silently (no CMD windows)
+# This ensures a professional appearance on Windows
+if os.name == 'nt':  # Windows only
+    # Set default creation flags for ALL subprocess calls
+    subprocess._USE_VFORK = False  # Prevent fork behavior
+    _original_Popen = subprocess.Popen
+
+    def _silent_Popen(*args, **kwargs):
+        """Wrapper to ensure all subprocess calls run without showing CMD windows"""
+        if 'creationflags' not in kwargs:
+            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+        else:
+            # Ensure CREATE_NO_WINDOW is always included
+            kwargs['creationflags'] |= subprocess.CREATE_NO_WINDOW
+        return _original_Popen(*args, **kwargs)
+
+    subprocess.Popen = _silent_Popen
 
 app = Flask(__name__)
 
@@ -1521,6 +1538,27 @@ COPIES_PER_ORDER = int(config.get("copies_per_order", 2))
 # Disable debug mode
 app.config['DEBUG'] = False
 
+# PyInstaller Fix: Mock limits.aio to prevent asyncio import issues
+# This prevents flask-limiter from trying to import async components that cause
+# circular imports when frozen by PyInstaller. The synchronous rate limiting
+# still works perfectly for our use case.
+import sys
+if getattr(sys, 'frozen', False):
+    # We're running in a PyInstaller bundle
+    from types import ModuleType
+
+    # Create mock aio module
+    mock_aio = ModuleType('limits.aio')
+    mock_aio.__path__ = []
+
+    # Create mock aio.storage module
+    mock_aio_storage = ModuleType('limits.aio.storage')
+    mock_aio_storage.__path__ = []
+
+    # Inject mocks into sys.modules before importing flask_limiter
+    sys.modules['limits.aio'] = mock_aio
+    sys.modules['limits.aio.storage'] = mock_aio_storage
+
 # Add rate limiting
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -2454,12 +2492,20 @@ def select_printer():
 @app.route('/api/printer/test', methods=['POST'])
 def test_print():
     try:
-        # Provide clearer error messages for common failures
-        trial = check_trial_status()
-        if not trial.get('active', False):
+        # Check license status - allow both active subscriptions and active trials
+        license_status = check_trial_status()
+
+        # Allow printing if license is active OR if subscription is active
+        has_active_license = (
+            license_status.get('active', False) or
+            license_status.get('licensed', False) or
+            (license_status.get('subscription') and license_status.get('subscription_status') == 'active')
+        )
+
+        if not has_active_license:
             return jsonify({
                 "success": False,
-                "message": "Trial expired or inactive. Printing disabled."
+                "message": "License inactive. Printing disabled."
             }), 200
 
         test_order = {

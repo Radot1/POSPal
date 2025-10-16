@@ -437,6 +437,14 @@ const LicenseStorage = {
         const now = Date.now().toString();
         localStorage.setItem(this.KEYS.LAST_VALIDATED, now);
         localStorage.setItem(this.KEYS.LAST_SUCCESSFUL_VALIDATION, now);
+
+        // Clear any warning dismissal flags since we just validated successfully
+        localStorage.removeItem('pospal_warning_dismissed_until');
+
+        // Clear individual warning display flags
+        for (let day = 1; day <= 10; day++) {
+            localStorage.removeItem(`pospal_warning_shown_day_${day}`);
+        }
     },
     
     // Get/set retry tracking
@@ -632,13 +640,18 @@ const FrontendLicenseManager = {
                     // Clear payment data
                     LicenseStorage.clearPaymentData();
                     
+                    // CRITICAL: Sync to backend BEFORE showing success
+                    // This ensures printing and other features work immediately
+                    console.log('Payment activation: syncing credentials to backend...');
+                    await this.syncLicenseToBackend(data.license.email, data.license.unlockToken);
+
                     // Update UI
                     this.updateUIForActiveStatus(LicenseStorage.getLicenseData());
-                    
+
                     // Show success message
                     const customerName = data.license.customerName || data.license.email;
                     showToast(`Welcome ${customerName}! Your POSPal license has been automatically activated.`, 'success', 8000);
-                    
+
                     return true;
                 }
             }
@@ -684,7 +697,7 @@ const FrontendLicenseManager = {
                 
                 if (data.success && data.validation.valid) {
                     console.log(`Unified background validation successful in ${data.performance?.responseTime || 0}ms - subscription confirmed active`);
-                    
+
                     // Store enhanced license data from unified response
                     LicenseStorage.setLicenseData({
                         unlockToken: licenseData.unlockToken,
@@ -697,34 +710,41 @@ const FrontendLicenseManager = {
                         cacheStrategy: data.caching?.strategy,
                         cacheValidUntil: data.caching?.validUntil
                     });
-                    
+
                     LicenseStorage.updateValidationTimestamp();
-                    
+
                     // Log performance metrics
                     if (data.performance) {
                         console.log(`Unified validation performance: ${data.performance.responseTime}ms, cache strategy: ${data.caching?.strategy}`);
                     }
 
+                    // Sync license data to backend so it can validate printing/features
+                    this.syncLicenseToBackend(licenseData.customerEmail, licenseData.unlockToken);
+
                     // Update UI to show active status after successful background validation
                     this.updateUIForActiveStatus(LicenseStorage.getLicenseData());
+                    return true; // Validation successful
                 } else {
                     const errorInfo = data.error || {};
                     console.log(`Unified background validation failed: ${errorInfo.code} - ${errorInfo.message}`);
-                    
+
                     // Only invalidate license if error indicates authentication issue
                     if (errorInfo.category === 'authentication' || errorInfo.code === 'SUBSCRIPTION_INACTIVE') {
                         this.handleInvalidLicense();
                     } else {
                         console.log('Keeping current license due to non-authentication error');
                     }
+                    return false; // Validation failed
                 }
             } else {
                 console.log('Unified background validation failed - server error');
                 // Don't invalidate on server errors, could be temporary
+                return false;
             }
         } catch (error) {
             console.log('Unified background validation error:', error.message);
             // Don't invalidate on network errors
+            return false;
         }
     },
     
@@ -817,6 +837,11 @@ const FrontendLicenseManager = {
                 isOnline: this.cache.isOnline,
                 customerName: licenseData.customerName || licenseData.customerEmail
             });
+
+            // Show connectivity status indicator
+            if (this.cache.isOnline) {
+                showConnectivityStatus(true, 'active');
+            }
 
             // Update billing date display
             this.updateBillingDateDisplay(licenseData);
@@ -1040,7 +1065,47 @@ const FrontendLicenseManager = {
         this.cache.lastValidation = 0; // Reset cache
         return await this.validateLicense(true);
     },
-    
+
+    // Sync license data to backend for feature validation (with retry logic)
+    async syncLicenseToBackend(customerEmail, unlockToken, retries = 3) {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                console.log(`Syncing license credentials to backend (attempt ${attempt}/${retries})...`);
+                const response = await fetch('/api/validate-license', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customerEmail,
+                        unlockToken
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('License synced to backend successfully');
+                    return true;
+                } else {
+                    console.warn(`Backend license sync failed (attempt ${attempt}/${retries})`);
+                    if (attempt < retries) {
+                        // Exponential backoff: 1s, 2s, 4s
+                        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+                    }
+                }
+            } catch (error) {
+                console.warn(`Error syncing license to backend (attempt ${attempt}/${retries}):`, error.message);
+                if (attempt < retries) {
+                    // Exponential backoff
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+                }
+            }
+        }
+
+        // All retries failed - show user warning
+        console.error('All backend sync attempts failed');
+        showToast('License active but backend sync failed. Some features may be limited. Try opening License Management.', 'warning', 6000);
+        return false;
+    },
+
     // Get current status (for external queries)
     getCurrentStatus() {
         return this.currentValidationState;
@@ -1312,6 +1377,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Clear cached license data to ensure fresh validation
         localStorage.removeItem('pospal_license_data');
         localStorage.removeItem('pospal_license_timestamp');
+        localStorage.removeItem('pospal_cached_status');
         await FrontendLicenseManager.validateLicense(true); // Force validation
     } else {
         FrontendLicenseManager.validateLicense();
@@ -8323,53 +8389,19 @@ function handleTrialValidation() {
     }
 }
 
-// Check if user is within offline grace period with progressive warnings
+// Check if user is within offline grace period (no warnings - just silent offline mode)
 function isInOfflineGracePeriod() {
-    const lastSuccessfulCheck = localStorage.getItem('pospal_last_successful_validation');
-    const customerType = localStorage.getItem('pospal_cached_status');
-    
-    if (!lastSuccessfulCheck) {
-        return false; // No previous successful validation
-    }
-    
-    const daysSinceLastValidation = (Date.now() - parseInt(lastSuccessfulCheck)) / (1000 * 60 * 60 * 24);
-    
-    // Extended grace period: 7 days normal + 3 days warning period
-    const normalGraceDays = customerType === 'active' ? 7 : 1;
-    const warningPeriodDays = 3; // Days 8, 9, 10
-    const totalGraceDays = normalGraceDays + warningPeriodDays;
-    
-    const inGracePeriod = daysSinceLastValidation <= totalGraceDays;
-    const inWarningPeriod = daysSinceLastValidation > normalGraceDays && daysSinceLastValidation <= totalGraceDays;
-    const remainingDays = Math.max(0, totalGraceDays - daysSinceLastValidation);
-    
-    if (inGracePeriod) {
-        console.log(`Offline status: ${daysSinceLastValidation.toFixed(1)}/${totalGraceDays} days`);
-        
-        if (inWarningPeriod) {
-            // Show progressive warnings for days 8, 9, 10 - use smart system if available
-            if (window.CustomerSegmentationManager && window.NotificationManager) {
-                showSmartProgressiveWarning(daysSinceLastValidation, totalGraceDays);
-            } else {
-                showProgressiveWarning(daysSinceLastValidation, normalGraceDays, totalGraceDays);
-            }
-            StatusDisplayManager.updateLicenseStatus('warning', { remainingDays });
-        } else {
-            // Normal grace period - update status indicator only (no popups during operations)
-            StatusDisplayManager.updateLicenseStatus('offline');
-            // Store offline info for management modal display
-            localStorage.setItem('pospal_offline_info', JSON.stringify({
-                daysSinceLastValidation,
-                gracePeriodDays: normalGraceDays,
-                remainingDays: Math.max(0, normalGraceDays - daysSinceLastValidation)
-            }));
-        }
-    } else {
-        console.log('Grace period expired - entering trial mode');
-        showTrialModeNotification();
-    }
-    
-    return inGracePeriod;
+    // REMOVED: Offline grace period warnings removed for all users
+    // Rationale:
+    // - Subscription users: Auto-renew via Stripe, no action needed
+    // - Trial users: Can work offline, will see status in License Management
+    // - Restaurant POS needs to work offline during service
+    // - Intrusive warnings during busy hours are unacceptable
+    // - License status is shown in License Management modal
+    // - Only block features when subscription actually expires (via webhook)
+
+    console.log('Offline mode allowed - no warnings shown (removed for better UX)');
+    return true; // Always allow offline mode
 }
 
 // Attempt server validation with timeout and enhanced UI feedback
@@ -9022,6 +9054,9 @@ let connectivityStatusElement = null;
 
 // Show progressive warnings for days 8, 9, 10
 function showProgressiveWarning(daysSinceLastValidation, normalGraceDays, totalGraceDays) {
+    // DISABLED: Progressive warnings removed for better UX
+    console.log('Progressive warning system disabled - no warnings will be shown');
+    return;
     const warningDay = Math.floor(daysSinceLastValidation - normalGraceDays) + 1;
     const remainingDays = Math.max(0, totalGraceDays - daysSinceLastValidation);
     
@@ -9312,7 +9347,7 @@ function showConnectivityStatus(isOnline, validationStatus = null) {
     
     connectivityStatusElement = document.createElement('div');
     connectivityStatusElement.id = 'connectivityStatus';
-    connectivityStatusElement.className = 'fixed bottom-4 right-4 px-3 py-2 rounded-lg shadow-lg text-sm z-40 connectivity-status';
+    connectivityStatusElement.className = 'fixed bottom-4 right-20 px-3 py-2 rounded-lg shadow-lg text-sm z-[100] connectivity-status';
     
     let statusIcon, statusText, statusColor;
     
@@ -10034,6 +10069,9 @@ function getCustomerName() {
 
 // Smart notification system with customer segmentation and advanced intelligence
 function showSmartProgressiveWarning(daysSinceLastValidation, gracePeriodDays) {
+    // DISABLED: Smart progressive warnings removed for better UX
+    console.log('Smart progressive warning system disabled - no warnings will be shown');
+    return;
     if (!window.CustomerSegmentationManager || !window.NotificationManager) {
         return showProgressiveWarning(daysSinceLastValidation, gracePeriodDays);
     }

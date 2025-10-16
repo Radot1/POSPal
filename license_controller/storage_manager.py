@@ -60,17 +60,19 @@ class UnifiedStorageManager:
             try:
                 cpu_info = platform.processor()
                 if not cpu_info:
-                    result = subprocess.run(['wmic', 'cpu', 'get', 'name'], 
-                                          capture_output=True, text=True, timeout=5)
+                    result = subprocess.run(['wmic', 'cpu', 'get', 'name'],
+                                          capture_output=True, text=True, timeout=5,
+                                          creationflags=subprocess.CREATE_NO_WINDOW)
                     cpu_info = result.stdout.split('\n')[1].strip() if result.stdout else 'Unknown'
             except:
                 cpu_info = 'Unknown'
             
-            # Get disk serial (EXACT match to license generator)  
+            # Get disk serial (EXACT match to license generator)
             disk_serial = 'Unknown'
             try:
-                result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], 
-                                      capture_output=True, text=True, timeout=5)
+                result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'],
+                                      capture_output=True, text=True, timeout=5,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
                 if result.stdout:
                     lines = result.stdout.split('\n')
                     for line in lines:
@@ -84,8 +86,9 @@ class UnifiedStorageManager:
             # Get Windows ID (EXACT match to license generator)
             windows_id = 'Unknown'
             try:
-                result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'], 
-                                      capture_output=True, text=True, timeout=5)
+                result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'],
+                                      capture_output=True, text=True, timeout=5,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
                 if result.stdout:
                     lines = result.stdout.split('\n')
                     for line in lines:
