@@ -103,7 +103,13 @@
       "Bash(npx wrangler secret:*)",
       "Bash(npx wrangler tail:*)",
       "Bash(del success.html payment-failed.html)",
-      "Bash(del \"C:\\PROJECTS\\POSPal\\POSPal\\test_limiter_fix.py\")"
+      "Bash(del \"C:\\PROJECTS\\POSPal\\POSPal\\test_limiter_fix.py\")",
+      "Bash(wmic datafile:*)",
+      "Bash(del test_trial.json)",
+      "Bash(del verify_trial.py)",
+      "Bash(./build.bat)",
+      "Bash(del dataapp_instance.lock)",
+      "Bash(wmic process where \"ProcessId=19172\" get ExecutablePath,CommandLine)"
     ],
     "deny": [],
     "ask": []

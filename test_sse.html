@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SSE Test Monitor</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .event-log {
+            background: #000;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #00ff00;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .event {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #00ff00;
+        }
+        .timestamp {
+            color: #ffff00;
+        }
+        .badge-display {
+            background: #333;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 1.5em;
+            border: 2px solid #00ff00;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        button:hover {
+            background: #00aa00;
+        }
+    </style>
+</head>
+<body>
+    <h1>SSE Event Monitor for Table Updates</h1>
+
+    <div class="badge-display" id="badge-display">
+        Badge: <span id="badge-value">Loading...</span>
+    </div>
+
+    <button onclick="sendTestOrder()">Send Test Order to Table 1</button>
+    <button onclick="refreshTables()">Refresh Tables</button>
+    <button onclick="clearLog()">Clear Log</button>
+
+    <h2>Event Log:</h2>
+    <div class="event-log" id="event-log"></div>
+
+    <h2>Current Tables Data:</h2>
+    <pre id="tables-data"></pre>
+
+    <script>
+        let eventSource = null;
+        let tablesData = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('event-log');
+            const eventDiv = document.createElement('div');
+            eventDiv.className = 'event';
+            const timestamp = new Date().toLocaleTimeString();
+            eventDiv.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            logDiv.appendChild(eventDiv);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function clearLog() {
+            document.getElementById('event-log').innerHTML = '';
+        }
+
+        async function refreshTables() {
+            try {
+                log('Fetching tables from /api/tables...');
+                const response = await fetch('http://localhost:5000/api/tables');
+                const data = await response.json();
+                tablesData = data;
+
+                document.getElementById('tables-data').textContent = JSON.stringify(data, null, 2);
+
+                // Update badge based on Table 1
+                const table1 = data.tables['1'];
+                if (table1 && table1.session) {
+                    const total = table1.session.total_amount || 0;
+                    document.getElementById('badge-value').textContent = `T1 | €${total.toFixed(2)}`;
+                    log(`Table 1 total updated: €${total.toFixed(2)}`, 'success');
+                } else {
+                    document.getElementById('badge-value').textContent = 'No data';
+                }
+            } catch (error) {
+                log(`ERROR fetching tables: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendTestOrder() {
+            try {
+                log('Sending test order to Table 1...');
+                const response = await fetch('http://localhost:5000/api/orders', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        tableNumber: "1",
+                        items: [{
+                            id: "test-1",
+                            name: "Test Item",
+                            basePrice: 5.50,
+                            quantity: 1,
+                            itemPriceWithModifiers: 5.50
+                        }],
+                        universalComment: "",
+                        paymentMethod: "Cash"
+                    })
+                });
+
+                const result = await response.json();
+                log(`Order response: ${JSON.stringify(result)}`, response.ok ? 'success' : 'error');
+
+                // Wait 1 second then refresh tables
+                setTimeout(refreshTables, 1000);
+            } catch (error) {
+                log(`ERROR sending order: ${error.message}`, 'error');
+            }
+        }
+
+        function setupSSE() {
+            log('Setting up SSE connection to /api/events...');
+
+            eventSource = new EventSource('http://localhost:5000/api/events');
+
+            eventSource.onopen = function() {
+                log('SSE connection OPENED (readyState: ' + eventSource.readyState + ')', 'success');
+            };
+
+            eventSource.onerror = function(e) {
+                log('SSE connection ERROR (readyState: ' + eventSource.readyState + ')', 'error');
+            };
+
+            // Listen for table_order_added events
+            eventSource.addEventListener('table_order_added', function(e) {
+                log(`<strong>SSE EVENT: table_order_added</strong><br>Data: ${e.data}`, 'event');
+
+                try {
+                    const data = JSON.parse(e.data);
+                    log(`  → Table ID: ${data.table_id}, Order #: ${data.order_number}, New Total: €${data.new_table_total}`, 'event');
+
+                    // Auto-refresh tables after SSE event
+                    setTimeout(refreshTables, 500);
+                } catch (error) {
+                    log(`ERROR parsing SSE event: ${error.message}`, 'error');
+                }
+            });
+
+            // Listen for all other events
+            eventSource.onmessage = function(e) {
+                log(`SSE MESSAGE (generic): ${e.data}`);
+            };
+        }
+
+        // Initialize
+        window.addEventListener('load', function() {
+            setupSSE();
+            refreshTables();
+
+            // Auto-refresh tables every 10 seconds
+            setInterval(refreshTables, 10000);
+        });
+    </script>
+</body>
+</html>

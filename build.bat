@@ -13,6 +13,20 @@ set BUILD_DIR=build_output
 set RELEASE_DIR=POSPal_v%VERSION%
 set RELEASE_DIR_ONEDIR=POSPal_onedir_v%VERSION%
 
+REM ============================================================================
+REM BUILD PHILOSOPHY: Always create deployment-ready builds
+REM This ensures you test exactly what customers will receive
+REM
+REM The build creates:
+REM   - Empty menu (customers configure their own)
+REM   - Fresh 30-day trial period
+REM   - Clean data files (no test data)
+REM   - All license system components
+REM
+REM For testing: Run the built POSPal.exe and add test menu items manually
+REM This simulates the actual customer experience
+REM ============================================================================
+
 REM Optional toggles (set before running script or here)
 REM set BUILD_ONEDIR=1
 REM For optional code signing, set env vars before running:
@@ -130,8 +144,20 @@ pyinstaller ^
     --hidden-import cryptography.hazmat.backends ^
     --hidden-import limits.storage.memory ^
     --hidden-import limits.strategies ^
+    --hidden-import license_integration ^
+    --hidden-import license_controller ^
+    --hidden-import license_controller.license_controller ^
+    --hidden-import license_controller.license_state ^
+    --hidden-import license_controller.storage_manager ^
+    --hidden-import license_controller.validation_flow ^
+    --hidden-import license_controller.migration_manager ^
+    --hidden-import win32api ^
+    --hidden-import win32con ^
     --exclude-module asyncio.windows_events ^
     --exclude-module asyncio.windows_utils ^
+    --add-data "..\license_integration.py;." ^
+    --add-data "..\license_controller;license_controller" ^
+    --add-data "..\hook-limits.py;." ^
     --add-data "..\UISelect.html;." ^
     --add-data "..\POSPal.html;." ^
     --add-data "..\POSPalDesktop.html;." ^
@@ -177,8 +203,20 @@ if defined BUILD_ONEDIR (
         --hidden-import cryptography.hazmat.backends ^
         --hidden-import limits.storage.memory ^
         --hidden-import limits.strategies ^
+        --hidden-import license_integration ^
+        --hidden-import license_controller ^
+        --hidden-import license_controller.license_controller ^
+        --hidden-import license_controller.license_state ^
+        --hidden-import license_controller.storage_manager ^
+        --hidden-import license_controller.validation_flow ^
+        --hidden-import license_controller.migration_manager ^
+        --hidden-import win32api ^
+        --hidden-import win32con ^
         --exclude-module asyncio.windows_events ^
         --exclude-module asyncio.windows_utils ^
+        --add-data "..\license_integration.py;." ^
+        --add-data "..\license_controller;license_controller" ^
+        --add-data "..\hook-limits.py;." ^
         --add-data "..\UISelect.html;." ^
         --add-data "..\POSPal.html;." ^
         --add-data "..\POSPalDesktop.html;." ^
@@ -231,38 +269,22 @@ if exist "..\data\config.json" (
     ) > "%RELEASE_DIR%\data\config.json"
 )
 
-rem For deployment builds, always create an empty menu (comment out to include existing menu)
-echo [SETUP] Creating empty menu for deployment build.
+rem Create empty menu for customer configuration
+echo [SETUP] Creating empty menu (customers will configure their own items)
 echo {} > "%RELEASE_DIR%\data\menu.json"
 
-rem Copy existing data files if they exist (DISABLED FOR DEPLOYMENT)
-rem if exist "..\data\menu.json" (
-rem     copy "..\data\menu.json" "%RELEASE_DIR%\data\"
-rem     echo [COPY] Copied existing menu.json
-rem ) else (
-rem     echo [SETUP] No existing menu.json found. Creating an empty menu.
-rem     echo {} > "%RELEASE_DIR%\data\menu.json"
-rem )
-
-rem Copy other existing data files
-if exist "..\data\trial.json" (
-    copy "..\data\trial.json" "%RELEASE_DIR%\data\"
-    echo [COPY] Copied existing trial.json
-)
-if exist "..\data\current_order.json" (
-    copy "..\data\current_order.json" "%RELEASE_DIR%\data\"
-    echo [COPY] Copied existing current_order.json
-)
-if exist "..\data\device_sessions.json" (
-    copy "..\data\device_sessions.json" "%RELEASE_DIR%\data\"
-    echo [COPY] Copied existing device_sessions.json
+rem Create fresh 30-day trial for customer with valid signature
+echo [SETUP] Generating fresh 30-day trial period (with valid signature)
+python ..\generate_trial.py "%RELEASE_DIR%\data\trial.json"
+if %errorlevel% neq 0 (
+    echo [ERROR] Failed to generate trial.json
+    echo [ERROR] Working directory: %CD%
+    echo [ERROR] Target file: %RELEASE_DIR%\data\trial.json
+    pause
+    exit /b 1
 )
 
-rem Create essential files if they don't exist
-if not exist "%RELEASE_DIR%\data\trial.json" (
-    echo [SETUP] Creating trial.json
-    echo {"trial_active": true, "days_remaining": 30} > "%RELEASE_DIR%\data\trial.json"
-)
+rem Create essential data files (clean slate for customer)
 if not exist "%RELEASE_DIR%\data\current_order.json" (
     echo [SETUP] Creating current_order.json
     echo {"items": [], "total": 0} > "%RELEASE_DIR%\data\current_order.json"
@@ -270,6 +292,26 @@ if not exist "%RELEASE_DIR%\data\current_order.json" (
 if not exist "%RELEASE_DIR%\data\device_sessions.json" (
     echo [SETUP] Creating device_sessions.json
     echo {"sessions": []} > "%RELEASE_DIR%\data\device_sessions.json"
+)
+if not exist "%RELEASE_DIR%\data\order_counter.json" (
+    echo [SETUP] Creating order_counter.json
+    echo {"counter": 1} > "%RELEASE_DIR%\data\order_counter.json"
+)
+if not exist "%RELEASE_DIR%\data\order_line_counter.json" (
+    echo [SETUP] Creating order_line_counter.json
+    echo {"counter": 1} > "%RELEASE_DIR%\data\order_line_counter.json"
+)
+if not exist "%RELEASE_DIR%\data\tables_config.json" (
+    echo [SETUP] Creating tables_config.json
+    echo {"tables": {}, "settings": {"auto_clear_paid_tables": true, "default_table_timeout": 3600}} > "%RELEASE_DIR%\data\tables_config.json"
+)
+if not exist "%RELEASE_DIR%\data\usage_analytics.json" (
+    echo [SETUP] Creating usage_analytics.json
+    echo {"total_orders": 0, "total_revenue": 0, "first_order_date": "", "last_order_date": "", "orders_by_day": {}, "revenue_by_day": {}} > "%RELEASE_DIR%\data\usage_analytics.json"
+)
+if not exist "%RELEASE_DIR%\data\table_sessions.json" (
+    echo [SETUP] Creating table_sessions.json
+    echo {} > "%RELEASE_DIR%\data\table_sessions.json"
 )
 
 echo [SUCCESS] Final package created in "%RELEASE_DIR%"
@@ -292,6 +334,42 @@ if defined BUILD_ONEDIR (
 REM --- 5. Final Cleanup and Move to Root ---
 echo.
 echo [CLEANUP] Moving final release to root and cleaning up...
+
+REM Remove existing release folder in root if it exists
+if exist "..\%RELEASE_DIR%" (
+    echo [CLEANUP] Removing existing release folder...
+    REM First, remove any problematic files that might be locked
+    if exist "..\%RELEASE_DIR%\nul" del /f /q "..\%RELEASE_DIR%\nul" 2>nul
+    if exist "..\%RELEASE_DIR%\data\nul" del /f /q "..\%RELEASE_DIR%\data\nul" 2>nul
+
+    REM Now remove the directory
+    rd /s /q "..\%RELEASE_DIR%" 2>nul
+
+    REM If it still exists, try with PowerShell for stubborn files
+    if exist "..\%RELEASE_DIR%" (
+        echo [CLEANUP] Using PowerShell for stubborn files...
+        powershell -Command "Remove-Item -Path '..\%RELEASE_DIR%' -Recurse -Force -ErrorAction SilentlyContinue" 2>nul
+    )
+
+    REM Final check - if still exists, abort with helpful message
+    if exist "..\%RELEASE_DIR%" (
+        echo [ERROR] Could not remove existing release folder. It may be in use.
+        echo [ERROR] Possible causes:
+        echo [ERROR]   - POSPal.exe is currently running
+        echo [ERROR]   - File Explorer is open in that folder
+        echo [ERROR]   - Files are locked by another process
+        echo.
+        echo [FIX] Try this:
+        echo   1. Close POSPal.exe if running
+        echo   2. Close all File Explorer windows
+        echo   3. Run: rmdir /s /q POSPal_v%VERSION%
+        echo   4. Run build.bat again
+        pause
+        popd
+        exit /b 1
+    )
+)
+
 REM Move the final release folder to the root directory
 move "%RELEASE_DIR%" "..\"
 if %errorlevel% neq 0 (
@@ -303,6 +381,10 @@ if %errorlevel% neq 0 (
 
 REM Move ONEDIR release if present
 if defined BUILD_ONEDIR (
+    if exist "..\%RELEASE_DIR_ONEDIR%" (
+        echo [CLEANUP] Removing existing ONEDIR folder...
+        rd /s /q "..\%RELEASE_DIR_ONEDIR%"
+    )
     move "%RELEASE_DIR_ONEDIR%" "..\" >nul
 )
 
@@ -321,15 +403,23 @@ if exist "%BUILD_DIR%" rd /s /q "%BUILD_DIR%"
 echo.
 echo ============================================================================
 echo  Build Complete!
-echo  Your final, runnable application is located in the folder:
+echo  Your deployment-ready application is located in the folder:
 echo  %RELEASE_DIR%
 if defined BUILD_ONEDIR echo  An alternative ONEDIR build is also available: %RELEASE_DIR_ONEDIR%
 echo.
-echo  The application includes:
+echo  The build includes:
 echo  - All essential HTML and JavaScript files
-echo  - Default menu with sample items
-echo  - Configuration file
-echo  - Trial and session management files
+echo  - License system fully integrated (no "Integration system not available")
+echo  - Empty menu (ready for customer configuration)
+echo  - Fresh 30-day trial period (with valid signature - fixes printing!)
+echo  - Clean data files (no test data)
+echo  - Default configuration file
+echo.
+echo  TESTING INSTRUCTIONS:
+echo  1. Run POSPal.exe from %RELEASE_DIR%\
+echo  2. Manually add a few test menu items (simulates customer experience)
+echo  3. Test all features (ordering, printing, license validation)
+echo  4. If everything works, this exact build is ready for customers
 echo ============================================================================
 echo.
 pause

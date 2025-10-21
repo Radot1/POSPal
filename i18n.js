@@ -68,7 +68,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const lang = await fetchCurrentLanguage();
     await loadLanguage(lang);
     try {
-        const es = new EventSource('/api/events');
+        window.evtSource = new EventSource('/api/events');
+        const es = window.evtSource;  // Keep local reference for this file
         es.addEventListener('settings', async (e) => {
             try {
                 const payload = JSON.parse(e.data || '{}');

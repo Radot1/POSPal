@@ -1180,11 +1180,12 @@ async function loadCentralizedState() {
         const data = await response.json();
         
         if (data.success) {
-            currentOrder = data.state.current_order || [];
+            // Ensure current_order is always an array
+            currentOrder = Array.isArray(data.state.current_order) ? data.state.current_order : [];
             currentOrderLineItemCounter = data.state.order_line_counter || 0;
             universalOrderComment = data.state.universal_comment || "";
             selectedTableNumber = data.state.selected_table || "";
-            
+
             console.log('Centralized state loaded:', data.state);
             return true;
         } else {
@@ -1551,8 +1552,49 @@ async function initializeTableFeatures() {
         await loadTableConfiguration();
         await loadTableSessions();
 
-        // Set up real-time updates
-        setupTableSSEUpdates();
+        // Wait for i18n.js to set up window.evtSource, then set up real-time updates
+        // Use a polling check to wait for SSE to be ready before checking its status
+        let sseCheckAttempts = 0;
+        const maxSSECheckAttempts = 50; // 50 * 100ms = 5 seconds max wait
+
+        const waitForSSE = setInterval(() => {
+            sseCheckAttempts++;
+
+            // Debug: Log SSE state every second
+            if (sseCheckAttempts % 10 === 0) {
+                console.log(`[SSE] Check attempt ${sseCheckAttempts}/50 - evtSource exists: ${!!window.evtSource}, readyState: ${window.evtSource?.readyState}, EventSource.OPEN=${EventSource?.OPEN}, EventSource.CONNECTING=${EventSource?.CONNECTING}`);
+            }
+
+            // Check if SSE is ready
+            if (window.evtSource && window.evtSource.readyState === EventSource.OPEN) {
+                clearInterval(waitForSSE);
+                console.log('[SSE] Connection ready, setting up table updates');
+                setupTableSSEUpdates();
+                initConnectionStatusIndicator();
+            }
+            // Check if SSE exists but is connecting
+            else if (window.evtSource && window.evtSource.readyState === EventSource.CONNECTING) {
+                // Keep waiting silently (logged above every second)
+            }
+            // Check if SSE exists but is closed (error state)
+            else if (window.evtSource && window.evtSource.readyState === EventSource.CLOSED) {
+                clearInterval(waitForSSE);
+                console.error('[SSE] Connection CLOSED - SSE failed to connect');
+                setupTableSSEUpdates();  // Set up anyway (will use polling)
+                initConnectionStatusIndicator();
+            }
+            // Timeout or SSE not available
+            else if (sseCheckAttempts >= maxSSECheckAttempts) {
+                clearInterval(waitForSSE);
+                if (window.evtSource) {
+                    console.warn(`[SSE] Connection timeout after 5s - evtSource exists but readyState is ${window.evtSource.readyState} (expected ${EventSource.OPEN})`);
+                } else {
+                    console.warn('[SSE] Connection timeout after 5s - window.evtSource never created by i18n.js');
+                }
+                setupTableSSEUpdates();  // Set up anyway (will use polling)
+                initConnectionStatusIndicator();
+            }
+        }, 100); // Check every 100ms
 
         // Initialize table UI components
         initializeTableUI();
@@ -1580,6 +1622,10 @@ async function initializeTableFeatures() {
  */
 function initializeSimpleMode() {
     console.log('Initializing simple mode...');
+
+    // Stop table polling when switching to simple mode
+    stopTablePolling();
+
     // Hide all table-related UI elements
     const tableElements = document.querySelectorAll('.table-mode-only');
     tableElements.forEach(el => el.style.display = 'none');
@@ -1644,6 +1690,9 @@ function initializeTableUI() {
 
     // Replace simple table input with visual selector
     setupTableSelectionUI();
+
+    // Initialize badge click handlers
+    initializeTableBadgeHandlers();
 }
 
 /**
@@ -2071,8 +2120,29 @@ function setupTableSSEUpdates() {
 
     // Listen for table updates through existing SSE connection
     if (window.evtSource) {
+        // Listen for order added to table (primary event from backend)
+        window.evtSource.addEventListener('table_order_added', async function(e) {
+            try {
+                lastSSEEventTime = Date.now(); // Track event receipt for connection health
+                const data = JSON.parse(e.data);
+                console.log('Table order added event received:', data);
+
+                // Reload tables data to get updated totals
+                await loadTablesForSelection();
+
+                // If this is the currently selected table, update the badge immediately
+                if (selectedTableId === data.table_id) {
+                    updateTableIndicatorBadge();
+                }
+            } catch (error) {
+                console.error('Error parsing table_order_added event:', error);
+            }
+        });
+
+        // Listen for generic table updates (legacy support)
         window.evtSource.addEventListener('table_updated', function(e) {
             try {
+                lastSSEEventTime = Date.now(); // Track event receipt for connection health
                 const data = JSON.parse(e.data);
                 handleTableUpdate(data);
             } catch (error) {
@@ -2080,7 +2150,203 @@ function setupTableSSEUpdates() {
             }
         });
 
-        console.log('Table SSE updates configured');
+        // Listen for table system updates
+        window.evtSource.addEventListener('table_system_updated', function(e) {
+            try {
+                lastSSEEventTime = Date.now(); // Track event receipt for connection health
+                const data = JSON.parse(e.data);
+                console.log('Table system updated:', data);
+                // Reload all tables to stay in sync
+                loadTablesForSelection();
+            } catch (error) {
+                console.error('Error parsing table_system_updated event:', error);
+            }
+        });
+
+        console.log('Table SSE updates configured for events: table_order_added, table_updated, table_system_updated');
+    } else {
+        console.warn('window.evtSource not available - SSE updates will not work. Table data will only update on manual refresh.');
+    }
+}
+
+// ==================================================================================
+// CONNECTION STATUS MONITORING SYSTEM
+// ==================================================================================
+
+const ConnectionStatus = {
+    LIVE: 'live',
+    POLLING: 'polling',
+    OFFLINE: 'offline',
+    CHECKING: 'checking'
+};
+
+let currentConnectionStatus = ConnectionStatus.CHECKING;
+let lastSSEEventTime = null;
+
+/**
+ * Initialize connection status indicator
+ */
+function initConnectionStatusIndicator() {
+    if (!tableManagementEnabled) return;
+
+    updateConnectionStatusUI(ConnectionStatus.CHECKING);
+    monitorSSEConnection();
+
+    setInterval(() => {
+        checkConnectionHealth();
+    }, 10000);
+}
+
+/**
+ * Monitor SSE connection and update status (controls polling enable/disable)
+ */
+function monitorSSEConnection() {
+    if (!tableManagementEnabled) return;
+
+    if (window.evtSource) {
+        const readyState = window.evtSource.readyState;
+
+        if (readyState === EventSource.OPEN) {
+            updateConnectionStatusUI(ConnectionStatus.LIVE);
+            lastSSEEventTime = Date.now();
+            stopTablePolling(); // Stop polling when SSE connects successfully
+
+            window.evtSource.onerror = (error) => {
+                console.error('SSE connection error:', error);
+                updateConnectionStatusUI(ConnectionStatus.POLLING);
+                // Polling will be started by checkConnectionHealth() on next cycle
+            };
+        } else if (readyState === EventSource.CONNECTING) {
+            updateConnectionStatusUI(ConnectionStatus.CHECKING);
+        } else {
+            updateConnectionStatusUI(ConnectionStatus.POLLING);
+            // Polling will be started by checkConnectionHealth() if needed
+        }
+    } else {
+        updateConnectionStatusUI(ConnectionStatus.POLLING);
+        // Polling will be started by checkConnectionHealth() if needed
+    }
+}
+
+/**
+ * Check overall connection health and enable/disable polling accordingly
+ */
+function checkConnectionHealth() {
+    if (!tableManagementEnabled) return;
+
+    // SSE is healthy if we've received events recently (within last 60 seconds)
+    if (lastSSEEventTime && (Date.now() - lastSSEEventTime < 60000)) {
+        updateConnectionStatusUI(ConnectionStatus.LIVE);
+        stopTablePolling(); // Stop polling when SSE is working
+        return;
+    }
+
+    // SSE connection is open
+    if (window.evtSource && window.evtSource.readyState === EventSource.OPEN) {
+        updateConnectionStatusUI(ConnectionStatus.LIVE);
+        stopTablePolling(); // Stop polling when SSE is connected
+        return;
+    }
+
+    // SSE is down or unavailable - enable polling as fallback
+    if (!tablePollingInterval) {
+        console.log('SSE unavailable, enabling polling fallback');
+        startTablePolling();
+    }
+    updateConnectionStatusUI(ConnectionStatus.POLLING);
+}
+
+/**
+ * Update connection status UI
+ */
+function updateConnectionStatusUI(status) {
+    currentConnectionStatus = status;
+
+    const indicator = document.getElementById('connectionStatusIndicator');
+    if (!indicator) return;
+
+    // Update indicator classes (includes table-mode-only for visibility control)
+    indicator.className = `connection-status-indicator-header ${status} table-mode-only`;
+
+    // Update status text
+    const statusText = document.getElementById('connectionStatusText');
+    if (statusText) {
+        const statusLabels = {
+            live: 'Live',
+            polling: 'Polling',
+            offline: 'Offline',
+            checking: 'Checking...'
+        };
+        statusText.textContent = statusLabels[status] || 'Unknown';
+    }
+
+    // Update tooltip title
+    const titles = {
+        live: 'Live Connection - Real-time updates active',
+        polling: 'Polling Mode - Updates every 5 seconds',
+        offline: 'Offline - No connection',
+        checking: 'Checking connection...'
+    };
+    indicator.title = titles[status] || 'Unknown status';
+}
+
+/**
+ * Polling fallback for table updates
+ * Polls every 5 seconds when a table is selected to ensure UI stays in sync
+ */
+let tablePollingInterval = null;
+let lastPollTime = 0;
+const BASE_POLL_INTERVAL = 10000; // 10 seconds base interval (reduced from 5s)
+let pollBackoffMultiplier = 1;
+const MAX_BACKOFF_MULTIPLIER = 6; // Max 60 seconds (10s * 6)
+
+function startTablePolling() {
+    if (!tableManagementEnabled) return;
+
+    // Clear existing interval
+    if (tablePollingInterval) {
+        clearInterval(tablePollingInterval);
+    }
+
+    // Poll with intelligent rate limiting and backoff
+    tablePollingInterval = setInterval(async () => {
+        // Don't poll if no table is selected
+        if (selectedTableId === null) {
+            return;
+        }
+
+        // Rate limiting check - prevent too-frequent polls
+        const now = Date.now();
+        const minInterval = BASE_POLL_INTERVAL * pollBackoffMultiplier;
+        if (now - lastPollTime < minInterval) {
+            return; // Skip this poll cycle
+        }
+
+        try {
+            lastPollTime = now;
+            await loadTablesForSelection();
+            // Reset backoff on successful poll
+            pollBackoffMultiplier = 1;
+        } catch (error) {
+            // Check if it's a rate limit error (429)
+            if (error && error.message && error.message.includes('429')) {
+                // Exponential backoff on rate limit
+                pollBackoffMultiplier = Math.min(pollBackoffMultiplier * 2, MAX_BACKOFF_MULTIPLIER);
+                console.warn(`Rate limited on /api/tables - backing off to ${minInterval}ms`);
+            } else {
+                console.error('Table polling error:', error);
+            }
+        }
+    }, BASE_POLL_INTERVAL);
+
+    console.log(`Table polling started (${BASE_POLL_INTERVAL}ms base interval with adaptive backoff)`);
+}
+
+function stopTablePolling() {
+    if (tablePollingInterval) {
+        clearInterval(tablePollingInterval);
+        tablePollingInterval = null;
+        console.log('Table polling stopped');
     }
 }
 
@@ -2088,34 +2354,71 @@ function setupTableSSEUpdates() {
  * Handle real-time table updates
  */
 function handleTableUpdate(data) {
-    const { table_id, total, orders, status } = data;
+    try {
+        const { table_id, total, orders, status } = data;
 
-    // Update local table sessions
-    if (!tableSessions[table_id]) {
-        tableSessions[table_id] = {};
+        console.log('Handling table update:', { table_id, total, orders, status });
+
+        // Validate incoming SSE data
+        if (!table_id) {
+            throw new ValidationError('Missing table_id in SSE update', 'table_id', data);
+        }
+
+        if (typeof total !== 'number' || total < 0) {
+            throw new ValidationError(`Invalid total amount: ${total}`, 'total', total, { table_id });
+        }
+
+        if (!Array.isArray(orders)) {
+            throw new ValidationError(`Orders must be array, got ${typeof orders}`, 'orders', orders, { table_id });
+        }
+
+        // Update local table sessions
+        if (!tableSessions[table_id]) {
+            tableSessions[table_id] = {};
+        }
+        tableSessions[table_id].total = total;
+        tableSessions[table_id].orders = orders;
+        tableSessions[table_id].status = status;
+
+    // Update table display (if table management UI is open)
+    if (typeof updateTableCardDisplay === 'function') {
+        updateTableCardDisplay(table_id, total, orders);
     }
-    tableSessions[table_id].total = total;
-    tableSessions[table_id].orders = orders;
-    tableSessions[table_id].status = status;
 
-    // Update table display
-    updateTableCardDisplay(table_id, total, orders);
-
-    // Update status summary
-    updateTableStatusSummary();
+    // Update status summary (if table management UI is open)
+    if (typeof updateTableStatusSummary === 'function') {
+        updateTableStatusSummary();
+    }
 
     // Update table in allTablesData cache and refresh selection UIs
     const tableIndex = allTablesData.findIndex(t => t.id === table_id);
     if (tableIndex !== -1) {
         allTablesData[tableIndex].total = total;
+        allTablesData[tableIndex].orders = orders;
         allTablesData[tableIndex].status = status;
 
         // Refresh selection UIs with updated data
         renderDesktopTableBar();
         renderMobileTableBadge();
+
+        // If this is the selected table, update the badge immediately
+        if (selectedTableId === table_id) {
+            updateTableIndicatorBadge();
+        }
+    } else {
+        console.warn(`Table ${table_id} not found in allTablesData cache`);
     }
 
-    console.log(`Table ${table_id} updated: €${total.toFixed(2)}, ${orders.length} orders`);
+        console.log(`Table ${table_id} updated: €${total.toFixed(2)}, ${orders.length} orders`);
+
+    } catch (error) {
+        if (error instanceof ValidationError) {
+            logValidationError(error, 'handleTableUpdate - SSE Event');
+            showToast('Received invalid table update. Data may be out of sync.', 'warning', 4000);
+        } else {
+            console.error('Error handling table update:', error);
+        }
+    }
 }
 
 /**
@@ -2660,6 +2963,214 @@ function closeTableBillModal() {
 }
 
 // ==================================================================================
+// API RESPONSE VALIDATION SYSTEM
+// ==================================================================================
+
+/**
+ * Validation error class for better error handling
+ */
+class ValidationError extends Error {
+    constructor(message, field, value, context = {}) {
+        super(message);
+        this.name = 'ValidationError';
+        this.field = field;
+        this.value = value;
+        this.context = context;
+    }
+}
+
+/**
+ * Validate table data structure from API
+ */
+function validateTableData(tableData, tableId) {
+    const errors = [];
+
+    if (!tableData || typeof tableData !== 'object') {
+        throw new ValidationError(
+            `Table ${tableId}: Invalid table data structure`,
+            'tableData',
+            tableData,
+            { tableId }
+        );
+    }
+
+    const requiredFields = ['name', 'seats', 'status'];
+    requiredFields.forEach(field => {
+        if (tableData[field] === undefined || tableData[field] === null) {
+            errors.push(`Missing required field: ${field}`);
+        }
+    });
+
+    if (typeof tableData.name !== 'string') {
+        errors.push(`Field 'name' must be string, got ${typeof tableData.name}`);
+    }
+
+    if (typeof tableData.seats !== 'number' || tableData.seats < 0) {
+        errors.push(`Field 'seats' must be positive number, got ${tableData.seats}`);
+    }
+
+    if (typeof tableData.status !== 'string') {
+        errors.push(`Field 'status' must be string, got ${typeof tableData.status}`);
+    }
+
+    if (tableData.session) {
+        const sessionErrors = validateSessionData(tableData.session, tableId);
+        errors.push(...sessionErrors);
+    }
+
+    if (errors.length > 0) {
+        throw new ValidationError(
+            `Table ${tableId}: Validation failed`,
+            'multiple',
+            tableData,
+            { tableId, errors }
+        );
+    }
+
+    return {
+        id: tableId,
+        table_number: tableId,
+        name: String(tableData.name),
+        seats: Number(tableData.seats),
+        status: String(tableData.status),
+        total: tableData.session?.total_amount || 0,
+        orders: Array.isArray(tableData.session?.orders) ? tableData.session.orders : [],
+        payment_status: tableData.session?.payment_status || 'unpaid',
+        session: tableData.session || null
+    };
+}
+
+/**
+ * Validate session data structure
+ */
+function validateSessionData(sessionData, tableId) {
+    const errors = [];
+
+    if (typeof sessionData !== 'object') {
+        errors.push(`Session data must be object, got ${typeof sessionData}`);
+        return errors;
+    }
+
+    if (sessionData.total_amount !== undefined && sessionData.total_amount !== null) {
+        if (typeof sessionData.total_amount !== 'number') {
+            errors.push(`Session total_amount must be number, got ${typeof sessionData.total_amount}`);
+        } else if (sessionData.total_amount < 0) {
+            errors.push(`Session total_amount must be >= 0, got ${sessionData.total_amount}`);
+        }
+    }
+
+    if (sessionData.orders !== undefined && sessionData.orders !== null) {
+        if (!Array.isArray(sessionData.orders)) {
+            errors.push(`Session orders must be array, got ${typeof sessionData.orders}`);
+        }
+    }
+
+    return errors;
+}
+
+/**
+ * Log validation error with details for debugging
+ */
+function logValidationError(error, context = 'Unknown') {
+    console.group(`%c[Validation Error] ${context}`, 'color: #ef4444; font-weight: bold;');
+    console.error('Message:', error.message);
+    console.error('Field:', error.field);
+    if (error.context && Object.keys(error.context).length > 0) {
+        console.error('Context:', error.context);
+    }
+    console.groupEnd();
+}
+
+// ==================================================================================
+// ENHANCED ERROR MESSAGE SYSTEM
+// ==================================================================================
+
+const ErrorMessages = {
+    NETWORK_OFFLINE: {
+        message: 'Cannot connect to server. Check your network connection.',
+        suggestions: ['Check WiFi/ethernet connection', 'Try refreshing the page'],
+        type: 'error',
+        icon: '🌐'
+    },
+    NETWORK_TIMEOUT: {
+        message: 'Request timed out. Server may be slow.',
+        suggestions: ['Try again in a moment', 'Contact support if this persists'],
+        type: 'warning',
+        icon: '⏱️'
+    },
+    SERVER_ERROR: {
+        message: 'Server error occurred.',
+        suggestions: ['Try again', 'Contact support if error persists'],
+        type: 'error',
+        icon: '🔧'
+    },
+    DATA_VALIDATION: {
+        message: 'Invalid data format received from server.',
+        suggestions: ['Refresh the page', 'Clear browser cache', 'Contact support'],
+        type: 'error',
+        icon: '⚠️'
+    }
+};
+
+/**
+ * Show enhanced error with icon and better messaging
+ */
+function showEnhancedError(errorKey, context = {}) {
+    const config = ErrorMessages[errorKey];
+    if (!config) {
+        showToast('An unexpected error occurred.', 'error');
+        return;
+    }
+
+    console.group(`%c${config.icon} ${config.message}`, 'font-size: 14px; font-weight: bold;');
+    console.error(config.message);
+    if (config.suggestions.length > 0) {
+        console.log('Suggestions:', config.suggestions);
+    }
+    if (Object.keys(context).length > 0) {
+        console.log('Context:', context);
+    }
+    console.groupEnd();
+
+    showToast(`${config.icon} ${config.message}`, config.type, 5000);
+}
+
+/**
+ * Enhanced fetch with timeout and better error handling
+ */
+async function enhancedFetch(url, options = {}, timeout = 10000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            if (response.status >= 500) {
+                showEnhancedError('SERVER_ERROR', { url, status: response.status });
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+            showEnhancedError('NETWORK_TIMEOUT', { url, timeout });
+            throw new Error('Request timed out');
+        }
+
+        if (error.message.includes('Failed to fetch')) {
+            showEnhancedError('NETWORK_OFFLINE', { url });
+        }
+
+        throw error;
+    }
+}
+
+// ==================================================================================
 // TABLE SELECTION SYSTEM - Persistent Table Assignment for Orders
 // ==================================================================================
 
@@ -2669,26 +3180,68 @@ function closeTableBillModal() {
  */
 async function loadTablesForSelection() {
     try {
-        const response = await fetch('/api/tables');
-        if (!response.ok) throw new Error('Failed to load tables');
+        console.log('[DEBUG] Fetching tables from /api/tables...');
+        const response = await enhancedFetch('/api/tables', {}, 8000);
+        console.log('[DEBUG] /api/tables response status:', response.status, response.statusText);
 
         const data = await response.json();
+        console.log('[DEBUG] /api/tables response data:', data);
 
-        // Convert tables object to array with IDs
+        // Convert tables object to array with validation
         const tablesObj = data.tables || {};
-        allTablesData = Object.keys(tablesObj).map(id => ({
-            id: id,
-            table_number: id,
-            ...tablesObj[id]
-        }));
+        console.log('[DEBUG] Tables object extracted:', tablesObj, 'Keys:', Object.keys(tablesObj));
+
+        const validatedTables = [];
+        const failedTables = [];
+
+        Object.keys(tablesObj).forEach(id => {
+            try {
+                const tableInfo = tablesObj[id];
+                const validatedTable = validateTableData(tableInfo, id);
+                validatedTables.push(validatedTable);
+            } catch (validationError) {
+                logValidationError(validationError, `loadTablesForSelection - Table ${id}`);
+                failedTables.push({ id, error: validationError.message });
+
+                // Use fallback data
+                validatedTables.push({
+                    id: id,
+                    table_number: id,
+                    name: `Table ${id}`,
+                    seats: 4,
+                    status: 'unknown',
+                    total: 0,
+                    orders: [],
+                    payment_status: 'unpaid',
+                    session: null,
+                    _validationFailed: true
+                });
+            }
+        });
+
+        allTablesData = validatedTables;
+        console.log('[DEBUG] Validated tables array:', allTablesData);
 
         // Render both desktop and mobile selection UIs
         renderDesktopTableBar();
         renderMobileTableBadge();
 
-        console.log('Tables loaded for selection:', allTablesData.length);
+        console.log('Tables loaded for selection:', {
+            total: allTablesData.length,
+            valid: validatedTables.length - failedTables.length,
+            failed: failedTables.length
+        });
+
+        if (failedTables.length > 0) {
+            showToast(
+                `⚠️ ${failedTables.length} table(s) have invalid data. Using fallback information.`,
+                'warning',
+                5000
+            );
+        }
     } catch (error) {
         console.error('Error loading tables for selection:', error);
+        console.error('[DEBUG] Full error details:', error.message, error.stack);
         showToast('Failed to load tables', 'error');
     }
 }
@@ -2758,6 +3311,73 @@ function renderDesktopTableBar() {
 }
 
 /**
+ * Initialize enhanced badge click handlers
+ */
+function initializeTableBadgeHandlers() {
+    if (!tableManagementEnabled) return;
+
+    const desktopBadge = document.getElementById('tableIndicatorBadge');
+    if (desktopBadge) {
+        desktopBadge.style.cursor = 'pointer';
+        desktopBadge.setAttribute('tabindex', '0');
+        desktopBadge.setAttribute('role', 'button');
+        desktopBadge.setAttribute('aria-label', 'Click to open table selector');
+
+        desktopBadge.addEventListener('click', () => {
+            if (allTablesData.length === 0) {
+                showToast('No tables configured. Set up tables in Settings.', 'warning', 4000);
+                return;
+            }
+            openTableSelector();
+        });
+
+        desktopBadge.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (allTablesData.length > 0) openTableSelector();
+            }
+        });
+    }
+
+    const mobileBadge = document.getElementById('mobileTableBadge');
+    if (mobileBadge) {
+        mobileBadge.style.cursor = 'pointer';
+        mobileBadge.setAttribute('tabindex', '0');
+        mobileBadge.setAttribute('role', 'button');
+        mobileBadge.setAttribute('aria-label', 'Click to open table picker');
+
+        mobileBadge.addEventListener('click', () => {
+            if (allTablesData.length === 0) {
+                showToast('No tables configured. Set up tables in Settings.', 'warning', 4000);
+                return;
+            }
+            if (typeof openMobileTablePicker === 'function') {
+                openMobileTablePicker();
+            }
+        });
+    }
+}
+
+/**
+ * Update badge visual state based on orders
+ */
+function updateTableBadgeVisualState() {
+    const desktopBadge = document.getElementById('tableIndicatorBadge');
+
+    if (selectedTableId !== null) {
+        const table = allTablesData.find(t => t.id === selectedTableId);
+
+        if (table && table.total > 0) {
+            if (desktopBadge) desktopBadge.classList.add('has-orders');
+        } else {
+            if (desktopBadge) desktopBadge.classList.remove('has-orders');
+        }
+    } else {
+        if (desktopBadge) desktopBadge.classList.remove('has-orders');
+    }
+}
+
+/**
  * Update the indicator badge to show current selection
  */
 function updateTableIndicatorBadge() {
@@ -2770,22 +3390,24 @@ function updateTableIndicatorBadge() {
     if (!iconSpan || !textSpan) return;
 
     if (selectedTableId === null) {
-        // Takeaway mode
         iconSpan.textContent = '🥡';
         textSpan.textContent = 'Takeaway';
+        indicator.setAttribute('aria-label', 'Takeaway mode - Click to select table');
     } else {
-        // Table selected
         const table = allTablesData.find(t => t.id === selectedTableId);
         if (table) {
             const total = table.total || 0;
             iconSpan.textContent = '📍';
             textSpan.textContent = `T${table.table_number} | €${total.toFixed(2)}`;
+            indicator.setAttribute('aria-label', `Table ${table.table_number}, Total: €${total.toFixed(2)} - Click to change table`);
         } else {
-            // Fallback: show table ID even if full data not available
             iconSpan.textContent = '📍';
             textSpan.textContent = `T${selectedTableId} | €0.00`;
+            indicator.setAttribute('aria-label', `Table ${selectedTableId} - Click to change table`);
         }
     }
+
+    updateTableBadgeVisualState();
 }
 
 /**
@@ -3025,7 +3647,8 @@ function loadSelectedTableFromStorage() {
     if (stored === 'takeaway' || stored === null) {
         selectedTableId = null;
     } else {
-        selectedTableId = parseInt(stored) || null;
+        // Keep as string to match table ID type from API (don't parseInt)
+        selectedTableId = stored;
     }
 
     console.log('Loaded selected table from storage:', selectedTableId);
@@ -3512,6 +4135,12 @@ function updateOrderDisplay() {
     let total = 0;
 
     const isDesktopUI = document.body.classList.contains('desktop-ui');
+
+    // Ensure currentOrder is always an array
+    if (!Array.isArray(currentOrder)) {
+        console.error('currentOrder is not an array:', currentOrder);
+        currentOrder = [];
+    }
 
     if (currentOrder.length === 0) {
         if (elements.emptyOrderMessage) elements.emptyOrderMessage.style.display = 'block';
@@ -4136,7 +4765,9 @@ function openItemOptionSelectModal(itemForModal, context) {
             div.appendChild(innerFlex);
 
             div.onclick = function(event) {
-                if (event.target !== inputElement) {
+                // Only trigger click if clicking the container itself, not input or label
+                // (label already has htmlFor which auto-triggers input)
+                if (event.target !== inputElement && event.target !== label) {
                     inputElement.click();
                 }
             };
@@ -4822,12 +5453,72 @@ async function refreshPrinters() {
         const sel = document.getElementById('printerSelect');
         if (!sel) return;
         sel.innerHTML = '';
-        (data.printers || []).forEach(name => {
-            const opt = document.createElement('option');
-            opt.value = name; opt.textContent = name;
-            if (name === data.selected) opt.selected = true;
-            sel.appendChild(opt);
-        });
+
+        // Handle both old format (array of strings) and new format (array of objects)
+        const printers = data.printers || [];
+        const isNewFormat = printers.length > 0 && typeof printers[0] === 'object';
+
+        if (!isNewFormat) {
+            // Legacy fallback: simple string array
+            printers.forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                if (name === data.selected) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } else {
+            // New format with printer classification
+            let hasRecommended = false;
+            let recommendedPrinter = null;
+
+            printers.forEach(printer => {
+                const { name, type, is_supported, display_hint, recommended, explanation } = printer;
+
+                // Skip unsupported printers (PDF/virtual) from dropdown
+                if (is_supported === false) {
+                    return; // Don't add to dropdown
+                }
+
+                const opt = document.createElement('option');
+                opt.value = name;
+
+                // Build display text with visual indicators
+                let displayText = name;
+                if (display_hint) {
+                    displayText = `${display_hint} ${name}`;
+                }
+
+                opt.textContent = displayText;
+
+                // Mark thermal printers with special styling
+                if (recommended) {
+                    opt.setAttribute('data-recommended', 'true');
+                    if (!hasRecommended) {
+                        hasRecommended = true;
+                        recommendedPrinter = name;
+                    }
+                }
+
+                // Select current printer, or auto-select first recommended if nothing selected
+                if (name === data.selected) {
+                    opt.selected = true;
+                } else if (!data.selected && recommendedPrinter === name) {
+                    opt.selected = true;
+                }
+
+                sel.appendChild(opt);
+            });
+
+            // Show helpful message if no thermal printer detected
+            if (!hasRecommended && printers.length > 0) {
+                const helpOption = document.createElement('option');
+                helpOption.disabled = true;
+                helpOption.textContent = '──── No thermal printer detected ────';
+                sel.insertBefore(helpOption, sel.firstChild);
+            }
+        }
+
         updatePrinterStatusDot();
     } catch (e) {
         console.error('Failed to load printers:', e);
@@ -11186,6 +11877,10 @@ async function saveNewTable() {
         // Load current configuration
         const response = await fetch('/api/tables');
         if (!response.ok) {
+            const errorData = await response.json().catch(() => null);
+            if (response.status === 404 || (errorData && errorData.message && errorData.message.includes('not enabled'))) {
+                throw new Error('Table management is not enabled. Please enable it in settings and refresh the page first.');
+            }
             throw new Error('Failed to load current configuration');
         }
 

@@ -6,7 +6,6 @@
     <title>POSPal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="enhanced-ux-components.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -60,6 +59,73 @@
         .connection-help-modal { backdrop-filter: blur(8px); }
         .status-indicator-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
+
+        /* Connection Status Indicator */
+        .connection-status-indicator {
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(8px);
+        }
+
+        .connection-status-indicator .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+
+        .connection-status-indicator.live .status-dot {
+            background-color: #10b981;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+
+        .connection-status-indicator.polling .status-dot {
+            background-color: #f59e0b;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+            animation: pulse-orange 1.5s ease-in-out infinite;
+        }
+
+        .connection-status-indicator.offline .status-dot {
+            background-color: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+            animation: pulse-red 1s ease-in-out infinite;
+        }
+
+        .connection-status-indicator.checking .status-dot {
+            background-color: #6b7280;
+            animation: pulse-gray 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+        }
+
+        @keyframes pulse-orange {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.15); }
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        @keyframes pulse-gray {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
 
         /* ==================================================================================
            TABLE MANAGEMENT MODE SWITCHING CSS
@@ -955,9 +1021,10 @@
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">Hardware &amp; Printing</h3>
                     <div class="space-y-4">
                         <div class="bg-white p-3 rounded border">
-                            <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.printing.printer">Printer</h4>
+                            <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.printing.printer">Thermal Receipt Printer</h4>
+                            <p class="text-xs text-gray-500 mb-3">Select your thermal receipt printer. PDF printers are automatically filtered out.</p>
                             <div class="flex items-center gap-2 flex-wrap">
-                                <select id="printerSelect" class="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm"></select>
+                                <select id="printerSelect" class="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm flex-1 min-w-[250px]"></select>
                                 <button class="btn-secondary px-3 py-2 rounded" onclick="refreshPrinters()" data-i18n="ui.printing.refresh">Refresh</button>
                                 <button class="btn-primary px-3 py-2 rounded" onclick="saveSelectedPrinter()" data-i18n="ui.printing.saveDefault">Save as Default</button>
                                 <span id="printerStatusDot" class="inline-flex items-center text-xs ml-2"></span>
@@ -966,6 +1033,19 @@
                                 <button class="btn-secondary px-3 py-2 rounded" onclick="testPrint()" data-i18n="ui.printing.testPrint">Test Print</button>
                                 <span id="lastTestPrintResult" class="text-xs text-gray-600"></span>
                             </div>
+                            <details class="mt-3 text-xs text-gray-600">
+                                <summary class="cursor-pointer text-blue-600 hover:text-blue-800">Need help finding your thermal printer?</summary>
+                                <div class="mt-2 p-2 bg-blue-50 rounded">
+                                    <p class="font-medium mb-1">Look for these printer names:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-2">
+                                        <li>Epson TM-T20, TM-T82, TM-T88 series</li>
+                                        <li>Star TSP100, TSP143, TSP650, TSP700</li>
+                                        <li>POS-80, POS-58 (common thermal printers)</li>
+                                        <li>"Generic / Text Only" (may work)</li>
+                                    </ul>
+                                    <p class="mt-2 text-gray-700">🖨️ icon indicates a detected thermal printer (recommended)</p>
+                                </div>
+                            </details>
                         </div>
                         <div class="bg-white p-3 rounded border">
                             <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.printing.settingsTitle">Settings</h4>
@@ -1633,6 +1713,12 @@
 
     <div id="toast" class="fixed top-5 right-5 bg-gray-800 text-white px-4 py-2 rounded-md shadow-lg text-sm z-[100] hidden opacity-0 transition-opacity duration-300">
         <span id="toast-message">Toast message here</span>
+    </div>
+
+    <!-- Connection Status Indicator (only visible in table management mode) -->
+    <div id="connectionStatusIndicator" class="connection-status-indicator checking table-mode-only" style="display: none;">
+        <div class="status-dot"></div>
+        <span class="text-sm font-medium text-gray-700" id="connectionStatusText">Checking...</span>
     </div>
 
     <!-- Subscription Modal -->

@@ -1,6 +1,6 @@
 CURRENT_VERSION = "1.2.1"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from datetime import datetime, timedelta, date
 import csv
 import os
@@ -45,6 +45,20 @@ if os.name == 'nt':  # Windows only
     subprocess.Popen = _silent_Popen
 
 app = Flask(__name__)
+
+# --- Prevent browser caching of JavaScript/HTML files ---
+@app.after_request
+def add_no_cache_headers(response):
+    """
+    Prevent browser caching of dynamic files (JS, HTML, CSS).
+    This ensures users always get the latest version after rebuilds.
+    Critical for table management real-time updates to work correctly.
+    """
+    if request.path.endswith(('.js', '.html', '.css')):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 # --- Signal handlers for graceful shutdown ---
 def signal_handler(signum, frame):
@@ -950,8 +964,11 @@ def enhanced_safe_file_operation(operation_name, file_operation, *args, **kwargs
                 if operation_name == 'save_tables_config':
                     load_tables_config()  # Verify we can load what we just saved
                 elif operation_name == 'save_table_sessions':
+                    app.logger.info(f"[DIAGNOSTIC] Verifying saved file by loading it back...")
                     load_table_sessions()  # Verify we can load what we just saved
+                    app.logger.info(f"[DIAGNOSTIC] Verification successful - file loads correctly")
             except Exception as e:
+                app.logger.error(f"[DIAGNOSTIC] Verification FAILED for {operation_name}: {e}")
                 app.logger.error(f"Verification failed for {operation_name}: {e}")
                 # Attempt to restore from backup if verification fails
                 if backup_file and os.path.exists(backup_file):
@@ -1543,8 +1560,8 @@ app.config['DEBUG'] = False
 # circular imports when frozen by PyInstaller. The synchronous rate limiting
 # still works perfectly for our use case.
 import sys
-if getattr(sys, 'frozen', False):
-    # We're running in a PyInstaller bundle
+if getattr(sys, 'frozen', False) or sys.version_info >= (3, 13):
+    # We're running in a PyInstaller bundle or Python 3.13+ (which has asyncio issues)
     from types import ModuleType
 
     # Create mock aio module
@@ -2222,35 +2239,37 @@ def serve_locales(filename):
 
 @app.route('/api/events')
 def sse_stream():
-    def gen():
-        q: Queue = Queue(maxsize=10)
-        _sse_subscribers.append(q)
-        try:
-            # Send initial state
-            init = json.dumps({"language": str(config.get('language', 'en'))})
-            yield f"event: settings\n"
-            yield f"data: {init}\n\n"
-            while True:
-                try:
-                    event_name, data = q.get(timeout=30)
-                    yield f"event: {event_name}\n"
-                    yield f"data: {data}\n\n"
-                except Empty:
-                    # keep-alive
-                    yield ": keep-alive\n\n"
-        finally:
+    try:
+        def gen():
+            q: Queue = Queue(maxsize=10)
+            _sse_subscribers.append(q)
             try:
-                _sse_subscribers.remove(q)
-            except ValueError:
-                pass
-    from flask import Response
-    headers = {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no'
-    }
-    return Response(gen(), headers=headers)
+                # Send initial state
+                init = json.dumps({"language": str(config.get('language', 'en'))})
+                yield f"event: settings\n"
+                yield f"data: {init}\n\n"
+                while True:
+                    try:
+                        event_name, data = q.get(timeout=30)
+                        yield f"event: {event_name}\n"
+                        yield f"data: {data}\n\n"
+                    except Empty:
+                        # keep-alive
+                        yield ": keep-alive\n\n"
+            finally:
+                try:
+                    _sse_subscribers.remove(q)
+                except ValueError:
+                    pass
+        headers = {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+        return Response(gen(), headers=headers)
+    except Exception as e:
+        app.logger.error(f"SSE endpoint error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/test_centralized.html')
 def serve_test_centralized():
@@ -2458,9 +2477,99 @@ def login():
         return jsonify({"success": False, "message": "Invalid password."}), 401
 
 
+def classify_printer_type(printer_name):
+    """
+    Classify printer as thermal, PDF/virtual, or unknown for better UX
+    Returns: dict with type, is_thermal, is_supported, display_hint
+    """
+    name_lower = printer_name.lower()
+
+    # Thermal printer indicators (common POS thermal printer keywords)
+    thermal_keywords = [
+        'pos', '80mm', '58mm', 'thermal', 'receipt',
+        'tm-t', 'tm-m', 'tm-p', 'tm-h', 'tm-u',  # Epson TM series
+        'tsp', 'tup', 'tsp100', 'tsp143', 'tsp650', 'tsp700',  # Star TSP series
+        'rp', 'citizen', 'ct-s',  # Citizen
+        'kitchen', 'ticket', 'escpos', 'star',
+        'bixolon', 'srp', 'custom', 'vkp'
+    ]
+
+    # PDF and virtual printer indicators (should be filtered out)
+    virtual_keywords = [
+        'pdf', 'xps', 'onenote', 'one note', 'fax',
+        'send to', 'microsoft print', 'foxit', 'adobe',
+        'cutepdf', 'primopdf', 'bullzip', 'dopdf',
+        'virtual', 'document writer'
+    ]
+
+    # Check for virtual/PDF printers first (these are NOT supported)
+    for keyword in virtual_keywords:
+        if keyword in name_lower:
+            return {
+                'type': 'pdf_virtual',
+                'is_thermal': False,
+                'is_supported': False,
+                'display_hint': '📄 PDF/Virtual (Not supported)',
+                'explanation': 'PDF and virtual printers cannot print thermal receipts'
+            }
+
+    # Check for thermal printer indicators
+    thermal_score = sum(1 for keyword in thermal_keywords if keyword in name_lower)
+
+    if thermal_score >= 1:
+        return {
+            'type': 'thermal',
+            'is_thermal': True,
+            'is_supported': True,
+            'display_hint': '🖨️ Thermal Printer',
+            'recommended': True
+        }
+
+    # Check for "Generic / Text Only" which often works for ESC/POS
+    if 'generic' in name_lower and 'text' in name_lower:
+        return {
+            'type': 'generic_text',
+            'is_thermal': False,
+            'is_supported': True,
+            'display_hint': '📝 Text Printer (May work)',
+            'recommended': False
+        }
+
+    # Unknown printer type
+    return {
+        'type': 'unknown',
+        'is_thermal': False,
+        'is_supported': True,  # Allow, but don't recommend
+        'display_hint': '❓ Unknown Type',
+        'recommended': False
+    }
+
 @app.route('/api/printers', methods=['GET'])
 def get_printers():
-    return jsonify({"printers": list_installed_printers(), "selected": PRINTER_NAME})
+    """
+    Enhanced printer list endpoint with type classification
+    Returns printers with metadata about thermal/PDF type for better UX
+    """
+    printer_names = list_installed_printers()
+
+    # Classify each printer
+    printers_with_metadata = []
+    for name in printer_names:
+        classification = classify_printer_type(name)
+        printers_with_metadata.append({
+            'name': name,
+            **classification
+        })
+
+    # Sort: thermal first, then generic, then unknown, then unsupported last
+    sort_order = {'thermal': 0, 'generic_text': 1, 'unknown': 2, 'pdf_virtual': 3}
+    printers_with_metadata.sort(key=lambda p: sort_order.get(p['type'], 999))
+
+    return jsonify({
+        "printers": printers_with_metadata,
+        "printer_names": printer_names,  # Legacy support
+        "selected": PRINTER_NAME
+    })
 
 
 @app.route('/api/printer/status', methods=['GET'])
@@ -2495,6 +2604,10 @@ def test_print():
         # Check license status - allow both active subscriptions and active trials
         license_status = check_trial_status()
 
+        # DEBUG: Log the actual license status for troubleshooting
+        app.logger.info(f"[TEST_PRINT] License status: {license_status}")
+        app.logger.info(f"[TEST_PRINT] active={license_status.get('active', False)}, licensed={license_status.get('licensed', False)}, subscription={license_status.get('subscription')}, subscription_status={license_status.get('subscription_status')}")
+
         # Allow printing if license is active OR if subscription is active
         has_active_license = (
             license_status.get('active', False) or
@@ -2502,10 +2615,13 @@ def test_print():
             (license_status.get('subscription') and license_status.get('subscription_status') == 'active')
         )
 
+        app.logger.info(f"[TEST_PRINT] has_active_license={has_active_license}")
+
         if not has_active_license:
             return jsonify({
                 "success": False,
-                "message": "License inactive. Printing disabled."
+                "message": "License inactive. Printing disabled.",
+                "debug_license_status": license_status  # Add debug info
             }), 200
 
         test_order = {
@@ -2519,14 +2635,27 @@ def test_print():
         # Reset fallback flag and attempt
         global last_print_used_fallback
         last_print_used_fallback = False
+        # Check if selected printer is PDF/virtual BEFORE attempting print
+        printer_classification = classify_printer_type(PRINTER_NAME)
+        if not printer_classification.get('is_supported', True):
+            return jsonify({
+                "success": False,
+                "message": f"❌ Cannot use this printer for thermal receipts. {printer_classification.get('explanation', 'Please select a thermal receipt printer.')}"
+            }), 200
+
         ok = print_kitchen_ticket(test_order, copy_info="")
         if ok:
-            return jsonify({"success": True})
+            return jsonify({"success": True, "message": "✓ Test print sent successfully!"})
+
         # If failed and looks like a PDF-type printer, clarify unsupported
         name_lower = str(PRINTER_NAME).lower()
-        if 'pdf' in name_lower:
-            return jsonify({"success": False, "message": "Selected printer is a PDF device and is not supported for ticket printing."}), 200
-        return jsonify({"success": False, "message": "Test print failed. See server log for details."}), 200
+        if 'pdf' in name_lower or 'xps' in name_lower or 'onenote' in name_lower:
+            return jsonify({
+                "success": False,
+                "message": "❌ PDF/Virtual printer detected. Please select your thermal receipt printer from the dropdown."
+            }), 200
+
+        return jsonify({"success": False, "message": "Test print failed. Check printer connection and try again."}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 200
 
@@ -2678,6 +2807,7 @@ def change_password():
 # === Table Management API Endpoints ===
 
 @app.route('/api/tables', methods=['GET'])
+@limiter.limit("30 per minute")  # Allow 30 requests per minute (one every 2 seconds average)
 def get_tables():
     """Get all tables and their status"""
     if not is_table_management_enabled():
@@ -2685,7 +2815,11 @@ def get_tables():
 
     try:
         tables_config = load_tables_config()
+        app.logger.info(f"[DEBUG] load_tables_config returned: {tables_config}")
+        app.logger.info(f"[DEBUG] tables_config['tables'] type: {type(tables_config.get('tables'))}, keys: {list(tables_config.get('tables', {}).keys())}")
+
         table_sessions = load_table_sessions()
+        app.logger.info(f"[DEBUG] load_table_sessions returned keys: {list(table_sessions.keys())}")
 
         # Merge table configuration with current session status
         for table_id, table_info in tables_config.get("tables", {}).items():
@@ -5350,10 +5484,13 @@ def handle_order():
             "status": "error_trial_expired",
             "message": "Trial period has ended. Printing disabled."
         }), 403
-    
+
     order_data_from_client = request.json
     if not order_data_from_client or 'items' not in order_data_from_client or not order_data_from_client['items']:
         return jsonify({"status": "error_validation", "message": "Invalid order data: Items are required."}), 400
+
+    # DIAGNOSTIC LOG 1: Log received table number from client
+    app.logger.info(f"[DIAGNOSTIC] Order received from client - Table Number: '{order_data_from_client.get('tableNumber', 'NOT PROVIDED')}'")
 
     authoritative_order_number = -1
     try:
@@ -5367,8 +5504,8 @@ def handle_order():
 
     order_data_internal = {
         'number': authoritative_order_number,
-        'tableNumber': order_data_from_client.get('tableNumber', '').strip() or 'N/A',
-        'items': order_data_from_client.get('items', []), 
+        'tableNumber': (order_data_from_client.get('tableNumber') or '').strip() or 'N/A',
+        'items': order_data_from_client.get('items', []),
         'universalComment': order_data_from_client.get('universalComment', ''),
         'paymentMethod': order_data_from_client.get('paymentMethod', 'Cash')
     }
@@ -5460,8 +5597,13 @@ def handle_order():
 
     # Track table session if table management is enabled and order has valid table number
     # NOTE: Table session tracking is independent of CSV logging to ensure restaurant operations continue
-    if is_table_management_enabled():
-        table_number = order_data_internal.get('tableNumber', '').strip()
+    table_mgmt_enabled = is_table_management_enabled()
+    app.logger.info(f"[DIAGNOSTIC] Table management enabled: {table_mgmt_enabled}")
+
+    if table_mgmt_enabled:
+        table_number = (order_data_internal.get('tableNumber') or '').strip()
+        app.logger.info(f"[DIAGNOSTIC] Extracted table number: '{table_number}' (valid: {table_number and table_number != 'N/A'})")
+
         if table_number and table_number != 'N/A':
             try:
                 # Calculate order total for table tracking
@@ -5471,7 +5613,10 @@ def handle_order():
                 )
 
                 # Update table session
+                app.logger.info(f"[DIAGNOSTIC] Calling update_table_session() - Table: '{table_number}', Order: #{authoritative_order_number}, Total: €{order_total:.2f}")
+
                 if update_table_session(table_number, authoritative_order_number, order_total):
+                    app.logger.info(f"[DIAGNOSTIC] SUCCESS: update_table_session() returned True")
                     app.logger.info(f"Order #{authoritative_order_number} tracked for table {table_number} (€{order_total:.2f})")
 
                     # Broadcast table update via SSE to all devices
@@ -5483,8 +5628,10 @@ def handle_order():
                         "timestamp": datetime.now().isoformat()
                     })
                 else:
+                    app.logger.warning(f"[DIAGNOSTIC] FAILURE: update_table_session() returned False")
                     app.logger.warning(f"Failed to update table session for table {table_number}")
             except Exception as e:
+                app.logger.warning(f"[DIAGNOSTIC] EXCEPTION in table session tracking: {e}")
                 app.logger.warning(f"Failed to track table session for order #{authoritative_order_number}: {e}")
 
     app.logger.info(f"Order #{authoritative_order_number} processing complete. Final Status: {final_status_code}, Printed: {print_status_summary}, Logged: {csv_log_succeeded}")
@@ -5528,7 +5675,7 @@ def handle_test_order():
     # Track table session if table management is enabled and order has valid table number
     # NOTE: Table session tracking is independent of CSV logging to ensure restaurant operations continue
     if is_table_management_enabled():
-        table_number = order_data_internal.get('tableNumber', '').strip()
+        table_number = (order_data_internal.get('tableNumber') or '').strip()
         if table_number and table_number != 'N/A':
             try:
                 # Calculate order total for table tracking
@@ -6005,7 +6152,20 @@ def load_tables_config():
     try:
         if os.path.exists(tables_config_file):
             with open(tables_config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                loaded_config = json.load(f)
+
+            # VALIDATION: Fix corrupted data structure (list instead of dict)
+            if isinstance(loaded_config.get("tables"), list):
+                app.logger.warning("tables_config.json has 'tables' as list, auto-correcting to dict in memory only")
+                loaded_config["tables"] = {}
+
+            # Ensure required keys exist with correct types
+            if "tables" not in loaded_config or not isinstance(loaded_config.get("tables"), dict):
+                loaded_config["tables"] = {}
+            if "settings" not in loaded_config:
+                loaded_config["settings"] = default_config["settings"]
+
+            return loaded_config
         else:
             # Create default file if it doesn't exist
             with open(tables_config_file, 'w', encoding='utf-8') as f:
@@ -6050,8 +6210,12 @@ def save_table_sessions(sessions_data):
     """Save table sessions to table_sessions.json with enhanced safety"""
     def _save_operation():
         table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
+        app.logger.info(f"[DIAGNOSTIC] Writing to file: {table_sessions_file}")
+        app.logger.info(f"[DIAGNOSTIC] DATA_DIR is: {DATA_DIR}")
+        app.logger.info(f"[DIAGNOSTIC] Sessions data has {len(sessions_data)} table(s)")
         with open(table_sessions_file, 'w', encoding='utf-8') as f:
             json.dump(sessions_data, f, indent=2, ensure_ascii=False)
+        app.logger.info(f"[DIAGNOSTIC] File write completed successfully")
         return True
 
     try:
@@ -6184,7 +6348,9 @@ def cleanup_old_table_sessions():
 def update_table_session(table_id, order_number, order_total):
     """Update table session with new order"""
     try:
+        app.logger.info(f"[DIAGNOSTIC] Inside update_table_session() - Table ID: '{table_id}'")
         sessions = load_table_sessions()
+        app.logger.info(f"[DIAGNOSTIC] Loaded sessions: {len(sessions)} table(s) currently in sessions")
         current_time = datetime.now().isoformat()
 
         if table_id not in sessions:
@@ -6236,7 +6402,11 @@ def update_table_session(table_id, order_number, order_total):
         else:
             sessions[table_id]["payment_status"] = "partial"
 
-        return save_table_sessions(sessions)
+        app.logger.info(f"[DIAGNOSTIC] About to save sessions - Table '{table_id}' now has {len(sessions[table_id]['orders'])} order(s), Total: €{sessions[table_id]['total_amount']:.2f}")
+
+        result = save_table_sessions(sessions)
+        app.logger.info(f"[DIAGNOSTIC] save_table_sessions() returned: {result}")
+        return result
     except Exception as e:
         app.logger.error(f"Failed to update table session for table {table_id}: {e}")
         return False
@@ -7021,6 +7191,58 @@ def validate_license_api():
             # Validate with cloud using unified controller
             app.logger.info(f"Validating license for: {customer_email[:5]}*** via unified controller")
             result = validate_license_integrated(customer_email, unlock_token, hardware_id)
+
+            # FALLBACK: If unified system is unavailable, call cloud API directly
+            if not result.get('licensed') and result.get('message') == 'Integration system not available':
+                app.logger.warning("Unified system not available, falling back to direct cloud validation")
+                try:
+                    success, cloud_data, error_msg = _validate_license_with_cloud(
+                        customer_email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
+                    )
+                    if success and cloud_data:
+                        app.logger.info("Direct cloud validation successful")
+                        result = {
+                            'licensed': True,
+                            'active': True,
+                            'cloud_validation': True,
+                            'customer': cloud_data.get('customer'),
+                            'subscription_status': cloud_data.get('subscription_status', 'active'),
+                            'valid_until': cloud_data.get('valid_until'),
+                            'subscription_id': cloud_data.get('subscription_id'),
+                            '_unified_system': False,
+                            '_fallback_method': 'direct_cloud_api'
+                        }
+                    else:
+                        app.logger.error(f"Direct cloud validation failed: {error_msg}")
+                        result = {
+                            'licensed': False,
+                            'active': False,
+                            'cloud_validation': False,
+                            'message': error_msg or 'Cloud validation failed',
+                            '_unified_system': False,
+                            '_fallback_method': 'direct_cloud_api_failed'
+                        }
+                except Exception as fallback_err:
+                    app.logger.error(f"Fallback cloud validation error: {fallback_err}")
+
+            # MIGRATION COMPATIBILITY: Also save to legacy cache if validation successful
+            # This ensures legacy system can access license data during migration period
+            if result.get('licensed') and result.get('active'):
+                try:
+                    legacy_license_data = {
+                        'customer_email': customer_email,
+                        'unlock_token': unlock_token,
+                        'hardware_id': hardware_id or get_enhanced_hardware_id(),
+                        'customer': result.get('customer'),
+                        'subscription_status': result.get('subscription_status', 'active'),
+                        'valid_until': result.get('valid_until'),
+                        'subscription_id': result.get('subscription_id')
+                    }
+                    _save_license_cache(legacy_license_data)
+                    app.logger.info("License saved to legacy cache for backward compatibility")
+                except Exception as e:
+                    app.logger.warning(f"Failed to save license to legacy cache: {e}")
+                    # Don't fail the request if legacy cache save fails
 
             # Add API metadata
             result['_api_endpoint'] = 'validate_license'
