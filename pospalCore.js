@@ -2175,7 +2175,34 @@ function setupTableSSEUpdates() {
             }
         });
 
-        console.log('Table SSE updates configured for events: table_order_added, table_updated, table_system_updated');
+        // Listen for table cleared event
+        window.evtSource.addEventListener('table_cleared', async function(e) {
+            try {
+                lastSSEEventTime = Date.now(); // Track event receipt for connection health
+                const data = JSON.parse(e.data);
+                console.log('[SSE-EVENT] ========== table_cleared event received ==========');
+                console.log('[SSE-EVENT] Cleared table_id:', data.table_id, 'at:', data.cleared_at);
+                console.log('[SSE-EVENT] Currently selected table:', selectedTableId);
+
+                const clearedTableId = data.table_id;
+
+                // Reload table data to update badge and selector with latest state
+                console.log('[SSE-EVENT] Reloading tables data to refresh badge...');
+                await loadTablesForSelection();
+
+                // If the cleared table is currently selected, update badge to show new state
+                if (selectedTableId === clearedTableId) {
+                    console.log('[SSE-EVENT] Cleared table is currently selected, updating badge display');
+                    updateTableIndicatorBadge();
+                } else {
+                    console.log('[SSE-EVENT] Cleared table is not selected, badge unchanged');
+                }
+            } catch (error) {
+                console.error('[SSE-EVENT] Error handling table_cleared event:', error);
+            }
+        });
+
+        console.log('Table SSE updates configured for events: table_order_added, table_updated, table_system_updated, table_cleared');
     } else {
         console.warn('window.evtSource not available - SSE updates will not work. Table data will only update on manual refresh.');
     }
@@ -2485,6 +2512,18 @@ function updateModeSpecificUI() {
             el.style.display = 'block';
         });
         simpleOnlyElements.forEach(el => el.style.display = 'none');
+
+        // Hide "Pay by Card" checkbox in table management mode
+        // In table mode, payment method is selected at payment time, not during order entry
+        const paidByCardCheckbox = document.getElementById('paidByCardCheckbox');
+        if (paidByCardCheckbox) {
+            // Hide the entire checkbox container (parent div with label)
+            const checkboxContainer = paidByCardCheckbox.closest('.mt-2');
+            if (checkboxContainer) {
+                checkboxContainer.style.display = 'none';
+                console.log('[MODE] Hid "Pay by Card" checkbox (table management mode)');
+            }
+        }
     } else {
         tableOnlyElements.forEach(el => {
             // Skip modals - they should be controlled by their own show/hide functions
@@ -2494,6 +2533,16 @@ function updateModeSpecificUI() {
             el.style.display = 'none';
         });
         simpleOnlyElements.forEach(el => el.style.display = 'block');
+
+        // Show "Pay by Card" checkbox in simple mode
+        const paidByCardCheckbox = document.getElementById('paidByCardCheckbox');
+        if (paidByCardCheckbox) {
+            const checkboxContainer = paidByCardCheckbox.closest('.mt-2');
+            if (checkboxContainer) {
+                checkboxContainer.style.display = 'flex';
+                console.log('[MODE] Showed "Pay by Card" checkbox (simple mode)');
+            }
+        }
     }
 }
 
@@ -3316,7 +3365,7 @@ function renderDesktopTableBar() {
 
         html += `
             <button class="table-select-btn ${isSelected ? 'selected' : ''}"
-                    onclick="selectTableFromModal(${table.id})">
+                    onclick="selectTableFromModal('${table.id}')">
                 <div class="table-name">
                     <span class="status-dot ${statusClass}"></span>
                     T${table.table_number}
@@ -3620,7 +3669,7 @@ function renderMobileTablePickerGrid() {
 
         html += `
             <div class="table-picker-card ${statusClass} ${isSelected ? 'selected' : ''}"
-                 onclick="selectTable(${table.id})">
+                 onclick="selectTable('${table.id}')">
                 <div class="text-3xl font-bold mb-2">
                     <span class="status-dot ${statusClass}"></span>
                     ${table.table_number}
@@ -5165,6 +5214,11 @@ function openManagementModal() {
     }
 
     document.body.style.overflow = 'hidden';
+
+    // Hide floating action buttons to prevent modal stacking
+    const settingsGear = document.getElementById('settings-gear-container');
+    if (settingsGear) settingsGear.style.display = 'none';
+
     loadManagementData();
     loadAppVersion();
     checkAndDisplayTrialStatus();
@@ -5194,6 +5248,10 @@ function closeManagementModal() {
         elements.managementModal.classList.remove('flex');
     }
     document.body.style.overflow = '';
+
+    // Show floating action buttons again
+    const settingsGear = document.getElementById('settings-gear-container');
+    if (settingsGear) settingsGear.style.display = 'flex';
 }
 
 
@@ -12248,6 +12306,10 @@ function openTablesModal() {
     modal.classList.add('flex');
     document.body.style.overflow = 'hidden';
 
+    // Hide floating action buttons to prevent modal stacking
+    const settingsGear = document.getElementById('settings-gear-container');
+    if (settingsGear) settingsGear.style.display = 'none';
+
     // Reset to grid view and load tables
     showTablesGrid();
     loadAllTables();
@@ -12261,6 +12323,10 @@ function closeTablesModal() {
     modal.classList.add('hidden');
     modal.classList.remove('flex');
     document.body.style.overflow = '';
+
+    // Show floating action buttons again
+    const settingsGear = document.getElementById('settings-gear-container');
+    if (settingsGear) settingsGear.style.display = 'flex';
 
     // Reset state
     currentTableData = null;
@@ -12305,6 +12371,32 @@ async function loadAllTables() {
         if (loading) loading.classList.add('hidden');
         if (gridView) gridView.classList.remove('hidden');
         if (grid) grid.innerHTML = '<div class="col-span-full text-center py-8 text-red-500">Error loading tables. Please try again.</div>';
+    }
+}
+
+// Reload table data without changing view state
+async function reloadTableDataOnly() {
+    try {
+        const response = await fetch('/api/tables');
+        if (!response.ok) throw new Error('Failed to fetch tables');
+
+        const data = await response.json();
+        const tablesObj = data.tables || {};
+        tableManagementModalData = Object.keys(tablesObj).map(id => ({
+            id: id,
+            ...tablesObj[id]
+        }));
+
+        // If currently showing grid view, re-render it to show updated data
+        const gridView = document.getElementById('tablesGridView');
+        const detailView = document.getElementById('tableDetailView');
+        if (gridView && !gridView.classList.contains('hidden') &&
+            detailView && detailView.classList.contains('hidden')) {
+            renderTablesGrid();
+        }
+    } catch (error) {
+        console.error('Error reloading table data:', error);
+        // Silent fail - don't disrupt user experience
     }
 }
 
@@ -12514,30 +12606,68 @@ function renderTableDetail() {
         if (ordersEmpty) ordersEmpty.classList.remove('hidden');
     }
 
-    // Update button states
+    // Update button states based on payment status
     const hasOrders = orders && orders.length > 0;
-    const isPaid = table.status === 'paid';
+    const paymentStatus = currentTableData.session?.payment_status || 'unpaid';
+    const isPaid = paymentStatus === 'paid';
+    const isPartiallyPaid = paymentStatus === 'partial';
+    const amountPaid = currentTableData.session?.amount_paid || 0;
+    const totalAmount = currentTableData.session?.total_amount || 0;
+    const remaining = totalAmount - amountPaid;
 
     const splitBillBtn = document.getElementById('splitBillBtn');
     const markPaidBtn = document.getElementById('markPaidBtn');
     const clearTableBtn = document.getElementById('clearTableBtn');
 
+    // Split Bill - disable if no orders or fully paid
     if (splitBillBtn) {
         splitBillBtn.disabled = !hasOrders || isPaid;
         splitBillBtn.classList.toggle('opacity-50', !hasOrders || isPaid);
         splitBillBtn.classList.toggle('cursor-not-allowed', !hasOrders || isPaid);
     }
 
+    // Mark as Paid - disable if fully paid, enable if unpaid/partial
     if (markPaidBtn) {
         markPaidBtn.disabled = !hasOrders || isPaid;
         markPaidBtn.classList.toggle('opacity-50', !hasOrders || isPaid);
         markPaidBtn.classList.toggle('cursor-not-allowed', !hasOrders || isPaid);
+
+        // Add tooltip to explain status
+        if (isPartiallyPaid) {
+            markPaidBtn.title = `Pay remaining €${remaining.toFixed(2)}`;
+        } else if (isPaid) {
+            markPaidBtn.title = 'Table already fully paid';
+        } else {
+            markPaidBtn.title = '';
+        }
     }
 
+    // Clear Table - enable only if fully paid
     if (clearTableBtn) {
-        clearTableBtn.disabled = !isPaid && hasOrders;
-        clearTableBtn.classList.toggle('opacity-50', !isPaid && hasOrders);
-        clearTableBtn.classList.toggle('cursor-not-allowed', !isPaid && hasOrders);
+        clearTableBtn.disabled = !isPaid;
+        clearTableBtn.classList.toggle('opacity-50', !isPaid);
+        clearTableBtn.classList.toggle('cursor-not-allowed', !isPaid);
+
+        if (!isPaid && hasOrders) {
+            clearTableBtn.title = 'Mark as paid first before clearing';
+        } else {
+            clearTableBtn.title = '';
+        }
+    }
+
+    // Show payment status info if any payment made
+    if (paymentStatus !== 'unpaid' && totalElement) {
+        // Remove any existing payment info
+        const existingInfo = totalElement.parentNode.querySelector('.payment-status-info');
+        if (existingInfo) existingInfo.remove();
+
+        const paymentInfo = document.createElement('div');
+        paymentInfo.className = 'payment-status-info text-sm text-gray-600 mt-2';
+        paymentInfo.innerHTML = `
+            <div>Paid: €${amountPaid.toFixed(2)}</div>
+            ${isPartiallyPaid ? `<div class="text-orange-600 font-semibold">Remaining: €${remaining.toFixed(2)}</div>` : ''}
+        `;
+        totalElement.parentNode.appendChild(paymentInfo);
     }
 }
 
@@ -12837,6 +12967,132 @@ async function viewTableBill() {
     }
 }
 
+// ============================================================================
+// PAYMENT METHOD MODAL FUNCTIONS
+// ============================================================================
+
+// Global variable for selected payment method
+let selectedPaymentMethod = 'cash';
+
+/**
+ * Show payment method selection modal
+ */
+function showPaymentMethodModal(amount, tableId) {
+    const modal = document.getElementById('paymentMethodModal');
+    const totalDisplay = document.getElementById('paymentTotalDisplay');
+
+    if (!modal) {
+        console.error('[PAYMENT] Payment method modal not found');
+        return;
+    }
+
+    if (totalDisplay) {
+        totalDisplay.textContent = `€${amount.toFixed(2)}`;
+    }
+
+    // Reset to cash (default)
+    selectedPaymentMethod = 'cash';
+    const cashBtn = document.getElementById('paymentMethodCash');
+    const cardBtn = document.getElementById('paymentMethodCard');
+
+    if (cashBtn && cardBtn) {
+        cashBtn.classList.add('selected-payment');
+        cardBtn.classList.remove('selected-payment');
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    console.log('[PAYMENT] Payment method modal opened with amount:', amount);
+}
+
+/**
+ * Select payment method
+ */
+function selectPaymentMethod(method) {
+    selectedPaymentMethod = method;
+
+    const cashBtn = document.getElementById('paymentMethodCash');
+    const cardBtn = document.getElementById('paymentMethodCard');
+
+    if (cashBtn && cardBtn) {
+        cashBtn.classList.toggle('selected-payment', method === 'cash');
+        cardBtn.classList.toggle('selected-payment', method === 'card');
+    }
+
+    console.log('[PAYMENT] Payment method selected:', method);
+}
+
+/**
+ * Close payment method modal
+ */
+function closePaymentMethodModal() {
+    const modal = document.getElementById('paymentMethodModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+    console.log('[PAYMENT] Payment method modal closed');
+}
+
+/**
+ * Confirm payment with selected method
+ */
+async function confirmPayment() {
+    closePaymentMethodModal();
+
+    if (!currentTableId || !currentTableData) {
+        console.error('[PAYMENT] No table selected');
+        return;
+    }
+
+    const total = currentTableData.session?.total_amount || 0;
+
+    try {
+        console.log('[PAYMENT] Recording payment:', {
+            table_id: currentTableId,
+            amount: total,
+            method: selectedPaymentMethod
+        });
+
+        const response = await fetch(`/api/tables/${currentTableId}/add-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                amount: total,
+                method: selectedPaymentMethod
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMsg = errorData.message || 'Failed to record payment';
+            throw new Error(errorMsg);
+        }
+
+        const result = await response.json();
+        const methodLabel = selectedPaymentMethod === 'cash' ? '💵 Cash' : '💳 Card';
+        showToast(`${result.message || 'Table marked as paid'} (${methodLabel})`, 'success');
+
+        // Refresh table data
+        await showTableDetail(currentTableId);
+        await reloadTableDataOnly();
+
+        // Also update badge if this is the selected table
+        if (selectedTableId === currentTableId) {
+            await loadTablesForSelection();
+            updateTableIndicatorBadge();
+        }
+    } catch (error) {
+        console.error('[PAYMENT] Error recording payment:', error);
+        showToast(error.message || 'Error recording payment', 'error', 7000);
+    }
+}
+
+// ============================================================================
+// MARK TABLE AS PAID
+// ============================================================================
+
 // Mark table as paid
 async function markTableAsPaid() {
     if (!currentTableId || !currentTableData) return;
@@ -12844,32 +13100,10 @@ async function markTableAsPaid() {
     const table = tableManagementModalData.find(t => t.id === currentTableId);
     if (!table) return;
 
-    const tableName = table.name || `Table ${table.id}`;
     const total = currentTableData.session?.total_amount || 0;
 
-    if (!confirm(`Mark ${tableName} as paid (€${total.toFixed(2)})?`)) return;
-
-    try {
-        const response = await fetch(`/api/tables/${currentTableId}/add-payment`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                amount: total,
-                payment_method: 'cash'
-            })
-        });
-
-        if (!response.ok) throw new Error('Failed to mark as paid');
-
-        showToast('Table marked as paid');
-
-        // Refresh table data
-        await showTableDetail(currentTableId);
-        await loadAllTables();
-    } catch (error) {
-        console.error('Error marking table as paid:', error);
-        showToast('Error marking table as paid', 'error');
-    }
+    // Show payment method modal instead of simple confirm
+    showPaymentMethodModal(total, currentTableId);
 }
 
 // Clear table
@@ -12885,23 +13119,47 @@ async function clearTable() {
     try {
         const response = await fetch(`/api/tables/${currentTableId}/clear`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})  // Send empty JSON body
         });
 
-        if (!response.ok) throw new Error('Failed to clear table');
+        const data = await response.json();
 
-        showToast('Table cleared');
+        if (!response.ok) {
+            // Show detailed error message from backend
+            const errorMsg = data.message || 'Failed to clear table';
+            const errorDetail = data.detail ? `\n${data.detail}` : '';
+            console.error('Error clearing table:', errorMsg, errorDetail);
+            showToast(errorMsg, 'error');
+            return;
+        }
+
+        showToast(data.message || 'Table cleared');
 
         // Go back to grid view and refresh
         showTablesGrid();
-        await loadAllTables();
+        await reloadTableDataOnly();
+
+        // CRITICAL: Also refresh badge data if this was the selected table
+        // This provides immediate local feedback without waiting for SSE
+        if (selectedTableId === currentTableId) {
+            console.log('[CLEAR_TABLE] Cleared table was selected, refreshing badge data');
+            await loadTablesForSelection();  // Refresh allTablesData with latest state
+            updateTableIndicatorBadge();     // Update badge display immediately
+        } else {
+            console.log('[CLEAR_TABLE] Cleared table was not selected, badge unchanged');
+        }
     } catch (error) {
         console.error('Error clearing table:', error);
-        showToast('Error clearing table', 'error');
+        showToast('Error clearing table: ' + error.message, 'error');
     }
 }
 
 // Split bill modal functions
+// Global variable to track item assignments for split bill
+let itemAssignments = {};
+let currentSplitMode = 'equal'; // 'equal' or 'byItems'
+
 function showSplitBillModal() {
     const total = currentTableData?.session?.total_amount || 0;
     if (!currentTableData || total <= 0) return;
@@ -12912,9 +13170,18 @@ function showSplitBillModal() {
     modal.classList.remove('hidden');
     modal.classList.add('flex');
 
-    // Reset input
+    // Reset to Equal Split tab
+    currentSplitMode = 'equal';
+    switchSplitTab('equal');
+
+    // Reset equal split input
     const input = document.getElementById('splitWaysInput');
     if (input) input.value = '2';
+
+    // Reset by items data
+    itemAssignments = {};
+    const numPeopleSelect = document.getElementById('numPeopleSelect');
+    if (numPeopleSelect) numPeopleSelect.value = '2';
 
     updateSplitPreview();
 }
@@ -12932,6 +13199,7 @@ function updateSplitPreview() {
 
     const input = document.getElementById('splitWaysInput');
     const preview = document.getElementById('splitPreview');
+    const paymentsContainer = document.getElementById('equalSplitPayments');
 
     if (!input || !preview) return;
 
@@ -12939,6 +13207,7 @@ function updateSplitPreview() {
     const total = currentTableData.session?.total_amount || 0;
     const perPerson = total / ways;
 
+    // Update preview
     preview.innerHTML = `
         <div class="text-center">
             <p class="text-lg font-semibold text-gray-800 mb-4">Total: ${formatCurrency(total)}</p>
@@ -12946,16 +13215,425 @@ function updateSplitPreview() {
             <p class="text-sm text-gray-600">per person (${ways} ways)</p>
         </div>
     `;
+
+    // Generate payment cards for each person
+    if (paymentsContainer) {
+        let paymentsHTML = '';
+        for (let i = 1; i <= ways; i++) {
+            paymentsHTML += `
+                <div class="bg-white border border-gray-200 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="font-medium text-gray-800">Person ${i}</span>
+                        <span class="text-lg font-bold text-gray-800">${formatCurrency(perPerson)}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="splitPaymentMethod_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="cash">💵 Cash</option>
+                            <option value="card">💳 Card</option>
+                        </select>
+                        <button onclick="recordEqualSplitPayment(${i}, ${perPerson})"
+                                id="recordPaymentBtn_${i}"
+                                class="btn-success px-4 py-2 text-sm whitespace-nowrap rounded-lg">
+                            Record
+                        </button>
+                    </div>
+                    <div id="paymentStatus_${i}" class="hidden mt-2 text-sm text-green-600 flex items-center gap-1">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Payment recorded</span>
+                    </div>
+                </div>
+            `;
+        }
+        paymentsContainer.innerHTML = paymentsHTML;
+    }
 }
 
-function confirmSplitBill() {
-    const input = document.getElementById('splitWaysInput');
-    const ways = parseInt(input?.value || '2');
-    const perPerson = (currentTableData?.total || 0) / ways;
+// Record payment for equal split
+async function recordEqualSplitPayment(personNumber, amount) {
+    if (!currentTableId) {
+        console.error('[SPLIT_PAYMENT] No table selected');
+        return;
+    }
 
-    showToast(`Bill split ${ways} ways: ${formatCurrency(perPerson)} each`);
-    closeSplitBillModal();
+    const methodSelect = document.getElementById(`splitPaymentMethod_${personNumber}`);
+    const paymentBtn = document.getElementById(`recordPaymentBtn_${personNumber}`);
+    const statusDiv = document.getElementById(`paymentStatus_${personNumber}`);
+
+    if (!methodSelect) {
+        console.error(`[SPLIT_PAYMENT] Payment method select not found for person ${personNumber}`);
+        return;
+    }
+
+    const method = methodSelect.value;
+
+    try {
+        paymentBtn.disabled = true;
+        paymentBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Recording...';
+
+        console.log('[SPLIT_PAYMENT] Recording equal split payment:', {
+            table_id: currentTableId,
+            person: personNumber,
+            amount: amount,
+            method: method
+        });
+
+        const response = await fetch(`/api/tables/${currentTableId}/add-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                amount: amount,
+                method: method,
+                note: `Split payment - Person ${personNumber}`
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to record payment');
+        }
+
+        // Show success
+        if (statusDiv) {
+            statusDiv.classList.remove('hidden');
+        }
+        paymentBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Recorded';
+        paymentBtn.classList.remove('btn-success');
+        paymentBtn.classList.add('bg-gray-300', 'text-gray-600', 'cursor-not-allowed');
+        paymentBtn.disabled = true;
+        methodSelect.disabled = true;
+
+        // Refresh table data
+        await showTableDetail(currentTableId);
+        await reloadTableDataOnly();
+
+        const methodLabel = method === 'cash' ? '💵 Cash' : '💳 Card';
+        showToast(`Payment recorded: €${amount.toFixed(2)} (${methodLabel})`, 'success');
+
+    } catch (error) {
+        console.error('[SPLIT_PAYMENT] Error recording split payment:', error);
+        showToast(error.message || 'Error recording payment', 'error');
+        paymentBtn.disabled = false;
+        paymentBtn.innerHTML = 'Record';
+    }
 }
+
+// ============================================================================
+// SPLIT BILL BY ITEMS FUNCTIONALITY
+// ============================================================================
+
+function switchSplitTab(tabName) {
+    currentSplitMode = tabName;
+
+    const equalTab = document.getElementById('equalSplitTab');
+    const byItemsTab = document.getElementById('byItemsTab');
+    const equalContent = document.getElementById('equalSplitContent');
+    const byItemsContent = document.getElementById('byItemsContent');
+
+    if (!equalTab || !byItemsTab || !equalContent || !byItemsContent) return;
+
+    if (tabName === 'equal') {
+        // Activate Equal Split tab
+        equalTab.classList.add('border-blue-600', 'text-blue-600');
+        equalTab.classList.remove('border-transparent', 'text-gray-500');
+        byItemsTab.classList.add('border-transparent', 'text-gray-500');
+        byItemsTab.classList.remove('border-blue-600', 'text-blue-600');
+
+        equalContent.classList.remove('hidden');
+        byItemsContent.classList.add('hidden');
+
+        updateSplitPreview();
+    } else {
+        // Activate By Items tab
+        byItemsTab.classList.add('border-blue-600', 'text-blue-600');
+        byItemsTab.classList.remove('border-transparent', 'text-gray-500');
+        equalTab.classList.add('border-transparent', 'text-gray-500');
+        equalTab.classList.remove('border-blue-600', 'text-blue-600');
+
+        byItemsContent.classList.remove('hidden');
+        equalContent.classList.add('hidden');
+
+        generateItemAssignmentUI();
+    }
+}
+
+function generateItemAssignmentUI() {
+    const container = document.getElementById('itemsListForSplit');
+    if (!container) return;
+
+    const numPeople = parseInt(document.getElementById('numPeopleSelect')?.value || 2);
+    const orders = currentTableData?.session?.orders || [];
+
+    if (orders.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">No items to split</p>';
+        return;
+    }
+
+    let html = '';
+
+    // Iterate through all orders and their items
+    orders.forEach((order, orderIndex) => {
+        html += `<div class="mb-4">
+            <div class="text-xs font-semibold text-gray-500 mb-2">Order #${order.id}</div>`;
+
+        (order.items || []).forEach((item, itemIndex) => {
+            const hasOptions = item.generalSelectedOptions && item.generalSelectedOptions.length > 0;
+            const basePrice = item.basePrice || 0;
+            const finalPrice = item.price || basePrice;
+            const itemTotal = finalPrice * item.quantity;
+
+            const itemKey = `order_${order.id}_item_${itemIndex}`;
+            const assignedPerson = itemAssignments[itemKey];
+
+            html += `
+                <div class="border border-gray-200 rounded-lg p-3 mb-2 bg-white">
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1">
+                            <div class="font-medium text-sm text-gray-800">${item.quantity}x ${item.name}</div>
+                            ${hasOptions ? `
+                                <div class="text-xs text-gray-500 ml-3 mt-1">
+                                    ${item.generalSelectedOptions.map(opt => {
+                                        const optName = opt.name || opt.value || opt;
+                                        const optPrice = opt.priceChange || 0;
+                                        return `+ ${optName} (+€${optPrice.toFixed(2)})`;
+                                    }).join(', ')}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="text-sm font-semibold text-gray-800 ml-2">${formatCurrency(itemTotal)}</div>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        ${Array.from({length: numPeople}, (_, i) => {
+                            const personNum = i + 1;
+                            const isChecked = assignedPerson === personNum;
+                            return `
+                                <label class="flex items-center cursor-pointer">
+                                    <input type="radio"
+                                           name="item_${itemKey}"
+                                           value="${personNum}"
+                                           ${isChecked ? 'checked' : ''}
+                                           onchange="assignItemToPerson('${order.id}', ${itemIndex}, ${personNum})"
+                                           class="mr-1.5">
+                                    <span class="text-xs font-medium text-gray-700">Person ${personNum}</span>
+                                </label>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+    });
+
+    container.innerHTML = html;
+    updateSplitSummary();
+}
+
+function updateNumPeople() {
+    // Reset assignments when number of people changes
+    itemAssignments = {};
+    generateItemAssignmentUI();
+}
+
+function assignItemToPerson(orderId, itemIndex, personNum) {
+    const itemKey = `order_${orderId}_item_${itemIndex}`;
+    itemAssignments[itemKey] = personNum;
+    updateSplitSummary();
+}
+
+function updateSplitSummary() {
+    const summaryContent = document.getElementById('splitSummaryContent');
+    if (!summaryContent) return;
+
+    const numPeople = parseInt(document.getElementById('numPeopleSelect')?.value || 2);
+    const orders = currentTableData?.session?.orders || [];
+
+    // Initialize person totals
+    const personTotals = {};
+    const personItems = {};
+    for (let i = 1; i <= numPeople; i++) {
+        personTotals[i] = 0;
+        personItems[i] = 0;
+    }
+
+    // Calculate totals and count assigned items
+    let totalAssigned = 0;
+    let totalUnassigned = 0;
+    let assignedCount = 0;
+    let totalItems = 0;
+
+    orders.forEach(order => {
+        (order.items || []).forEach((item, itemIndex) => {
+            totalItems++;
+            const itemKey = `order_${order.id}_item_${itemIndex}`;
+            const assignedPerson = itemAssignments[itemKey];
+
+            const basePrice = item.basePrice || 0;
+            const finalPrice = item.price || basePrice;
+            const itemTotal = finalPrice * item.quantity;
+
+            if (assignedPerson) {
+                personTotals[assignedPerson] += itemTotal;
+                personItems[assignedPerson]++;
+                totalAssigned += itemTotal;
+                assignedCount++;
+            } else {
+                totalUnassigned += itemTotal;
+            }
+        });
+    });
+
+    const tableTotal = currentTableData?.session?.total_amount || 0;
+
+    // Build summary HTML with payment recording
+    let html = '<div class="space-y-3">';
+
+    // Person breakdown with payment options
+    for (let i = 1; i <= numPeople; i++) {
+        const total = personTotals[i];
+        const items = personItems[i];
+        html += `
+            <div class="bg-white border border-gray-200 rounded-lg p-3">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="font-medium text-gray-800">Person ${i}</span>
+                    <span class="text-lg font-bold text-gray-900">${formatCurrency(total)}</span>
+                </div>
+                <div class="text-xs text-gray-500 mb-2">${items} item${items !== 1 ? 's' : ''} assigned</div>
+                ${total > 0 ? `
+                    <div class="flex items-center gap-2">
+                        <select id="byItemsPaymentMethod_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="cash">💵 Cash</option>
+                            <option value="card">💳 Card</option>
+                        </select>
+                        <button onclick="recordByItemsPayment(${i}, ${total})"
+                                id="recordByItemsBtn_${i}"
+                                class="btn-success px-4 py-2 text-sm whitespace-nowrap rounded-lg">
+                            Record
+                        </button>
+                    </div>
+                    <div id="byItemsPaymentStatus_${i}" class="hidden mt-2 text-sm text-green-600 flex items-center gap-1">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Payment recorded</span>
+                    </div>
+                ` : '<p class="text-sm text-gray-500">No items assigned</p>'}
+            </div>
+        `;
+    }
+
+    // Unassigned items warning
+    if (totalUnassigned > 0) {
+        const unassignedCount = totalItems - assignedCount;
+        html += `
+            <div class="flex justify-between text-sm pt-2 border-t border-gray-300">
+                <span class="text-orange-600 font-medium">⚠ Unassigned:</span>
+                <span class="font-semibold text-orange-600">${formatCurrency(totalUnassigned)} <span class="text-xs">(${unassignedCount} item${unassignedCount !== 1 ? 's' : ''})</span></span>
+            </div>
+        `;
+    }
+
+    // Total
+    html += `
+        <div class="flex justify-between text-sm pt-2 border-t border-gray-300 font-bold">
+            <span class="text-gray-800">Total:</span>
+            <span class="text-gray-900">${formatCurrency(tableTotal)}</span>
+        </div>
+    `;
+
+    html += '</div>';
+
+    summaryContent.innerHTML = html;
+}
+
+// Record payment for by-items split
+async function recordByItemsPayment(personNumber, amount) {
+    if (!currentTableId || amount <= 0) {
+        console.error('[BY_ITEMS_PAYMENT] Invalid parameters');
+        return;
+    }
+
+    const methodSelect = document.getElementById(`byItemsPaymentMethod_${personNumber}`);
+    const paymentBtn = document.getElementById(`recordByItemsBtn_${personNumber}`);
+    const statusDiv = document.getElementById(`byItemsPaymentStatus_${personNumber}`);
+
+    if (!methodSelect) {
+        console.error(`[BY_ITEMS_PAYMENT] Payment method select not found for person ${personNumber}`);
+        return;
+    }
+
+    const method = methodSelect.value;
+
+    // Collect assigned items for this person
+    const assignedOrderIds = [];
+    const orders = currentTableData?.session?.orders || [];
+
+    orders.forEach(order => {
+        (order.items || []).forEach((item, itemIndex) => {
+            const itemKey = `order_${order.id}_item_${itemIndex}`;
+            if (itemAssignments[itemKey] === personNumber) {
+                // Add the order ID if this person has items from it
+                if (!assignedOrderIds.includes(order.id)) {
+                    assignedOrderIds.push(order.id);
+                }
+            }
+        });
+    });
+
+    try {
+        paymentBtn.disabled = true;
+        paymentBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Recording...';
+
+        console.log('[BY_ITEMS_PAYMENT] Recording by-items payment:', {
+            table_id: currentTableId,
+            person: personNumber,
+            amount: amount,
+            method: method,
+            assigned_orders: assignedOrderIds
+        });
+
+        const response = await fetch(`/api/tables/${currentTableId}/add-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                amount: amount,
+                method: method,
+                note: `Split by items - Person ${personNumber}`,
+                items: assignedOrderIds  // Backend supports this
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to record payment');
+        }
+
+        // Show success
+        if (statusDiv) {
+            statusDiv.classList.remove('hidden');
+        }
+        paymentBtn.innerHTML = '<i class="fas fa-check mr-2"></i>Recorded';
+        paymentBtn.classList.remove('btn-success');
+        paymentBtn.classList.add('bg-gray-300', 'text-gray-600', 'cursor-not-allowed');
+        paymentBtn.disabled = true;
+        methodSelect.disabled = true;
+
+        // Refresh table data
+        await showTableDetail(currentTableId);
+        await reloadTableDataOnly();
+
+        const methodLabel = method === 'cash' ? '💵 Cash' : '💳 Card';
+        showToast(`Payment recorded: €${amount.toFixed(2)} (${methodLabel})`, 'success');
+
+    } catch (error) {
+        console.error('[BY_ITEMS_PAYMENT] Error recording by-items payment:', error);
+        showToast(error.message || 'Error recording payment', 'error');
+        paymentBtn.disabled = false;
+        paymentBtn.innerHTML = 'Record';
+    }
+}
+
+// ============================================================================
+// END SPLIT BILL BY ITEMS FUNCTIONALITY
+// ============================================================================
 
 // Helper function to format order time
 function formatOrderTime(timestamp) {

@@ -962,22 +962,28 @@ def enhanced_safe_file_operation(operation_name, file_operation, *args, **kwargs
         if operation_name in ['save_tables_config', 'save_table_sessions'] and result:
             try:
                 if operation_name == 'save_tables_config':
+                    app.logger.info(f"[FILE_OP] Verifying {operation_name} by loading it back...")
                     load_tables_config()  # Verify we can load what we just saved
+                    app.logger.info(f"[FILE_OP] Verification successful for {operation_name}")
                 elif operation_name == 'save_table_sessions':
-                    app.logger.info(f"[DIAGNOSTIC] Verifying saved file by loading it back...")
-                    load_table_sessions()  # Verify we can load what we just saved
-                    app.logger.info(f"[DIAGNOSTIC] Verification successful - file loads correctly")
+                    app.logger.info(f"[FILE_OP] Verifying {operation_name} by loading it back...")
+                    loaded_data = load_table_sessions()  # Verify we can load what we just saved
+                    app.logger.info(f"[FILE_OP] Verification successful - file loads correctly with {len(loaded_data)} table(s)")
             except Exception as e:
-                app.logger.error(f"[DIAGNOSTIC] Verification FAILED for {operation_name}: {e}")
-                app.logger.error(f"Verification failed for {operation_name}: {e}")
+                import traceback
+                app.logger.error(f"[FILE_OP] Verification FAILED for {operation_name}: {e}")
+                app.logger.error(f"[FILE_OP] Verification traceback: {traceback.format_exc()}")
                 # Attempt to restore from backup if verification fails
                 if backup_file and os.path.exists(backup_file):
                     try:
                         import shutil
+                        app.logger.warning(f"[FILE_OP] Attempting to restore {operation_name} from backup: {backup_file}")
                         shutil.copy2(backup_file, original_file)
-                        app.logger.info(f"Restored {operation_name} from backup")
+                        app.logger.info(f"[FILE_OP] Successfully restored {operation_name} from backup")
                     except Exception as restore_error:
-                        app.logger.error(f"Failed to restore from backup: {restore_error}")
+                        app.logger.error(f"[FILE_OP] Failed to restore from backup: {restore_error}")
+                else:
+                    app.logger.error(f"[FILE_OP] No backup file available to restore")
                 return False
 
         return result
@@ -3014,7 +3020,10 @@ def get_table_session(table_id):
                     "total_amount": session.get("total_amount", 0.0),
                     "opened_at": session.get("opened_at"),
                     "last_order_at": session.get("last_order_at"),
-                    "payment_status": session.get("payment_status", "unpaid")
+                    "payment_status": session.get("payment_status", "unpaid"),
+                    "amount_paid": session.get("amount_paid", 0.0),
+                    "amount_remaining": session.get("amount_remaining", session.get("total_amount", 0.0)),
+                    "payments": session.get("payments", [])
                 }
             })
         else:
@@ -3024,7 +3033,10 @@ def get_table_session(table_id):
                     "status": "available",
                     "orders": [],
                     "total_amount": 0.0,
-                    "payment_status": "unpaid"
+                    "payment_status": "unpaid",
+                    "amount_paid": 0.0,
+                    "amount_remaining": 0.0,
+                    "payments": []
                 }
             })
     except Exception as e:
@@ -3101,7 +3113,8 @@ def clear_table(table_id):
         return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
 
     try:
-        data = request.get_json() or {}
+        # Use silent=True to avoid 400 error when body is empty
+        data = request.get_json(silent=True) or {}
         force_clear = data.get('force_clear', False)
 
         tables_config = load_tables_config()
@@ -3130,18 +3143,38 @@ def clear_table(table_id):
                         "requires_force": True
                     }), 400
 
-        if clear_table_session(table_id):
+        app.logger.info(f"[CLEAR_ENDPOINT] Attempting to clear table {table_id}")
+        clear_result = clear_table_session(table_id)
+
+        if clear_result:
+            app.logger.info(f"[CLEAR_ENDPOINT] Table {table_id} cleared successfully, broadcasting SSE")
             # Broadcast table cleared via SSE
-            _sse_broadcast('table_cleared', {
-                "table_id": table_id,
-                "cleared_at": datetime.now().isoformat()
-            })
+            try:
+                _sse_broadcast('table_cleared', {
+                    "table_id": table_id,
+                    "cleared_at": datetime.now().isoformat()
+                })
+            except Exception as sse_error:
+                app.logger.warning(f"[CLEAR_ENDPOINT] Failed to broadcast SSE event: {sse_error}")
+                # Don't fail the request just because SSE failed
+
             return jsonify({"status": "success", "message": "Table cleared and made available"})
         else:
-            return jsonify({"status": "error", "message": "Failed to clear table"}), 500
+            app.logger.error(f"[CLEAR_ENDPOINT] clear_table_session returned False for table {table_id}")
+            return jsonify({
+                "status": "error",
+                "message": "Failed to clear table. Check server logs for details.",
+                "detail": "Table session could not be saved. This may be due to file permission issues or file locking."
+            }), 500
     except Exception as e:
-        app.logger.error(f"Failed to clear table {table_id}: {e}")
-        return jsonify({"status": "error", "message": f"Failed to clear table: {str(e)}"}), 500
+        import traceback
+        app.logger.error(f"[CLEAR_ENDPOINT] Exception while clearing table {table_id}: {e}")
+        app.logger.error(f"[CLEAR_ENDPOINT] Traceback: {traceback.format_exc()}")
+        return jsonify({
+            "status": "error",
+            "message": f"Failed to clear table: {str(e)}",
+            "detail": "An unexpected error occurred. Check server logs for details."
+        }), 500
 
 @app.route('/api/tables/<table_id>/bill', methods=['GET'])
 def get_table_bill(table_id):
@@ -3413,65 +3446,174 @@ def split_table_bill(table_id):
                 return jsonify({"status": "error", "message": "Invalid amount values"}), 400
 
         elif split_type == 'items':
-            # Split by specific orders/items
+            # Split by individual items (new format) or by orders (legacy format)
+            item_assignments = data.get('item_assignments', {})
             person_orders = data.get('person_orders', {})
-            if not person_orders:
-                return jsonify({"status": "error", "message": "Person orders mapping required for item split"}), 400
+
+            if not item_assignments and not person_orders:
+                return jsonify({"status": "error", "message": "Either 'item_assignments' or 'person_orders' required for item split"}), 400
 
             orders = bill_data['orders']
-            order_totals = {}
 
-            # Calculate total for each order
-            for order in orders:
-                order_number = order.get('order_number')
-                order_total = 0.0
-                for item in order.get('items', []):
-                    item_quantity = item.get('quantity', 1)
-                    item_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
-                    order_total += item_quantity * item_price
-                order_totals[str(order_number)] = round(order_total, 2)
+            # NEW: Individual item-level splitting
+            if item_assignments:
+                # Build a lookup dictionary of all items by order_id and item_index
+                all_items = {}
+                total_items_count = 0
+                for order in orders:
+                    order_id = order.get('order_number')
+                    for item_idx, item in enumerate(order.get('items', [])):
+                        item_key = f"{order_id}_{item_idx}"
+                        all_items[item_key] = {
+                            'order_id': order_id,
+                            'item_index': item_idx,
+                            'name': item.get('name', ''),
+                            'quantity': item.get('quantity', 1),
+                            'base_price': float(item.get('basePrice', 0.0)),
+                            'final_price': float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                        }
+                        total_items_count += 1
 
-            # Calculate each person's total based on assigned orders
-            person_totals = {}
-            assigned_orders = set()
+                # Calculate each person's total based on assigned items
+                person_totals = {}
+                person_item_details = {}
+                assigned_items = set()
 
-            for person, order_numbers in person_orders.items():
-                person_total = 0.0
-                for order_num in order_numbers:
-                    order_key = str(order_num)
-                    if order_key in order_totals:
-                        if order_key in assigned_orders:
+                for person, assigned_items_list in item_assignments.items():
+                    person_total = 0.0
+                    person_items = []
+
+                    for assigned_item in assigned_items_list:
+                        order_id = assigned_item.get('order_id')
+                        item_index = assigned_item.get('item_index')
+                        item_key = f"{order_id}_{item_index}"
+
+                        if item_key in all_items:
+                            # Check if item already assigned to someone else
+                            if item_key in assigned_items:
+                                return jsonify({
+                                    "status": "error",
+                                    "message": f"Item '{assigned_item.get('item_name', 'Unknown')}' from order {order_id} is assigned to multiple people"
+                                }), 400
+
+                            item_data = all_items[item_key]
+                            item_total = item_data['final_price'] * item_data['quantity']
+                            person_total += item_total
+                            assigned_items.add(item_key)
+
+                            person_items.append({
+                                'name': item_data['name'],
+                                'quantity': item_data['quantity'],
+                                'price': item_total
+                            })
+                        else:
                             return jsonify({
                                 "status": "error",
-                                "message": f"Order {order_num} is assigned to multiple people"
+                                "message": f"Item not found: order {order_id}, item index {item_index}"
                             }), 400
-                        person_total += order_totals[order_key]
-                        assigned_orders.add(order_key)
-                    else:
-                        return jsonify({
-                            "status": "error",
-                            "message": f"Order {order_num} not found"
-                        }), 400
-                person_totals[person] = round(person_total, 2)
 
-            # Check if all orders are assigned
-            unassigned_orders = set(order_totals.keys()) - assigned_orders
-            if unassigned_orders:
-                unassigned_total = sum(order_totals[order] for order in unassigned_orders)
-                return jsonify({
-                    "status": "error",
-                    "message": f"Orders {list(unassigned_orders)} are unassigned (total: €{unassigned_total:.2f})"
-                }), 400
+                    person_totals[person] = round(person_total, 2)
+                    person_item_details[person] = person_items
 
-            split_options['items'] = {
-                "type": "items",
-                "splits": [
-                    {"person": person, "amount": amount, "orders": person_orders[person]}
-                    for person, amount in person_totals.items()
-                ],
-                "order_totals": order_totals,
-                "total": remaining_amount
-            }
+                # Check if all items are assigned
+                if len(assigned_items) < total_items_count:
+                    unassigned_count = total_items_count - len(assigned_items)
+                    return jsonify({
+                        "status": "error",
+                        "message": f"{unassigned_count} item(s) not assigned. All items must be assigned."
+                    }), 400
+
+                # Calculate expected total from all items (use same data source as assigned items)
+                expected_total = 0.0
+                for item_key, item_data in all_items.items():
+                    item_total = item_data['final_price'] * item_data['quantity']
+                    expected_total += item_total
+                expected_total = round(expected_total, 2)
+
+                # Verify assigned total matches items total (both from CSV data)
+                assigned_total = sum(person_totals.values())
+                if abs(assigned_total - expected_total) > 0.02:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Assigned total (€{assigned_total:.2f}) doesn't match items total (€{expected_total:.2f})"
+                    }), 400
+
+                # Log warning if session total differs from calculated items total
+                if abs(expected_total - remaining_amount) > 0.02:
+                    app.logger.warning(
+                        f"Table {table_id}: Session total (€{remaining_amount:.2f}) differs from "
+                        f"calculated items total (€{expected_total:.2f}). Using items total for validation."
+                    )
+
+                split_options['items'] = {
+                    "type": "items",
+                    "splits": [
+                        {
+                            "person": person,
+                            "amount": amount,
+                            "items": person_item_details[person],
+                            "item_count": len(person_item_details[person])
+                        }
+                        for person, amount in person_totals.items()
+                    ],
+                    "total": remaining_amount
+                }
+
+            # LEGACY: Split by entire orders (backward compatibility)
+            else:
+                order_totals = {}
+
+                # Calculate total for each order
+                for order in orders:
+                    order_number = order.get('order_number')
+                    order_total = 0.0
+                    for item in order.get('items', []):
+                        item_quantity = item.get('quantity', 1)
+                        item_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+                        order_total += item_quantity * item_price
+                    order_totals[str(order_number)] = round(order_total, 2)
+
+                # Calculate each person's total based on assigned orders
+                person_totals = {}
+                assigned_orders = set()
+
+                for person, order_numbers in person_orders.items():
+                    person_total = 0.0
+                    for order_num in order_numbers:
+                        order_key = str(order_num)
+                        if order_key in order_totals:
+                            if order_key in assigned_orders:
+                                return jsonify({
+                                    "status": "error",
+                                    "message": f"Order {order_num} is assigned to multiple people"
+                                }), 400
+                            person_total += order_totals[order_key]
+                            assigned_orders.add(order_key)
+                        else:
+                            return jsonify({
+                                "status": "error",
+                                "message": f"Order {order_num} not found"
+                            }), 400
+                    person_totals[person] = round(person_total, 2)
+
+                # Check if all orders are assigned
+                unassigned_orders = set(order_totals.keys()) - assigned_orders
+                if unassigned_orders:
+                    unassigned_total = sum(order_totals[order] for order in unassigned_orders)
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Orders {list(unassigned_orders)} are unassigned (total: €{unassigned_total:.2f})"
+                    }), 400
+
+                split_options['items'] = {
+                    "type": "items",
+                    "splits": [
+                        {"person": person, "amount": amount, "orders": person_orders[person]}
+                        for person, amount in person_totals.items()
+                    ],
+                    "order_totals": order_totals,
+                    "total": remaining_amount
+                }
 
         else:
             return jsonify({"status": "error", "message": "Invalid split_type. Use 'equal', 'amount', or 'items'"}), 400
@@ -6246,19 +6388,63 @@ def save_table_sessions(sessions_data):
     """Save table sessions to table_sessions.json with enhanced safety"""
     def _save_operation():
         table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
-        app.logger.info(f"[DIAGNOSTIC] Writing to file: {table_sessions_file}")
-        app.logger.info(f"[DIAGNOSTIC] DATA_DIR is: {DATA_DIR}")
-        app.logger.info(f"[DIAGNOSTIC] Sessions data has {len(sessions_data)} table(s)")
-        with open(table_sessions_file, 'w', encoding='utf-8') as f:
-            json.dump(sessions_data, f, indent=2, ensure_ascii=False)
-        app.logger.info(f"[DIAGNOSTIC] File write completed successfully")
-        return True
+        app.logger.info(f"[SAVE_SESSIONS] Writing to file: {table_sessions_file}")
+        app.logger.info(f"[SAVE_SESSIONS] DATA_DIR is: {DATA_DIR}")
+        app.logger.info(f"[SAVE_SESSIONS] Sessions data has {len(sessions_data)} table(s)")
+
+        try:
+            with open(table_sessions_file, 'w', encoding='utf-8') as f:
+                json.dump(sessions_data, f, indent=2, ensure_ascii=False)
+            app.logger.info(f"[SAVE_SESSIONS] File write completed successfully")
+            return True
+        except Exception as write_error:
+            app.logger.error(f"[SAVE_SESSIONS] Failed to write file: {write_error}")
+            raise
 
     try:
-        return enhanced_safe_file_operation('save_table_sessions', _save_operation)
+        result = enhanced_safe_file_operation('save_table_sessions', _save_operation)
+        if not result:
+            app.logger.error(f"[SAVE_SESSIONS] enhanced_safe_file_operation returned False (verification likely failed)")
+
+            # FALLBACK: Try a simpler direct write without verification
+            app.logger.warning(f"[SAVE_SESSIONS] Attempting fallback: direct write without verification")
+            try:
+                table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
+
+                # Create a manual backup first
+                if os.path.exists(table_sessions_file):
+                    import shutil
+                    backup_file = os.path.join(DATA_DIR, 'table_sessions.json.backup_fallback')
+                    shutil.copy2(table_sessions_file, backup_file)
+                    app.logger.info(f"[SAVE_SESSIONS] Created fallback backup: {backup_file}")
+
+                # Direct write
+                with open(table_sessions_file, 'w', encoding='utf-8') as f:
+                    json.dump(sessions_data, f, indent=2, ensure_ascii=False)
+
+                app.logger.info(f"[SAVE_SESSIONS] Fallback write succeeded")
+                return True
+            except Exception as fallback_error:
+                app.logger.error(f"[SAVE_SESSIONS] Fallback write also failed: {fallback_error}")
+                return False
+
+        return result
     except Exception as e:
-        app.logger.error(f"Failed to save table sessions: {e}")
-        return False
+        import traceback
+        app.logger.error(f"[SAVE_SESSIONS] Exception in save_table_sessions: {e}")
+        app.logger.error(f"[SAVE_SESSIONS] Traceback: {traceback.format_exc()}")
+
+        # LAST RESORT FALLBACK: Try direct write even after exception
+        app.logger.warning(f"[SAVE_SESSIONS] Attempting last-resort fallback after exception")
+        try:
+            table_sessions_file = os.path.join(DATA_DIR, 'table_sessions.json')
+            with open(table_sessions_file, 'w', encoding='utf-8') as f:
+                json.dump(sessions_data, f, indent=2, ensure_ascii=False)
+            app.logger.info(f"[SAVE_SESSIONS] Last-resort fallback succeeded")
+            return True
+        except Exception as last_resort_error:
+            app.logger.error(f"[SAVE_SESSIONS] Last-resort fallback failed: {last_resort_error}")
+            return False
 
 # --- Enhanced SSE Events for Table Management ---
 
@@ -6552,11 +6738,25 @@ def clear_table_session(table_id):
                 app.logger.error(f"Failed to process session history for table {table_id}: {e}")
 
             # Clear the session
+            app.logger.info(f"[CLEAR_TABLE] Deleting session for table {table_id} and saving")
             del sessions[table_id]
-            return save_table_sessions(sessions)
+
+            # Save updated sessions
+            save_result = save_table_sessions(sessions)
+            if not save_result:
+                app.logger.error(f"[CLEAR_TABLE] Failed to save table sessions after clearing table {table_id}")
+                app.logger.error(f"[CLEAR_TABLE] Sessions data: {len(sessions)} remaining tables")
+                return False
+
+            app.logger.info(f"[CLEAR_TABLE] Successfully cleared table {table_id}")
+            return True
+
+        app.logger.info(f"[CLEAR_TABLE] Table {table_id} already clear (not in sessions)")
         return True  # Table already clear
     except Exception as e:
-        app.logger.error(f"Failed to clear table session for table {table_id}: {e}")
+        import traceback
+        app.logger.error(f"[CLEAR_TABLE] Exception while clearing table {table_id}: {e}")
+        app.logger.error(f"[CLEAR_TABLE] Traceback: {traceback.format_exc()}")
         return False
 
 def is_table_management_enabled():
