@@ -86,3 +86,4 @@ node_modules/
 # API Keys and sensitive configuration - NEVER COMMIT
 API_KEYS_REFERENCE.md
 **/API_KEYS_REFERENCE.md
+/POSPal_v1.2.1

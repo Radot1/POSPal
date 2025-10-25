@@ -2970,11 +2970,47 @@ def get_table_session(table_id):
 
         if table_id in table_sessions:
             session = table_sessions[table_id]
+
+            # Fetch full order details from CSV files
+            order_numbers = session.get("orders", [])
+            full_orders = []
+
+            if order_numbers:
+                # Get orders from CSV files
+                csv_orders = get_orders_for_table(table_id)
+
+                # Match orders by order number and transform to frontend format
+                for order_num in order_numbers:
+                    csv_order = next((o for o in csv_orders if o.get('order_number') == order_num), None)
+
+                    if csv_order:
+                        # Transform to frontend expected format
+                        full_orders.append({
+                            "id": csv_order.get('order_number'),
+                            "created_at": csv_order.get('timestamp', ''),
+                            "total": csv_order.get('order_total', 0.0),
+                            "items": csv_order.get('items', [])
+                        })
+                    else:
+                        # Fallback: create basic order from order_details if CSV not found
+                        order_detail = next(
+                            (od for od in session.get("order_details", [])
+                             if od.get('order_number') == order_num),
+                            None
+                        )
+                        if order_detail:
+                            full_orders.append({
+                                "id": order_detail.get('order_number'),
+                                "created_at": order_detail.get('timestamp', ''),
+                                "total": order_detail.get('order_total', 0.0),
+                                "items": [{"name": "Order items", "quantity": 1, "price": order_detail.get('order_total', 0.0)}]
+                            })
+
             return jsonify({
                 "status": "success",
                 "session": {
                     "status": session.get("status", "available"),
-                    "orders": session.get("orders", []),
+                    "orders": full_orders,  # Now returning full order objects instead of just numbers
                     "total_amount": session.get("total_amount", 0.0),
                     "opened_at": session.get("opened_at"),
                     "last_order_at": session.get("last_order_at"),
@@ -6599,8 +6635,11 @@ def get_orders_for_table(table_id, date_range=None):
                                                 if isinstance(item, dict):
                                                     items.append({
                                                         'name': str(item.get('name', '')),
-                                                        'price': float(item.get('price', 0.0)),
-                                                        'quantity': int(item.get('quantity', 1))
+                                                        'basePrice': float(item.get('basePrice', 0.0)),
+                                                        'price': float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))),
+                                                        'quantity': int(item.get('quantity', 1)),
+                                                        'generalSelectedOptions': item.get('generalSelectedOptions', []),
+                                                        'comment': str(item.get('comment', ''))
                                                     })
                                         else:
                                             app.logger.warning(f"Items JSON is not a list for order {order_number}")

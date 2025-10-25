@@ -2125,14 +2125,26 @@ function setupTableSSEUpdates() {
             try {
                 lastSSEEventTime = Date.now(); // Track event receipt for connection health
                 const data = JSON.parse(e.data);
-                console.log('Table order added event received:', data);
+                console.log('[SSE-EVENT] ========== table_order_added event received ==========');
+                console.log('[SSE-EVENT] Event data:', data);
+                console.log('[SSE-EVENT] data.table_id:', data.table_id, 'type:', typeof data.table_id);
+                console.log('[SSE-EVENT] selectedTableId:', selectedTableId, 'type:', typeof selectedTableId);
 
                 // Reload tables data to get updated totals
+                console.log('[SSE-EVENT] Reloading tables data...');
                 await loadTablesForSelection();
 
                 // If this is the currently selected table, update the badge immediately
-                if (selectedTableId === data.table_id) {
+                const isMatch = selectedTableId === data.table_id;
+                console.log('[SSE-EVENT] Comparing selectedTableId === data.table_id:', isMatch);
+                console.log('[SSE-EVENT] Strict equality (===):', selectedTableId === data.table_id);
+                console.log('[SSE-EVENT] Loose equality (==):', selectedTableId == data.table_id);
+
+                if (selectedTableId == data.table_id) {
+                    console.log('[SSE-EVENT] Match! Updating badge for selected table');
                     updateTableIndicatorBadge();
+                } else {
+                    console.log('[SSE-EVENT] No match - event for different table');
                 }
             } catch (error) {
                 console.error('Error parsing table_order_added event:', error);
@@ -3180,6 +3192,11 @@ async function enhancedFetch(url, options = {}, timeout = 10000) {
  */
 async function loadTablesForSelection() {
     try {
+        console.log('[TABLE-LOAD] ========== loadTablesForSelection() called ==========');
+        console.log('[TABLE-LOAD] Called from:', new Error().stack.split('\n')[2].trim());
+        console.log('[TABLE-LOAD] Current selectedTableId BEFORE reload:', selectedTableId);
+        console.log('[TABLE-LOAD] Current allTablesData length BEFORE reload:', allTablesData.length);
+
         console.log('[DEBUG] Fetching tables from /api/tables...');
         const response = await enhancedFetch('/api/tables', {}, 8000);
         console.log('[DEBUG] /api/tables response status:', response.status, response.statusText);
@@ -3221,6 +3238,10 @@ async function loadTablesForSelection() {
 
         allTablesData = validatedTables;
         console.log('[DEBUG] Validated tables array:', allTablesData);
+        console.log('[TABLE-LOAD] allTablesData AFTER reload - IDs:', allTablesData.map(t => `${t.id} (${typeof t.id})`));
+        console.log('[TABLE-LOAD] allTablesData AFTER reload - Totals:', allTablesData.map(t => ({id: t.id, total: t.total, session_total: t.session?.total_amount})));
+        console.log('[TABLE-LOAD] selectedTableId AFTER reload:', selectedTableId, '(unchanged)');
+        console.log('[TABLE-LOAD] Full table objects:', allTablesData);
 
         // Render both desktop and mobile selection UIs
         renderDesktopTableBar();
@@ -3381,26 +3402,48 @@ function updateTableBadgeVisualState() {
  * Update the indicator badge to show current selection
  */
 function updateTableIndicatorBadge() {
+    console.log('[BADGE-UPDATE] ========== updateTableIndicatorBadge() called ==========');
+    console.log('[BADGE-UPDATE] selectedTableId:', selectedTableId, 'type:', typeof selectedTableId);
+    console.log('[BADGE-UPDATE] allTablesData length:', allTablesData.length);
+
     const indicator = document.getElementById('tableIndicatorBadge');
-    if (!indicator) return;
+    if (!indicator) {
+        console.log('[BADGE-UPDATE] indicator element not found!');
+        return;
+    }
 
     const iconSpan = indicator.querySelector('.indicator-icon');
     const textSpan = indicator.querySelector('.indicator-text');
 
-    if (!iconSpan || !textSpan) return;
+    if (!iconSpan || !textSpan) {
+        console.log('[BADGE-UPDATE] icon or text span not found!');
+        return;
+    }
 
     if (selectedTableId === null) {
+        console.log('[BADGE-UPDATE] Takeaway mode selected');
         iconSpan.textContent = '🥡';
         textSpan.textContent = 'Takeaway';
         indicator.setAttribute('aria-label', 'Takeaway mode - Click to select table');
     } else {
+        console.log('[BADGE-UPDATE] Looking for table with id:', selectedTableId);
+        console.log('[BADGE-UPDATE] Available tables:', allTablesData.map(t => ({id: t.id, table_number: t.table_number, total: t.total})));
+
         const table = allTablesData.find(t => t.id === selectedTableId);
+        console.log('[BADGE-UPDATE] Found table:', table);
+
         if (table) {
             const total = table.total || 0;
+            console.log('[BADGE-UPDATE] table.total:', table.total, 'using value:', total);
+            console.log('[BADGE-UPDATE] Full table object:', table);
+
             iconSpan.textContent = '📍';
             textSpan.textContent = `T${table.table_number} | €${total.toFixed(2)}`;
             indicator.setAttribute('aria-label', `Table ${table.table_number}, Total: €${total.toFixed(2)} - Click to change table`);
+
+            console.log('[BADGE-UPDATE] Badge updated to:', textSpan.textContent);
         } else {
+            console.error('[BADGE-UPDATE] TABLE NOT FOUND in allTablesData!');
             iconSpan.textContent = '📍';
             textSpan.textContent = `T${selectedTableId} | €0.00`;
             indicator.setAttribute('aria-label', `Table ${selectedTableId} - Click to change table`);
@@ -3435,8 +3478,8 @@ function closeTableSelector() {
 /**
  * Select table from modal and auto-close
  */
-function selectTableFromModal(tableId) {
-    selectTable(tableId);
+async function selectTableFromModal(tableId) {
+    await selectTable(tableId);
     closeTableSelector();
 }
 
@@ -3597,7 +3640,7 @@ function renderMobileTablePickerGrid() {
  * Select a table (or null for takeaway)
  * @param {number|null} tableId - Table ID or null for takeaway
  */
-function selectTable(tableId) {
+async function selectTable(tableId) {
     selectedTableId = tableId;
 
     // Save to localStorage for persistence
@@ -3607,9 +3650,16 @@ function selectTable(tableId) {
         localStorage.setItem(SELECTED_TABLE_KEY, tableId.toString());
     }
 
-    // Update UIs
-    renderDesktopTableBar();
-    renderMobileTableBadge();
+    // Reload tables data to get fresh totals (for accurate badge display)
+    // This ensures the badge shows the current total for the newly selected table
+    if (tableManagementEnabled) {
+        await loadTablesForSelection();
+        // loadTablesForSelection() already calls renderDesktopTableBar() and renderMobileTableBadge()
+    } else {
+        // Simple POS mode - just update UI without data reload
+        renderDesktopTableBar();
+        renderMobileTableBadge();
+    }
 
     // Close mobile picker if open
     closeMobileTablePicker();
@@ -3622,12 +3672,29 @@ function selectTable(tableId) {
  * @returns {string|null} Table number or null
  */
 function getSelectedTableForOrder() {
+    console.log('[TABLE-SELECT] getSelectedTableForOrder() called');
+    console.log('[TABLE-SELECT] selectedTableId:', selectedTableId, 'type:', typeof selectedTableId);
+    console.log('[TABLE-SELECT] allTablesData length:', allTablesData.length);
+
     if (selectedTableId === null) {
+        console.log('[TABLE-SELECT] No table selected (takeaway mode)');
         return null; // Takeaway/No table
     }
 
-    const table = allTablesData.find(t => t.id === selectedTableId);
-    return table ? table.table_number : null;
+    // Log all table IDs for debugging
+    console.log('[TABLE-SELECT] Available table IDs:', allTablesData.map(t => `${t.id} (${typeof t.id})`));
+
+    // Use loose equality (==) to handle string/number comparison
+    const table = allTablesData.find(t => t.id == selectedTableId);
+
+    if (table) {
+        console.log('[TABLE-SELECT] Found table:', table.id, 'table_number:', table.table_number);
+        return table.table_number;
+    } else {
+        console.error('[TABLE-SELECT] TABLE NOT FOUND! selectedTableId:', selectedTableId, 'not in allTablesData');
+        console.error('[TABLE-SELECT] This will cause table_number to be N/A');
+        return null;
+    }
 }
 
 /**
@@ -12153,11 +12220,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // END TABLE MANAGEMENT TOGGLE FUNCTIONALITY
 // =============================================================================
 
-// Note: currentTableData, currentTableId, and allTablesData are already declared at top of file (lines 44-45)
+// Note: currentTableData, currentTableId are already declared at top of file (line 44)
 // Commenting out duplicate declarations to avoid syntax error
 // let currentTableData = null;
 // let currentTableId = null;
-// let allTablesData = [];
+// Create separate variable for table management modal to avoid conflicts with table selection
+let tableManagementModalData = [];
 let currentTableFilter = 'all';
 
 // Helper functions for table management
@@ -12216,7 +12284,7 @@ async function loadAllTables() {
         const data = await response.json();
         // Convert tables object to array
         const tablesObj = data.tables || {};
-        allTablesData = Object.keys(tablesObj).map(id => ({
+        tableManagementModalData = Object.keys(tablesObj).map(id => ({
             id: id,
             ...tablesObj[id]
         }));
@@ -12224,7 +12292,7 @@ async function loadAllTables() {
         if (loading) loading.classList.add('hidden');
         if (gridView) gridView.classList.remove('hidden');
 
-        if (allTablesData.length === 0) {
+        if (tableManagementModalData.length === 0) {
             if (grid) grid.classList.add('hidden');
             if (emptyState) emptyState.classList.remove('hidden');
         } else {
@@ -12246,8 +12314,8 @@ function renderTablesGrid() {
     if (!grid) return;
 
     const filteredTables = currentTableFilter === 'all'
-        ? allTablesData
-        : allTablesData.filter(t => t.status === currentTableFilter);
+        ? tableManagementModalData
+        : tableManagementModalData.filter(t => t.status === currentTableFilter);
 
     if (filteredTables.length === 0) {
         grid.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No tables match this filter</div>';
@@ -12350,7 +12418,7 @@ async function showTableDetail(tableId) {
 function renderTableDetail() {
     if (!currentTableData) return;
 
-    const table = allTablesData.find(t => t.id === currentTableId);
+    const table = tableManagementModalData.find(t => t.id === currentTableId);
     if (!table) return;
 
     // Update table number
@@ -12398,14 +12466,45 @@ function renderTableDetail() {
                         </div>
                         <p class="font-semibold text-lg">${formatCurrency(order.total)}</p>
                     </div>
-                    <div class="space-y-1">
-                        ${order.items.map(item => `
-                            <div class="flex justify-between text-sm">
-                                <span class="text-gray-600">${item.quantity}x ${item.name}</span>
-                                <span class="text-gray-800 font-medium">${formatCurrency(item.price * item.quantity)}</span>
-                            </div>
-                            ${item.options ? `<div class="text-xs text-gray-500 ml-4">${item.options}</div>` : ''}
-                        `).join('')}
+                    <div class="space-y-2">
+                        ${order.items.map(item => {
+                            const hasOptions = item.generalSelectedOptions && item.generalSelectedOptions.length > 0;
+                            const basePrice = item.basePrice || 0;
+                            const finalPrice = item.price || basePrice;
+                            const itemTotal = finalPrice * item.quantity;
+
+                            return `
+                                <div class="mb-2">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-gray-700 font-medium">${item.quantity}x ${item.name}</span>
+                                        <span class="text-gray-800 font-semibold">${formatCurrency(itemTotal)}</span>
+                                    </div>
+                                    ${hasOptions ? `
+                                        <div class="ml-4 text-xs space-y-0.5 mt-1">
+                                            <div class="flex justify-between text-gray-600">
+                                                <span>Base price:</span>
+                                                <span>€${basePrice.toFixed(2)}</span>
+                                            </div>
+                                            ${item.generalSelectedOptions.map(opt => {
+                                                const optName = opt.name || opt.value || opt;
+                                                const optPrice = opt.priceChange || 0;
+                                                return `
+                                                    <div class="flex justify-between text-gray-600">
+                                                        <span>+ ${optName}:</span>
+                                                        <span>+€${optPrice.toFixed(2)}</span>
+                                                    </div>
+                                                `;
+                                            }).join('')}
+                                            <div class="flex justify-between text-gray-700 font-medium pt-0.5 border-t border-gray-200">
+                                                <span>Item total:</span>
+                                                <span>€${finalPrice.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                    ${item.comment ? `<div class="ml-4 text-xs text-gray-500 italic mt-1">"${item.comment}"</div>` : ''}
+                                </div>
+                            `;
+                        }).join('')}
                     </div>
                 </div>
             `).join('');
@@ -12454,6 +12553,262 @@ function showTablesGrid() {
     currentTableId = null;
 }
 
+// Format bill data into HTML for display
+function formatBillHTML(billData) {
+    const tableName = billData.table_name || `Table ${billData.table_id}`;
+    const date = billData.bill_date || new Date().toLocaleDateString();
+    const time = billData.bill_time || new Date().toLocaleTimeString();
+
+    let html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Bill - ${tableName}</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .info-line {
+            display: flex;
+            justify-between;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        .order {
+            margin: 15px 0;
+            border-bottom: 1px dashed #999;
+            padding-bottom: 10px;
+        }
+        .order-header {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .item {
+            display: flex;
+            justify-between;
+            padding: 3px 0;
+            font-size: 13px;
+        }
+        .item-name {
+            flex: 1;
+        }
+        .item-price {
+            text-align: right;
+            min-width: 60px;
+        }
+        .order-total {
+            font-weight: bold;
+            text-align: right;
+            margin-top: 5px;
+            padding-top: 5px;
+            border-top: 1px solid #ccc;
+        }
+        .totals {
+            margin-top: 20px;
+            border-top: 2px solid #000;
+            padding-top: 10px;
+        }
+        .total-line {
+            display: flex;
+            justify-between;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .total-line.grand {
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 2px solid #000;
+        }
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+        @media print {
+            body { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>BILL</h1>
+        <h2>${tableName}</h2>
+    </div>
+
+    <div class="info-line">
+        <span>Date: ${date}</span>
+        <span>Time: ${time}</span>
+    </div>
+    ${billData.seats ? `<div class="info-line"><span>Seats: ${billData.seats}</span></div>` : ''}
+
+    <div style="margin: 20px 0; border-bottom: 2px solid #000;"></div>
+
+    <h3 style="margin: 10px 0;">Orders:</h3>
+`;
+
+    // Add orders
+    if (billData.orders && billData.orders.length > 0) {
+        billData.orders.forEach((order, index) => {
+            const orderTime = order.timestamp ? new Date(order.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'}) : '';
+            const orderTotal = order.order_total || order.total || 0;
+
+            html += `
+    <div class="order">
+        <div class="order-header">Order #${order.order_number || index + 1} ${orderTime ? `(${orderTime})` : ''}</div>
+`;
+
+            // Add items
+            if (order.items && order.items.length > 0) {
+                order.items.forEach(item => {
+                    const quantity = item.quantity || 1;
+                    const basePrice = item.basePrice || 0;
+                    const finalPrice = item.price || basePrice;
+                    const itemTotal = quantity * finalPrice;
+                    const hasOptions = item.generalSelectedOptions && item.generalSelectedOptions.length > 0;
+
+                    html += `
+        <div class="item">
+            <span class="item-name">${quantity}x ${item.name}</span>
+            <span class="item-price">€${itemTotal.toFixed(2)}</span>
+        </div>
+`;
+
+                    // Add option breakdown if item has options
+                    if (hasOptions) {
+                        html += `
+        <div style="margin-left: 20px; font-size: 11px; color: #666;">
+            <div style="display: flex; justify-content: space-between; padding: 2px 0;">
+                <span>Base price:</span>
+                <span>€${basePrice.toFixed(2)}</span>
+            </div>
+`;
+                        item.generalSelectedOptions.forEach(opt => {
+                            const optName = opt.name || opt.value || opt;
+                            const optPrice = opt.priceChange || 0;
+                            html += `
+            <div style="display: flex; justify-content: space-between; padding: 2px 0;">
+                <span>+ ${optName}:</span>
+                <span>+€${optPrice.toFixed(2)}</span>
+            </div>
+`;
+                        });
+                        html += `
+            <div style="display: flex; justify-content: space-between; padding: 2px 0; border-top: 1px solid #ccc; margin-top: 2px; font-weight: bold;">
+                <span>Item total:</span>
+                <span>€${finalPrice.toFixed(2)}</span>
+            </div>
+        </div>
+`;
+                    }
+
+                    // Add item comment if present
+                    if (item.comment) {
+                        html += `
+        <div style="margin-left: 20px; font-size: 11px; color: #888; font-style: italic;">
+            "${item.comment}"
+        </div>
+`;
+                    }
+                });
+            }
+
+            html += `
+        <div class="order-total">Order Total: €${orderTotal.toFixed(2)}</div>
+    </div>
+`;
+        });
+    } else {
+        html += `<p style="text-align: center; color: #999;">No orders</p>`;
+    }
+
+    // Add totals section
+    html += `
+    <div class="totals">
+        <div class="total-line grand">
+            <span>TOTAL:</span>
+            <span>€${(billData.grand_total || 0).toFixed(2)}</span>
+        </div>
+`;
+
+    if (billData.amount_paid > 0) {
+        html += `
+        <div class="total-line">
+            <span>Paid:</span>
+            <span>€${billData.amount_paid.toFixed(2)}</span>
+        </div>
+        <div class="total-line" style="font-weight: bold;">
+            <span>Remaining:</span>
+            <span>€${billData.amount_remaining.toFixed(2)}</span>
+        </div>
+`;
+    }
+
+    html += `
+    </div>
+`;
+
+    // Add status
+    const statusText = billData.payment_status === 'paid' ? 'PAID' :
+                       billData.payment_status === 'partial' ? 'PARTIALLY PAID' : 'UNPAID';
+    const statusColor = billData.payment_status === 'paid' ? '#4CAF50' :
+                        billData.payment_status === 'partial' ? '#FF9800' : '#F44336';
+
+    html += `
+    <div class="status" style="background-color: ${statusColor}; color: white; font-weight: bold;">
+        Status: ${statusText}
+    </div>
+`;
+
+    // Add payment history if any
+    if (billData.payments && billData.payments.length > 0) {
+        html += `
+    <div style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px;">
+        <h4 style="margin: 10px 0;">Payment History:</h4>
+`;
+        billData.payments.forEach(payment => {
+            const paymentTime = new Date(payment.timestamp).toLocaleString();
+            html += `
+        <div class="item">
+            <span>${paymentTime} - ${payment.method}</span>
+            <span>€${payment.amount.toFixed(2)}</span>
+        </div>
+`;
+        });
+        html += `
+    </div>
+`;
+    }
+
+    html += `
+    <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #999;">
+        Thank you for your visit!
+    </div>
+</body>
+</html>
+`;
+
+    return html;
+}
+
 // View table bill
 async function viewTableBill() {
     if (!currentTableId) return;
@@ -12464,11 +12819,17 @@ async function viewTableBill() {
 
         const billData = await response.json();
 
+        // Generate HTML from bill data
+        const billHTML = formatBillHTML(billData);
+
         // Open a new window with the bill
         const billWindow = window.open('', '_blank', 'width=400,height=600');
         if (billWindow) {
-            billWindow.document.write(billData.html || '<pre>' + billData.text + '</pre>');
+            billWindow.document.write(billHTML);
             billWindow.document.close();
+
+            // Optional: Auto-print
+            // billWindow.print();
         }
     } catch (error) {
         console.error('Error viewing bill:', error);
@@ -12480,7 +12841,7 @@ async function viewTableBill() {
 async function markTableAsPaid() {
     if (!currentTableId || !currentTableData) return;
 
-    const table = allTablesData.find(t => t.id === currentTableId);
+    const table = tableManagementModalData.find(t => t.id === currentTableId);
     if (!table) return;
 
     const tableName = table.name || `Table ${table.id}`;
@@ -12515,7 +12876,7 @@ async function markTableAsPaid() {
 async function clearTable() {
     if (!currentTableId) return;
 
-    const table = allTablesData.find(t => t.id === currentTableId);
+    const table = tableManagementModalData.find(t => t.id === currentTableId);
     if (!table) return;
 
     const tableName = table.name || `Table ${table.id}`;
