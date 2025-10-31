@@ -109,7 +109,8 @@
       "Bash(del verify_trial.py)",
       "Bash(./build.bat)",
       "Bash(del dataapp_instance.lock)",
-      "Bash(wmic process where \"ProcessId=19172\" get ExecutablePath,CommandLine)"
+      "Bash(wmic process where \"ProcessId=19172\" get ExecutablePath,CommandLine)",
+      "Bash(python3 -c \"\nimport re\n\n# Read the file\nwith open(''''app.py'''', ''''r'''') as f:\n    content = f.read()\n\n# Find all @app.route patterns and their order\nroutes = []\nfor match in re.finditer(r''''^@app\\.route\\((.*?)\\)'''', content, re.MULTILINE):\n    line_num = content[:match.start()].count(''''\\n'''') + 1\n    route = match.group(1)\n    routes.append((line_num, route))\n\n# Print routes that could match .js files\nprint(''''Routes that could match JavaScript files:'''')\nfor line, route in routes:\n    if ''''js'''' in route or ''''<'''' in route or ''''/'''' in route:\n        print(f''''Line {line}: {route}'''')\n\")"
     ],
     "deny": [],
     "ask": []

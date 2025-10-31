@@ -241,7 +241,10 @@ export function getDetailedSubscriptionStatus(customer) {
     currentPeriodEnd: currentPeriodEnd ? currentPeriodEnd.toISOString() : null,
     nextBillingDate: nextBillingDate ? nextBillingDate.toISOString() : null,
     daysUntilRenewal: daysUntilRenewal,
-    daysRemaining: daysUntilRenewal // Alias for backward compatibility
+    daysRemaining: daysUntilRenewal, // Alias for backward compatibility
+    // Pricing information
+    amount: customer.subscription_amount, // Subscription price in cents (e.g., 2500 for €25.00)
+    currency: customer.subscription_currency // Currency code (e.g., 'eur', 'usd')
   };
 }
 
@@ -301,7 +304,8 @@ export async function getCustomerForValidation(db, email, token) {
     const customer = await db.prepare(`
       SELECT id, email, unlock_token, subscription_status, subscription_id,
              machine_fingerprint, last_seen, last_validation, created_at,
-             current_period_start, current_period_end, next_billing_date
+             current_period_start, current_period_end, next_billing_date,
+             subscription_amount, subscription_currency
       FROM customers
       WHERE email = ? AND unlock_token = ?
       LIMIT 1

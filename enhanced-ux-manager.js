@@ -37,8 +37,8 @@ class POSPalUXManager {
      * Initialize UX components
      */
     initializeUXComponents() {
-        // Create connection status indicator
-        this.createConnectionStatusIndicator();
+        // Legacy connection status indicator removed in favor of gear-based status
+        // this.createConnectionStatusIndicator();
         
         // Create notification container
         this.createNotificationContainer();
@@ -61,14 +61,8 @@ class POSPalUXManager {
      * Create connection status indicator
      */
     createConnectionStatusIndicator() {
-        const indicator = document.createElement('div');
-        indicator.id = 'connection-status-indicator';
-        indicator.className = 'connection-status online';
-        indicator.innerHTML = `
-            <div class="status-dot"></div>
-            <span>Connected</span>
-        `;
-        document.body.appendChild(indicator);
+        // No-op: UI migrated to gear-based dot + micro-label
+        return;
     }
 
     /**
@@ -111,19 +105,7 @@ class POSPalUXManager {
         if (this.connectionStatus === status) return;
         
         this.connectionStatus = status;
-        const indicator = document.getElementById('connection-status-indicator');
-        
-        if (!indicator) return;
-
-        indicator.className = `connection-status ${status}`;
-        
-        const messages = {
-            online: 'Connected',
-            offline: 'Offline',
-            limited: 'Limited connectivity'
-        };
-        
-        indicator.querySelector('span').textContent = messages[status];
+        // UI handled elsewhere; emit event only
         
         // Emit custom event
         window.dispatchEvent(new CustomEvent('connectionStatusChanged', {

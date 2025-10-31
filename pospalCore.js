@@ -11,6 +11,123 @@ const SELECTED_TABLE_KEY = 'pospal_selected_table';
 const UNIVERSAL_COMMENT_KEY = 'pospal_universal_comment';
 const WORKER_URL = 'https://pospal-licensing-v2-production.bzoumboulis.workers.dev';
 
+// --- Device Preferences Manager (Phase 3: Multi-device printer redesign) ---
+const DevicePreferences = {
+    STORAGE_KEY: 'pospal_device_preferences',
+
+    // Generate a persistent UUID for this device
+    generateDeviceId() {
+        return 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    },
+
+    // Get all device preferences
+    getAll() {
+        try {
+            const stored = localStorage.getItem(this.STORAGE_KEY);
+            if (stored) {
+                return JSON.parse(stored);
+            }
+        } catch (e) {
+            console.error('Error reading device preferences:', e);
+        }
+
+        // Return defaults for first-time setup
+        return {
+            device_id: this.generateDeviceId(),
+            device_name: '',
+            print_behavior: 'auto', // 'auto' | 'confirm' | 'disabled'
+            first_setup_completed: false
+        };
+    },
+
+    // Save all preferences
+    saveAll(preferences) {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(preferences));
+            return true;
+        } catch (e) {
+            console.error('Error saving device preferences:', e);
+            return false;
+        }
+    },
+
+    // Get device ID (persistent across sessions)
+    getDeviceId() {
+        const prefs = this.getAll();
+        return prefs.device_id;
+    },
+
+    // Get device name
+    getDeviceName() {
+        const prefs = this.getAll();
+        return prefs.device_name || 'Unnamed Device';
+    },
+
+    // Set device name
+    setDeviceName(name) {
+        const prefs = this.getAll();
+        prefs.device_name = name;
+        return this.saveAll(prefs);
+    },
+
+    // Get print behavior
+    getPrintBehavior() {
+        const prefs = this.getAll();
+        return prefs.print_behavior || 'auto';
+    },
+
+    // Set print behavior
+    setPrintBehavior(behavior) {
+        if (!['auto', 'confirm', 'disabled'].includes(behavior)) {
+            console.error('Invalid print behavior:', behavior);
+            return false;
+        }
+        const prefs = this.getAll();
+        prefs.print_behavior = behavior;
+        return this.saveAll(prefs);
+    },
+
+    // Check if first-time setup is completed
+    isSetupCompleted() {
+        const prefs = this.getAll();
+        return prefs.first_setup_completed === true;
+    },
+
+    // Mark setup as completed
+    markSetupCompleted() {
+        const prefs = this.getAll();
+        prefs.first_setup_completed = true;
+        return this.saveAll(prefs);
+    },
+
+    // Reset to defaults (for testing/troubleshooting)
+    reset() {
+        try {
+            localStorage.removeItem(this.STORAGE_KEY);
+            return true;
+        } catch (e) {
+            console.error('Error resetting device preferences:', e);
+            return false;
+        }
+    },
+
+    // Get a summary for display
+    getSummary() {
+        const prefs = this.getAll();
+        return {
+            deviceId: prefs.device_id,
+            deviceName: prefs.device_name || 'Unnamed Device',
+            printBehavior: prefs.print_behavior || 'auto',
+            isSetup: prefs.first_setup_completed === true,
+            behaviorLabel: {
+                'auto': 'Auto-print orders',
+                'confirm': 'Confirm before printing',
+                'disabled': 'Don\'t print from this device'
+            }[prefs.print_behavior || 'auto']
+        };
+    }
+};
+
 // --- NEW: Centralized State Management ---
 // Generate unique device ID for this session
 const DEVICE_ID = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -359,86 +476,90 @@ const StatusDisplayManager = {
 
 // --- Centralized License Storage Management ---
 const LicenseStorage = {
-    // License data keys
-    KEYS: {
-        UNLOCK_TOKEN: 'pospal_unlock_token',
-        CUSTOMER_EMAIL: 'pospal_customer_email',
-        CUSTOMER_NAME: 'pospal_customer_name',
-        LICENSE_STATUS: 'pospal_license_status',
-        NEXT_BILLING_DATE: 'pospal_next_billing_date',
-        LAST_VALIDATED: 'pospal_last_validated',
-        LAST_SUCCESSFUL_VALIDATION: 'pospal_last_successful_validation',
-        CACHED_STATUS: 'pospal_cached_status',
+    // In-memory cache for display data ONLY (sourced from server)
+    // DOES NOT store credentials - those stay on server only!
+    cache: {
+        customerEmail: null,
+        customerName: null,
+        licenseStatus: null,
+        nextBillingDate: null,
+        lastUpdated: null
+    },
+
+    // Payment flow keys (temporary storage for Stripe return)
+    PAYMENT_KEYS: {
         PAYMENT_SUCCESS: 'pospal_payment_success',
         PAYMENT_TIMESTAMP: 'pospal_payment_timestamp',
-        ACTIVATION_METHOD: 'pospal_activation_method',
-        DAILY_RETRY_COUNT: 'pospal_daily_retry_count',
-        LAST_DAILY_CHECK: 'pospal_last_daily_check'
+        ACTIVATION_METHOD: 'pospal_activation_method'
     },
-    
-    // Get license data
+
+    // Get cached license data (display only - from server)
     getLicenseData() {
         return {
-            unlockToken: localStorage.getItem(this.KEYS.UNLOCK_TOKEN),
-            customerEmail: localStorage.getItem(this.KEYS.CUSTOMER_EMAIL),
-            customerName: localStorage.getItem(this.KEYS.CUSTOMER_NAME),
-            licenseStatus: localStorage.getItem(this.KEYS.LICENSE_STATUS),
-            nextBillingDate: localStorage.getItem(this.KEYS.NEXT_BILLING_DATE),
-            lastValidated: localStorage.getItem(this.KEYS.LAST_VALIDATED),
-            lastSuccessfulValidation: localStorage.getItem(this.KEYS.LAST_SUCCESSFUL_VALIDATION),
-            cachedStatus: localStorage.getItem(this.KEYS.CACHED_STATUS)
+            unlockToken: null, // Never stored in browser anymore
+            customerEmail: this.cache.customerEmail,
+            customerName: this.cache.customerName,
+            licenseStatus: this.cache.licenseStatus,
+            nextBillingDate: this.cache.nextBillingDate,
+            lastValidated: this.cache.lastUpdated,
+            lastSuccessfulValidation: this.cache.lastUpdated,
+            cachedStatus: this.cache.licenseStatus
         };
     },
-    
-    // Set license data
+
+    // Set cached license data (from server API responses only)
     setLicenseData(data) {
-        if (data.unlockToken) localStorage.setItem(this.KEYS.UNLOCK_TOKEN, data.unlockToken);
-        if (data.customerEmail) localStorage.setItem(this.KEYS.CUSTOMER_EMAIL, data.customerEmail);
-        if (data.customerName) localStorage.setItem(this.KEYS.CUSTOMER_NAME, data.customerName);
-        if (data.licenseStatus) localStorage.setItem(this.KEYS.LICENSE_STATUS, data.licenseStatus);
-        if (data.nextBillingDate) localStorage.setItem(this.KEYS.NEXT_BILLING_DATE, data.nextBillingDate);
-        if (data.lastValidated) localStorage.setItem(this.KEYS.LAST_VALIDATED, data.lastValidated);
-        if (data.lastSuccessfulValidation) localStorage.setItem(this.KEYS.LAST_SUCCESSFUL_VALIDATION, data.lastSuccessfulValidation);
-        if (data.cachedStatus) localStorage.setItem(this.KEYS.CACHED_STATUS, data.cachedStatus);
+        // Update in-memory cache for UI display
+        if (data.customerEmail) this.cache.customerEmail = data.customerEmail;
+        if (data.customerName) this.cache.customerName = data.customerName;
+        if (data.licenseStatus) this.cache.licenseStatus = data.licenseStatus;
+        if (data.nextBillingDate) this.cache.nextBillingDate = data.nextBillingDate;
+        if (data.lastValidated) this.cache.lastUpdated = data.lastValidated;
+
+        // Note: NO localStorage.setItem() for credentials!
+        // Credentials ONLY exist on server now (server_license.enc)
     },
-    
-    // Clear all license data
+
+    // Clear cache
     clearLicenseData() {
-        Object.values(this.KEYS).forEach(key => {
-            localStorage.removeItem(key);
-        });
-        console.log('All license data cleared from localStorage');
+        this.cache = {
+            customerEmail: null,
+            customerName: null,
+            licenseStatus: null,
+            nextBillingDate: null,
+            lastUpdated: null
+        };
+        console.log('License display cache cleared (in-memory only)');
     },
-    
-    // Check if user has valid cached license
+
+    // Check if server has license (always returns false - must check server)
     hasValidCachedLicense() {
-        const data = this.getLicenseData();
-        return !!(data.unlockToken && data.customerEmail && data.licenseStatus === 'active');
+        // Browser never has credentials anymore
+        // Always check server via /api/license/status
+        return false;
     },
-    
-    // Get payment success data
+
+    // Get payment success data (Stripe return flow)
     getPaymentData() {
         return {
-            paymentSuccess: localStorage.getItem(this.KEYS.PAYMENT_SUCCESS),
-            paymentTimestamp: localStorage.getItem(this.KEYS.PAYMENT_TIMESTAMP),
-            activationMethod: localStorage.getItem(this.KEYS.ACTIVATION_METHOD)
+            paymentSuccess: localStorage.getItem(this.PAYMENT_KEYS.PAYMENT_SUCCESS),
+            paymentTimestamp: localStorage.getItem(this.PAYMENT_KEYS.PAYMENT_TIMESTAMP),
+            activationMethod: localStorage.getItem(this.PAYMENT_KEYS.ACTIVATION_METHOD)
         };
     },
-    
+
     // Clear payment data
     clearPaymentData() {
-        localStorage.removeItem(this.KEYS.PAYMENT_SUCCESS);
-        localStorage.removeItem(this.KEYS.PAYMENT_TIMESTAMP);
-        localStorage.removeItem(this.KEYS.ACTIVATION_METHOD);
+        localStorage.removeItem(this.PAYMENT_KEYS.PAYMENT_SUCCESS);
+        localStorage.removeItem(this.PAYMENT_KEYS.PAYMENT_TIMESTAMP);
+        localStorage.removeItem(this.PAYMENT_KEYS.ACTIVATION_METHOD);
     },
-    
-    // Update validation timestamps
-    updateValidationTimestamp() {
-        const now = Date.now().toString();
-        localStorage.setItem(this.KEYS.LAST_VALIDATED, now);
-        localStorage.setItem(this.KEYS.LAST_SUCCESSFUL_VALIDATION, now);
 
-        // Clear any warning dismissal flags since we just validated successfully
+    // Update validation timestamp (in-memory only)
+    updateValidationTimestamp() {
+        this.cache.lastUpdated = Date.now();
+
+        // Clear warning dismissal flags
         localStorage.removeItem('pospal_warning_dismissed_until');
 
         // Clear individual warning display flags
@@ -446,19 +567,9 @@ const LicenseStorage = {
             localStorage.removeItem(`pospal_warning_shown_day_${day}`);
         }
     },
-    
-    // Get/set retry tracking
-    getDailyRetryData() {
-        return {
-            retryCount: parseInt(localStorage.getItem(this.KEYS.DAILY_RETRY_COUNT) || '0'),
-            lastDailyCheck: localStorage.getItem(this.KEYS.LAST_DAILY_CHECK)
-        };
-    },
-    
-    setDailyRetryData(retryCount, lastCheck) {
-        localStorage.setItem(this.KEYS.DAILY_RETRY_COUNT, retryCount.toString());
-        localStorage.setItem(this.KEYS.LAST_DAILY_CHECK, lastCheck.toString());
-    }
+
+    // Removed: getDailyRetryData() - not needed for server-centric licensing
+    // Removed: setDailyRetryData() - not needed for server-centric licensing
 };
 
 // --- PHASE 3B: Frontend License Manager - Unified Validation System ---
@@ -529,75 +640,85 @@ const FrontendLicenseManager = {
     // Main validation entry point - replaces scattered calls
     async validateLicense(forceValidation = false) {
         if (!this.isInitialized) this.init();
-        
+
         // Prevent multiple simultaneous validations
         if (this.isValidating && !forceValidation) {
             console.log('Validation already in progress, skipping duplicate call');
             return this.currentValidationState;
         }
-        
+
         this.isValidating = true;
-        
+
         try {
             console.log('Starting unified license validation...');
-            
-            // Check payment success first
-            const paymentData = LicenseStorage.getPaymentData();
-            if (paymentData.paymentSuccess) {
-                const processed = await this.handlePaymentActivation(paymentData);
-                if (processed) {
-                    this.isValidating = false;
-                    return this.currentValidationState;
-                }
-            }
-            
-            // Check cached license data
-            const licenseData = LicenseStorage.getLicenseData();
 
-            if (licenseData.unlockToken && licenseData.customerEmail) {
-                // License exists (active or inactive)
-                console.log(`Cached license found with status: ${licenseData.licenseStatus}`);
+            // NEW: Check server license FIRST (multi-device support)
+            console.log('Step 1: Checking for server license...');
+            const serverLicense = await this.fetchServerLicenseStatus();
 
-                // If force validation is requested, always fetch fresh data from server
-                if (forceValidation) {
-                    console.log('Force validation requested - fetching fresh data from server');
-                    const freshValidation = await this.performBackgroundValidation(licenseData);
-                    if (freshValidation) {
-                        this.isValidating = false;
-                        return this.currentValidationState;
-                    }
-                }
+            if (serverLicense && serverLicense.licensed && serverLicense.active) {
+                // Server has an active license - use it!
+                console.log('✅ Server license found and active - using server license');
 
-                if (licenseData.licenseStatus === 'active') {
-                    // Show active status immediately from cache
-                    this.updateUIForActiveStatus(licenseData);
+                this.currentValidationState = {
+                    status: 'active',
+                    customerName: serverLicense.customer_name,
+                    email: serverLicense.email,
+                    source: 'server',
+                    timestamp: Date.now()
+                };
 
-                    // Validate in background if online (unless already forced)
-                    if (this.cache.isOnline && !forceValidation) {
-                        this.performBackgroundValidation(licenseData);
-                    } else if (!this.cache.isOnline) {
-                        this.handleOfflineGracePeriod(licenseData);
-                    }
-                } else {
-                    // License is inactive/cancelled - show inactive UI
-                    console.log(`License is ${licenseData.licenseStatus} - showing inactive UI`);
-                    this.currentValidationState = {
-                        status: licenseData.licenseStatus || 'inactive',
-                        customerName: licenseData.customerName,
-                        timestamp: Date.now()
-                    };
-
-                    this.throttledUIUpdate(() => {
-                        StatusDisplayManager.updateLicenseStatus(licenseData.licenseStatus || 'inactive', {
-                            customerName: licenseData.customerName,
-                            isOnline: true
-                        });
-                        this.showPortalButtons();
+                this.throttledUIUpdate(() => {
+                    StatusDisplayManager.updateLicenseStatus('active', {
+                        customerName: serverLicense.customer_name,
+                        isOnline: true
                     });
+                    this.showPortalButtons();
+                });
+
+                console.log('Server license validation complete');
+                this.isValidating = false;
+                return this.currentValidationState;
+            } else if (serverLicense && serverLicense.grace_period) {
+                // Server license in grace period
+                console.log(`⚠️  Server license in grace period - ${serverLicense.grace_days_left} days left`);
+
+                this.currentValidationState = {
+                    status: 'active',
+                    customerName: serverLicense.customer_name,
+                    email: serverLicense.email,
+                    grace_period: true,
+                    grace_days_left: serverLicense.grace_days_left,
+                    source: 'server_grace',
+                    timestamp: Date.now()
+                };
+
+                this.throttledUIUpdate(() => {
+                    StatusDisplayManager.updateLicenseStatus('active', {
+                        customerName: serverLicense.customer_name,
+                        isOnline: false,
+                        gracePeriod: true,
+                        graceDaysLeft: serverLicense.grace_days_left
+                    });
+                    this.showPortalButtons();
+                });
+
+                this.isValidating = false;
+                return this.currentValidationState;
+            } else {
+                // No server license found - show trial/unlicensed status
+                console.log('ℹ️  No server license found - showing trial status');
+
+                // Check for payment success (user just returned from Stripe)
+                const paymentData = LicenseStorage.getPaymentData();
+                if (paymentData.paymentSuccess) {
+                    console.log('Payment detected - redirecting to activation');
+                    // Show message to activate on server
+                    showToast('Payment successful! Please activate your license using the "Already paid?" button.', 'info', 10000);
+                    LicenseStorage.clearPaymentData();
                 }
 
-            } else {
-                // No license at all, check trial status
+                // Show trial status
                 await this.checkTrialStatus();
             }
             
@@ -611,157 +732,88 @@ const FrontendLicenseManager = {
         return this.currentValidationState;
     },
     
-    // Handle payment activation
-    async handlePaymentActivation(paymentData) {
+    // NEW: Fetch server license status (Multi-device support)
+    async fetchServerLicenseStatus() {
         try {
-            const response = await fetch(`${WORKER_URL}/license-recovery`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ recovery_code: paymentData.paymentSuccess })
+            console.log('Checking server license status...');
+
+            const response = await fetch('/api/license/status', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
             });
-            
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (data.success && data.license && data.license.email && data.license.unlockToken) {
-                    console.log('Payment activation successful');
-                    
-                    // Store license data
-                    LicenseStorage.setLicenseData({
-                        unlockToken: data.license.unlockToken,
-                        customerEmail: data.license.email,
-                        customerName: data.license.customerName || data.license.email,
-                        licenseStatus: 'active',
-                        nextBillingDate: data.license.nextBillingDate
-                    });
-                    
-                    LicenseStorage.updateValidationTimestamp();
-                    
-                    // Clear payment data
-                    LicenseStorage.clearPaymentData();
-                    
-                    // CRITICAL: Sync to backend BEFORE showing success
-                    // This ensures printing and other features work immediately
-                    console.log('Payment activation: syncing credentials to backend...');
-                    await this.syncLicenseToBackend(data.license.email, data.license.unlockToken);
 
-                    // Update UI
-                    this.updateUIForActiveStatus(LicenseStorage.getLicenseData());
-
-                    // Show success message
-                    const customerName = data.license.customerName || data.license.email;
-                    showToast(`Welcome ${customerName}! Your POSPal license has been automatically activated.`, 'success', 8000);
-
-                    return true;
-                }
+            if (!response.ok) {
+                console.error('Server license status check failed:', response.status);
+                return null;
             }
-        } catch (error) {
-            console.error('Payment activation error:', error);
-        }
-        
-        // Clear invalid payment data
-        LicenseStorage.clearPaymentData();
-        return false;
-    },
-    
-    // Perform background validation for active licenses using unified endpoint
-    async performBackgroundValidation(licenseData) {
-        try {
-            const validationRequest = {
-                operation: 'validate',
-                credentials: {
-                    email: licenseData.customerEmail,
-                    token: licenseData.unlockToken
-                },
-                device: {
-                    machineFingerprint: await this.getDeviceFingerprint(),
-                    deviceInfo: {
-                        hostname: 'POSPal-Browser',
-                        platform: 'web'
-                    }
-                },
-                options: {
-                    skipMachineUpdate: false,
-                    performanceMode: 'background'
-                }
-            };
-            
-            const response = await fetch(`${WORKER_URL}/validate-unified`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(validationRequest)
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (data.success && data.validation.valid) {
-                    console.log(`Unified background validation successful in ${data.performance?.responseTime || 0}ms - subscription confirmed active`);
 
-                    // Store enhanced license data from unified response
-                    LicenseStorage.setLicenseData({
-                        unlockToken: licenseData.unlockToken,
-                        customerEmail: licenseData.customerEmail,
-                        customerName: data.validation.customer?.name || licenseData.customerName,
-                        licenseStatus: 'active',
-                        nextBillingDate: data.subscription?.nextBillingDate,
-                        subscriptionId: data.subscription?.id,
-                        validationType: data.validation.validationType,
-                        cacheStrategy: data.caching?.strategy,
-                        cacheValidUntil: data.caching?.validUntil
-                    });
+            const data = await response.json();
+            console.log('Server license status:', data);
 
-                    LicenseStorage.updateValidationTimestamp();
+            if (data.licensed && data.active) {
+                // Server has an active license - use it
+                console.log(`Server license active for ${data.email}`);
 
-                    // Log performance metrics
-                    if (data.performance) {
-                        console.log(`Unified validation performance: ${data.performance.responseTime}ms, cache strategy: ${data.caching?.strategy}`);
-                    }
+                // Update local cache for UI display (NOT credentials - those stay on server)
+                LicenseStorage.setLicenseData({
+                    customerEmail: data.email,
+                    customerName: data.customer_name,
+                    licenseStatus: data.subscription_status || 'active',
+                    nextBillingDate: data.next_billing_date,
+                    lastValidated: data.validated_at
+                });
 
-                    // Sync license data to backend so it can validate printing/features
-                    this.syncLicenseToBackend(licenseData.customerEmail, licenseData.unlockToken);
+                LicenseStorage.updateValidationTimestamp();
 
-                    // Update UI to show active status after successful background validation
-                    this.updateUIForActiveStatus(LicenseStorage.getLicenseData());
-                    return true; // Validation successful
-                } else {
-                    const errorInfo = data.error || {};
-                    console.log(`Unified background validation failed: ${errorInfo.code} - ${errorInfo.message}`);
+                return {
+                    licensed: true,
+                    active: true,
+                    email: data.email,
+                    customer_name: data.customer_name,
+                    subscription_status: data.subscription_status,
+                    next_billing_date: data.next_billing_date,
+                    source: 'server'
+                };
+            } else if (data.grace_period) {
+                // Server license in grace period
+                console.log(`Server license in grace period: ${data.grace_days_left} days left`);
 
-                    // Only invalidate license if error indicates authentication issue
-                    if (errorInfo.category === 'authentication' || errorInfo.code === 'SUBSCRIPTION_INACTIVE') {
-                        this.handleInvalidLicense();
-                    } else {
-                        console.log('Keeping current license due to non-authentication error');
-                    }
-                    return false; // Validation failed
-                }
+                LicenseStorage.setLicenseData({
+                    customerEmail: data.email,
+                    customerName: data.customer_name,
+                    licenseStatus: 'active',
+                    nextBillingDate: data.next_billing_date
+                });
+
+                return {
+                    licensed: true,
+                    active: true,
+                    grace_period: true,
+                    grace_days_left: data.grace_days_left,
+                    email: data.email,
+                    customer_name: data.customer_name,
+                    source: 'server_grace'
+                };
             } else {
-                console.log('Unified background validation failed - server error');
-                // Don't invalidate on server errors, could be temporary
-                return false;
+                // No server license
+                console.log('No active server license found');
+                return {
+                    licensed: false,
+                    active: false,
+                    source: 'server_none'
+                };
             }
         } catch (error) {
-            console.log('Unified background validation error:', error.message);
-            // Don't invalidate on network errors
-            return false;
+            console.error('Error fetching server license status:', error);
+            return null;
         }
     },
-    
-    // Handle offline grace period
-    handleOfflineGracePeriod(licenseData) {
-        const lastSuccessful = parseInt(licenseData.lastSuccessfulValidation || '0');
-        const daysSinceValidation = (Date.now() - lastSuccessful) / (1000 * 60 * 60 * 24);
-        
-        if (daysSinceValidation > this.gracePeriodDays) {
-            console.log('Grace period expired, switching to trial');
-            this.handleInvalidLicense();
-        } else {
-            console.log(`Running in offline grace period (${daysSinceValidation.toFixed(1)} days since validation)`);
-            this.updateUIForOfflineStatus(daysSinceValidation);
-        }
-    },
-    
+
+    // Handle payment activation
+    // REMOVED: handlePaymentActivation() - No longer needed (server-centric licensing)
+    // REMOVED: performBackgroundValidation() - No longer needed (server handles validation)
+    // REMOVED: handleOfflineGracePeriod() - Server handles grace periods now
+
     // Check trial status when no valid license
     async checkTrialStatus() {
         if (!this.cache.isOnline) {
@@ -934,9 +986,15 @@ const FrontendLicenseManager = {
             if (licenseData.nextBillingDate) {
                 try {
                     const billingDate = new Date(licenseData.nextBillingDate);
-                    nextBillingDate.textContent = billingDate.toLocaleDateString();
 
-                    // Calculate and update days until renewal
+                    // Add 1 day to match Stripe's display convention
+                    // (Stripe shows the next billing day, not the period end timestamp)
+                    const displayDate = new Date(billingDate);
+                    displayDate.setDate(displayDate.getDate() + 1);
+
+                    nextBillingDate.textContent = displayDate.toLocaleDateString();
+
+                    // Calculate and update days until renewal (use original date for accuracy)
                     const daysUntilRenewal = document.getElementById('days-until-renewal');
                     if (daysUntilRenewal) {
                         const now = new Date();
@@ -957,6 +1015,58 @@ const FrontendLicenseManager = {
                 if (daysUntilRenewal) {
                     daysUntilRenewal.textContent = 'Unknown';
                 }
+            }
+        }
+
+        // Update subscription price if available
+        const priceElement = document.getElementById('subscription-price');
+        if (priceElement && licenseData.subscriptionPrice) {
+            const currency = licenseData.subscriptionCurrency || 'EUR';
+            const price = parseFloat(licenseData.subscriptionPrice);
+            const currencySymbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : currency;
+            priceElement.textContent = `${currencySymbol}${price.toFixed(2)} per month`;
+        }
+
+        // Update footer status badge based on license status and days remaining
+        const footerStatus = document.getElementById('footer-trial-status');
+        if (footerStatus && licenseData.licenseStatus) {
+            const status = licenseData.licenseStatus;
+
+            // Calculate days left for active subscriptions
+            let daysLeft = null;
+            if (licenseData.nextBillingDate) {
+                try {
+                    const billingDate = new Date(licenseData.nextBillingDate);
+                    const now = new Date();
+                    daysLeft = Math.ceil((billingDate - now) / (1000 * 60 * 60 * 24));
+                } catch (error) {
+                    console.error('Error calculating days left for footer:', error);
+                }
+            }
+
+            if (status === 'active') {
+                if (daysLeft !== null && daysLeft <= 7) {
+                    // Show warning for renewals within 7 days
+                    footerStatus.textContent = `Renews in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`;
+                    if (daysLeft <= 1) {
+                        footerStatus.className = 'font-medium text-red-600';
+                    } else if (daysLeft <= 3) {
+                        footerStatus.className = 'font-medium text-orange-600';
+                    } else {
+                        footerStatus.className = 'font-medium text-yellow-600';
+                    }
+                } else {
+                    // Show active status for subscriptions with >7 days
+                    footerStatus.textContent = 'Active Subscription';
+                    footerStatus.className = 'font-medium text-emerald-600';
+                }
+            } else if (status === 'inactive' || status === 'cancelled') {
+                footerStatus.textContent = 'Subscription Inactive';
+                footerStatus.className = 'font-medium text-red-600';
+            } else {
+                // Unknown status - show it as-is
+                footerStatus.textContent = `Status: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+                footerStatus.className = 'font-medium text-gray-600';
             }
         }
 
@@ -1067,44 +1177,7 @@ const FrontendLicenseManager = {
     },
 
     // Sync license data to backend for feature validation (with retry logic)
-    async syncLicenseToBackend(customerEmail, unlockToken, retries = 3) {
-        for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-                console.log(`Syncing license credentials to backend (attempt ${attempt}/${retries})...`);
-                const response = await fetch('/api/validate-license', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        customerEmail,
-                        unlockToken
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('License synced to backend successfully');
-                    return true;
-                } else {
-                    console.warn(`Backend license sync failed (attempt ${attempt}/${retries})`);
-                    if (attempt < retries) {
-                        // Exponential backoff: 1s, 2s, 4s
-                        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-                    }
-                }
-            } catch (error) {
-                console.warn(`Error syncing license to backend (attempt ${attempt}/${retries}):`, error.message);
-                if (attempt < retries) {
-                    // Exponential backoff
-                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-                }
-            }
-        }
-
-        // All retries failed - show user warning
-        console.error('All backend sync attempts failed');
-        showToast('License active but backend sync failed. Some features may be limited. Try opening License Management.', 'warning', 6000);
-        return false;
-    },
+    // REMOVED: syncLicenseToBackend() - Not needed (credentials only on server now)
 
     // Get current status (for external queries)
     getCurrentStatus() {
@@ -1297,7 +1370,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('categoriesContainer:', elements.categoriesContainer);
     console.log('productsContainer:', elements.productsContainer);
     console.log('Is desktop-ui class present:', document.body.classList.contains('desktop-ui'));
-    
+
+    // Initialize license UI visibility (localhost-only license management)
+    console.log('Initializing license UI visibility...');
+    initializeLicenseUIVisibility();
+
     // Re-cache modal elements specifically to ensure they're found
     if (componentLoaded) {
         console.log('Re-caching modal elements...');
@@ -1387,6 +1464,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check for automatic activation after payment
     console.log('Checking for automatic license activation...');
     await checkAutomaticActivation();
+
+    // Load license info to populate footer badge immediately on page load
+    console.log('Loading license info for footer display...');
+    try {
+        await loadLicenseInfo();
+    } catch (error) {
+        console.error('Failed to load license info for footer:', error);
+    }
+
     if (elements.universalOrderCommentInput) {
         elements.universalOrderCommentInput.addEventListener('input', async (e) => {
             universalOrderComment = e.target.value;
@@ -1419,7 +1505,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize portal return handling
     console.log('Initializing portal return handling...');
     initializePortalReturnHandling();
-    
+
+    // Phase 7: Update print failure indicator on page load
+    updateManagementButtonIndicator();
+
     console.log('Initialization complete!');
 });
 
@@ -1526,7 +1615,7 @@ async function initializeAppMode() {
             // Enable simple mode
             document.body.classList.add('simple-mode');
             document.body.classList.remove('table-mode');
-            initializeSimpleMode();
+            initializeSimpleMode("live");
         }
 
         // Update UI based on mode
@@ -1537,7 +1626,7 @@ async function initializeAppMode() {
         // Default to simple mode on error
         document.body.classList.add('simple-mode');
         document.body.classList.remove('table-mode');
-        initializeSimpleMode();
+        initializeSimpleMode("offline");
     }
 }
 
@@ -1546,6 +1635,7 @@ async function initializeAppMode() {
  */
 async function initializeTableFeatures() {
     console.log('Initializing table management features...');
+    stopSimpleModeConnectionMonitor();
 
     try {
         // Load initial table data
@@ -1620,7 +1710,7 @@ async function initializeTableFeatures() {
 /**
  * Initialize simple mode (no table management)
  */
-function initializeSimpleMode() {
+function initializeSimpleMode(initialStatus = 'checking') {
     console.log('Initializing simple mode...');
 
     // Stop table polling when switching to simple mode
@@ -1633,6 +1723,7 @@ function initializeSimpleMode() {
     // Show simple mode elements
     const simpleElements = document.querySelectorAll('.simple-mode-only');
     simpleElements.forEach(el => el.style.display = 'block');
+    startSimpleModeConnectionMonitor(initialStatus);
 }
 
 /**
@@ -2220,15 +2311,72 @@ const ConnectionStatus = {
 };
 
 let currentConnectionStatus = ConnectionStatus.CHECKING;
+let simpleModeConnectionInterval = null;
 let lastSSEEventTime = null;
 
 /**
  * Initialize connection status indicator
  */
+function startSimpleModeConnectionMonitor(initialStatus = ConnectionStatus.CHECKING) {
+    stopSimpleModeConnectionMonitor();
+
+    if (initialStatus) {
+        updateConnectionStatusUI(initialStatus);
+    }
+
+    const runCheck = async () => {
+        try {
+            const response = await fetch(`/api/config?status_ping=${Date.now()}`, {
+                method: 'GET',
+                cache: 'no-store'
+            });
+
+            if (response.ok) {
+                updateConnectionStatusUI(ConnectionStatus.LIVE);
+            } else {
+                updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+            }
+        } catch (error) {
+            if (currentConnectionStatus !== ConnectionStatus.OFFLINE) {
+                console.warn('Simple mode connection check failed:', error);
+            }
+            updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+        }
+    };
+
+    simpleModeConnectionInterval = setInterval(runCheck, 30000);
+    runCheck();
+}
+
+function stopSimpleModeConnectionMonitor() {
+    if (simpleModeConnectionInterval) {
+        clearInterval(simpleModeConnectionInterval);
+        simpleModeConnectionInterval = null;
+    }
+}
+window.addEventListener('online', () => {
+    if (!tableManagementEnabled) {
+        startSimpleModeConnectionMonitor(ConnectionStatus.CHECKING);
+    }
+});
+
+window.addEventListener('offline', () => {
+    if (!tableManagementEnabled) {
+        stopSimpleModeConnectionMonitor();
+        updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+    }
+});
 function initConnectionStatusIndicator() {
     if (!tableManagementEnabled) return;
 
     updateConnectionStatusUI(ConnectionStatus.CHECKING);
+
+    // Show status banner if table management enabled
+    const banner = document.getElementById('connectionStatusBanner');
+    if (banner) {
+        banner.style.display = 'flex';
+    }
+
     monitorSSEConnection();
 
     setInterval(() => {
@@ -2252,17 +2400,27 @@ function monitorSSEConnection() {
 
             window.evtSource.onerror = (error) => {
                 console.error('SSE connection error:', error);
-                updateConnectionStatusUI(ConnectionStatus.POLLING);
+                lastSSEEventTime = null;
+                if (currentConnectionStatus !== ConnectionStatus.OFFLINE) {
+                    updateConnectionStatusUI(ConnectionStatus.POLLING);
+                }
                 // Polling will be started by checkConnectionHealth() on next cycle
             };
         } else if (readyState === EventSource.CONNECTING) {
+            lastSSEEventTime = null;
             updateConnectionStatusUI(ConnectionStatus.CHECKING);
         } else {
-            updateConnectionStatusUI(ConnectionStatus.POLLING);
+            lastSSEEventTime = null;
+            if (currentConnectionStatus !== ConnectionStatus.OFFLINE) {
+                updateConnectionStatusUI(ConnectionStatus.POLLING);
+            }
             // Polling will be started by checkConnectionHealth() if needed
         }
     } else {
-        updateConnectionStatusUI(ConnectionStatus.POLLING);
+        lastSSEEventTime = null;
+        if (currentConnectionStatus !== ConnectionStatus.OFFLINE) {
+            updateConnectionStatusUI(ConnectionStatus.POLLING);
+        }
         // Polling will be started by checkConnectionHealth() if needed
     }
 }
@@ -2292,41 +2450,132 @@ function checkConnectionHealth() {
         console.log('SSE unavailable, enabling polling fallback');
         startTablePolling();
     }
-    updateConnectionStatusUI(ConnectionStatus.POLLING);
+    if (currentConnectionStatus !== ConnectionStatus.OFFLINE) {
+        updateConnectionStatusUI(ConnectionStatus.POLLING);
+    }
 }
 
 /**
- * Update connection status UI
+ * Update connection status UI - Controls animated gear and status banner
  */
 function updateConnectionStatusUI(status) {
+    const previousStatus = currentConnectionStatus;
     currentConnectionStatus = status;
 
-    const indicator = document.getElementById('connectionStatusIndicator');
-    if (!indicator) return;
+    // Update settings gear animation and color
+    const gear = document.getElementById('settingsGear');
+    const label = document.getElementById('gearStatusLabel');
+    if (gear) {
+        // Remove all status classes
+        gear.classList.remove('status-live', 'status-polling', 'status-offline', 'status-checking');
+        // Add current status class
+        gear.classList.add(`status-${status}`);
 
-    // Update indicator classes (includes table-mode-only for visibility control)
-    indicator.className = `connection-status-indicator-header ${status} table-mode-only`;
+        // Update adjacent status label
+        if (label) {
+            const textMap = {
+                live: 'Connected',
+                polling: 'Degraded',
+                offline: 'Offline',
+                checking: 'Checking...'
+            };
+            if (status === 'live') {
+                label.className = `gear-status-label status-${status}`;
+                label.textContent = '';
+            } else {
+                label.className = `gear-status-label status-${status} active`;
+                label.textContent = textMap[status] || 'Status';
+            }
+        }
 
-    // Update status text
-    const statusText = document.getElementById('connectionStatusText');
-    if (statusText) {
-        const statusLabels = {
-            live: 'Live',
-            polling: 'Polling',
-            offline: 'Offline',
-            checking: 'Checking...'
+        // Accessibility: keep a concise, readable status label on the gear
+        try {
+            const ariaMap = {
+                live: 'Management Panel - Connected',
+                polling: 'Management Panel - Degraded connection',
+                offline: 'Management Panel - Offline',
+                checking: 'Management Panel - Checking connection'
+            };
+            gear.setAttribute('aria-label', ariaMap[status] || 'Management Panel');
+        } catch (e) {}
+
+        // Update tooltip
+        const tooltips = {
+            live: 'Management Panel\nStatus: Connected (real-time updates active)',
+            polling: 'Management Panel\nStatus: Degraded (polling every 5-10 seconds)',
+            offline: 'Management Panel\nStatus: Offline (no connection)',
+            checking: 'Management Panel\nStatus: Checking connection...'
         };
-        statusText.textContent = statusLabels[status] || 'Unknown';
+        gear.title = tooltips[status] || 'Management Panel';
+        }
+
+    // Update status banner in management panel (if visible)
+    const banner = document.getElementById('connectionStatusBanner');
+    const bannerText = document.getElementById('connectionBannerText');
+    const bannerSubtext = document.getElementById('connectionBannerSubtext');
+
+    if (banner && tableManagementEnabled) {
+        banner.className = `connection-status-banner status-${status} table-mode-only`;
+
+        const bannerContent = {
+            live: {
+                icon: 'fa-check-circle',
+                text: 'Server Connected',
+                subtext: 'Real-time sync active'
+            },
+            polling: {
+                icon: 'fa-sync-alt fa-spin',
+                text: 'Polling Mode',
+                subtext: 'Updates every 5-10 seconds'
+            },
+            offline: {
+                icon: 'fa-exclamation-triangle',
+                text: 'Server Offline',
+                subtext: 'Changes may not sync'
+            },
+            checking: {
+                icon: 'fa-circle-notch fa-spin',
+                text: 'Checking connection...',
+                subtext: 'Verifying server status'
+            }
+        };
+
+        const content = bannerContent[status];
+        if (content) {
+            const iconEl = banner.querySelector('i');
+            if (iconEl) {
+                iconEl.className = `fas ${content.icon}`;
+            }
+            if (bannerText) bannerText.textContent = content.text;
+            if (bannerSubtext) bannerSubtext.textContent = content.subtext;
+        }
     }
 
-    // Update tooltip title
-    const titles = {
-        live: 'Live Connection - Real-time updates active',
-        polling: 'Polling Mode - Updates every 5 seconds',
-        offline: 'Offline - No connection',
-        checking: 'Checking connection...'
-    };
-    indicator.title = titles[status] || 'Unknown status';
+    // Show toast notification on status changes (not on initial load)
+    if (previousStatus && previousStatus !== status && previousStatus !== 'checking') {
+        const toastMessages = {
+            offline: {
+                message: '⚠️ Server Offline - Changes may not sync in real-time',
+                type: 'warning',
+                duration: 8000
+            },
+            live: {
+                message: '✅ Back Online - Real-time sync restored',
+                type: 'success',
+                duration: 4000
+            },
+            polling: {
+                message: 'ℹ️ Connection unstable - Switched to polling mode',
+                type: 'info',
+                duration: 6000
+            }
+        };
+
+        const toast = toastMessages[status];
+        if (toast) {
+            showToast(toast.message, toast.type, toast.duration);
+        }
+    }
 }
 
 /**
@@ -2366,14 +2615,20 @@ function startTablePolling() {
             await loadTablesForSelection();
             // Reset backoff on successful poll
             pollBackoffMultiplier = 1;
+            if (currentConnectionStatus !== ConnectionStatus.LIVE) {
+                updateConnectionStatusUI(ConnectionStatus.POLLING);
+            }
         } catch (error) {
             // Check if it's a rate limit error (429)
             if (error && error.message && error.message.includes('429')) {
                 // Exponential backoff on rate limit
                 pollBackoffMultiplier = Math.min(pollBackoffMultiplier * 2, MAX_BACKOFF_MULTIPLIER);
-                console.warn(`Rate limited on /api/tables - backing off to ${minInterval}ms`);
+                const nextInterval = BASE_POLL_INTERVAL * pollBackoffMultiplier;
+                console.warn(`Rate limited on /api/tables - backing off to ${nextInterval}ms`);
             } else {
                 console.error('Table polling error:', error);
+                lastSSEEventTime = null;
+                updateConnectionStatusUI(ConnectionStatus.OFFLINE);
             }
         }
     }, BASE_POLL_INTERVAL);
@@ -3313,6 +3568,8 @@ async function loadTablesForSelection() {
         console.error('Error loading tables for selection:', error);
         console.error('[DEBUG] Full error details:', error.message, error.stack);
         showToast('Failed to load tables', 'error');
+        updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+        throw error;
     }
 }
 
@@ -3967,10 +4224,13 @@ function initializeAppState() {
     } else {
         console.log('universalOrderCommentInput_desktop not found');
     }
-    
-    // Auto-verify printer on startup
-    autoVerifyPrinter();
-    
+
+    // Removed auto-verify printer on startup (Phase 1: Multi-device printer redesign)
+    // Printer status will be checked passively without sending test prints
+
+    // Check if first-time setup wizard should be shown (Phase 4)
+    checkAndShowSetupWizard();
+
     console.log('initializeAppState completed');
 }
 
@@ -4442,6 +4702,9 @@ async function newOrder() {
     showToast('Order cleared. Ready for the next order.', 'info');
 }
 
+// Global variable to track pending order submission (Phase 6)
+let pendingOrderData = null;
+
 async function sendOrder() {
     if (!elements.sendOrderBtn) return;
 
@@ -4473,16 +4736,76 @@ async function sendOrder() {
         }
     }
 
+    // Phase 6: Check device print behavior
+    const printBehavior = DevicePreferences.getPrintBehavior();
 
-    // Preflight: block if printer not verified this session
-    if (printerVerificationStatus !== 'verified') {
-        if (printerVerificationStatus === 'failed') {
-            showToast('Printer verification failed at startup. Open Settings to test and retry.', 'error', 7000);
-        } else {
-            showToast('Printer not verified yet. Open Settings to test and retry.', 'error', 7000);
-        }
-        return;
+    if (printBehavior === 'confirm') {
+        // Show confirmation modal
+        showPrintConfirmModal(tableNumberForOrder);
+        return; // Wait for user decision
     }
+
+    // For 'auto' and 'disabled' behaviors, proceed with submission
+    await submitOrderToServer(tableNumberForOrder, printBehavior);
+}
+
+// Show print confirmation modal (Phase 6)
+function showPrintConfirmModal(tableNumberForOrder) {
+    // Calculate order summary
+    const totalItems = currentOrder.reduce((sum, item) => sum + item.quantity, 0);
+    const totalPrice = currentOrder.reduce((sum, item) => sum + (item.itemPriceWithModifiers * item.quantity), 0);
+
+    // Populate modal
+    const tableEl = document.getElementById('printConfirmTable');
+    const itemsEl = document.getElementById('printConfirmItems');
+    const totalEl = document.getElementById('printConfirmTotal');
+
+    if (tableEl) tableEl.textContent = tableNumberForOrder || 'Takeaway';
+    if (itemsEl) itemsEl.textContent = `${totalItems} item${totalItems !== 1 ? 's' : ''}`;
+    if (totalEl) totalEl.textContent = `€${totalPrice.toFixed(2)}`;
+
+    // Store table number for later
+    pendingOrderData = { tableNumberForOrder };
+
+    // Show modal
+    const modal = document.getElementById('printConfirmModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+}
+
+// User chose to print (Phase 6)
+async function printConfirmYes() {
+    const modal = document.getElementById('printConfirmModal');
+    if (modal) {
+        modal.classList.remove('flex');
+        modal.classList.add('hidden');
+    }
+
+    if (pendingOrderData) {
+        await submitOrderToServer(pendingOrderData.tableNumberForOrder, 'auto'); // Use 'auto' to force print
+        pendingOrderData = null;
+    }
+}
+
+// User chose not to print (Phase 6)
+async function printConfirmNo() {
+    const modal = document.getElementById('printConfirmModal');
+    if (modal) {
+        modal.classList.remove('flex');
+        modal.classList.add('hidden');
+    }
+
+    if (pendingOrderData) {
+        await submitOrderToServer(pendingOrderData.tableNumberForOrder, 'disabled'); // Use 'disabled' to skip print
+        pendingOrderData = null;
+    }
+}
+
+// Actual order submission logic (Phase 6 - refactored from sendOrder)
+async function submitOrderToServer(tableNumberForOrder, printBehavior) {
+    if (!elements.sendOrderBtn) return;
 
     elements.sendOrderBtn.disabled = true;
     elements.sendOrderBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Sending...';
@@ -4499,7 +4822,10 @@ async function sendOrder() {
             comment: item.comment || "",
         })),
         universalComment: universalOrderComment.trim(),
-        paymentMethod: isPaidByCard ? 'Card' : 'Cash'
+        paymentMethod: (tableManagementEnabled && selectedTableId) ? 'Pending' : (isPaidByCard ? 'Card' : 'Cash'),
+        // Phase 6: Add print behavior flag for server
+        devicePrintBehavior: printBehavior,
+        deviceName: DevicePreferences.getDeviceName()
     };
 
     try {
@@ -4517,9 +4843,20 @@ async function sendOrder() {
             if (result.status === "success") {
                 const tableMessage = tableManagementEnabled && tableNumberForOrder ? ` for Table ${tableNumberForOrder}` : '';
                 showToast(result.message || `Order #${result.order_number}${tableMessage} sent, all copies printed, and logged!`, 'success');
+            } else if (result.status === "success_order_saved_print_failed") {
+                // Phase 7: Enhanced print failure alert
+                const alertMessage = `⚠️ ORDER #${result.order_number} SAVED BUT NOT PRINTED! Kitchen won't see it. Reprint now from Management → Orders.`;
+                showToast(alertMessage, 'error', 15000);
+
+                // Play alert sound (Phase 7)
+                playPrintFailureAlert();
+
+                // Set session indicator (Phase 7)
+                setPrintFailureSessionIndicator();
             } else if (result.status === "warning_print_copy2_failed" || result.status === "warning_print_partial_failed") {
                 showToast(result.message || `Order #${result.order_number}: Some copies FAILED.`, 'warning', 7000);
             } else if (result.status === "error_print_failed_copy1") {
+                // Phase 6: This should no longer occur (orders are always saved now)
                 showToast(result.message || `Order #${result.order_number} - COPY 1 FAILED. Order NOT saved.`, 'error', 7000);
             } else if (result.status === "error_log_failed_after_print") {
                 showToast(result.message || `Order #${result.order_number} - PRINTED but LOGGING FAILED. Notify staff!`, 'error', 10000);
@@ -4527,7 +4864,12 @@ async function sendOrder() {
                 showToast(result.message || `Order #${result.order_number} processed with issues: ${result.status}`, 'warning', 7000);
             }
 
-            if (result.status === "success" || result.status === "warning_print_copy2_failed" || result.status === "warning_print_partial_failed" || result.status === "error_log_failed_after_print") {
+            // Phase 6: Clear order data for all success statuses (including new print-failed status)
+            if (result.status === "success" ||
+                result.status === "success_order_saved_print_failed" ||
+                result.status === "warning_print_copy2_failed" ||
+                result.status === "warning_print_partial_failed" ||
+                result.status === "error_log_failed_after_print") {
                 clearOrderData();
 
                 // Update table selection UI to refresh totals
@@ -5215,6 +5557,9 @@ function openManagementModal() {
 
     document.body.style.overflow = 'hidden';
 
+    // Phase 7: Clear print failure indicator when management panel is opened
+    clearPrintFailureSessionIndicator();
+
     // Hide floating action buttons to prevent modal stacking
     const settingsGear = document.getElementById('settings-gear-container');
     if (settingsGear) settingsGear.style.display = 'none';
@@ -5222,6 +5567,9 @@ function openManagementModal() {
     loadManagementData();
     loadAppVersion();
     checkAndDisplayTrialStatus();
+
+    // Load license info to update footer badge when modal opens
+    loadLicenseInfo();
 
     // Default to licensing dashboard for better UX
     const licensingTabButton = document.querySelector('.management-tab[onclick*="\'licensing\'"]');
@@ -5551,7 +5899,7 @@ function loadManagementData() {
 
 async function initializeHardwarePrintingUI() {
     try {
-        // Load settings
+        // Load server printer settings
         const settingsResp = await fetch('/api/settings/printing');
         const settings = await settingsResp.json();
         const cutToggle = document.getElementById('cutAfterPrintToggle');
@@ -5562,12 +5910,100 @@ async function initializeHardwarePrintingUI() {
             copiesInput.value = isNaN(val) ? 2 : Math.max(1, Math.min(10, val));
         }
         await refreshPrinters();
-        
+
+        // Load device settings (Phase 5)
+        loadDeviceSettings();
+
         // Load network settings
         await loadNetworkSettings();
-        
+
     } catch (e) {
         console.error('Failed to initialize Hardware & Printing UI:', e);
+    }
+}
+
+// --- Device Settings Functions (Phase 5: Multi-device printer redesign) ---
+function loadDeviceSettings() {
+    // Load device name
+    const deviceNameInput = document.getElementById('deviceNameInput');
+    if (deviceNameInput) {
+        deviceNameInput.value = DevicePreferences.getDeviceName();
+    }
+
+    // Load print behavior
+    const currentBehavior = DevicePreferences.getPrintBehavior();
+    const behaviorRadios = document.querySelectorAll('input[name="devicePrintBehavior"]');
+    behaviorRadios.forEach(radio => {
+        if (radio.value === currentBehavior) {
+            radio.checked = true;
+        }
+    });
+
+    // Update device info display
+    updateDeviceInfoDisplay();
+}
+
+function updateDeviceInfoDisplay() {
+    const summary = DevicePreferences.getSummary();
+
+    const deviceIdEl = document.getElementById('deviceInfoId');
+    const deviceNameEl = document.getElementById('deviceInfoName');
+    const deviceBehaviorEl = document.getElementById('deviceInfoBehavior');
+
+    if (deviceIdEl) {
+        // Show shortened device ID
+        const shortId = summary.deviceId.substring(0, 20) + '...';
+        deviceIdEl.textContent = shortId;
+        deviceIdEl.title = summary.deviceId; // Full ID on hover
+    }
+
+    if (deviceNameEl) {
+        deviceNameEl.textContent = summary.deviceName;
+    }
+
+    if (deviceBehaviorEl) {
+        deviceBehaviorEl.textContent = summary.behaviorLabel;
+    }
+}
+
+function saveDeviceName() {
+    const deviceNameInput = document.getElementById('deviceNameInput');
+    if (!deviceNameInput) return;
+
+    const newName = deviceNameInput.value.trim();
+    if (!newName) {
+        showToast('Please enter a device name', 'warning');
+        return;
+    }
+
+    if (DevicePreferences.setDeviceName(newName)) {
+        showToast('Device name saved successfully', 'success');
+        updateDeviceInfoDisplay();
+    } else {
+        showToast('Failed to save device name', 'error');
+    }
+}
+
+function saveDevicePrintBehavior() {
+    const selectedRadio = document.querySelector('input[name="devicePrintBehavior"]:checked');
+    if (!selectedRadio) {
+        showToast('Please select a print behavior', 'warning');
+        return;
+    }
+
+    const newBehavior = selectedRadio.value;
+    if (DevicePreferences.setPrintBehavior(newBehavior)) {
+        showToast('Print behavior saved successfully', 'success');
+        updateDeviceInfoDisplay();
+
+        // Show helpful message based on behavior
+        if (newBehavior === 'disabled') {
+            showToast('This device will not print orders. Orders will still be saved.', 'info', 5000);
+        } else if (newBehavior === 'confirm') {
+            showToast('You will be asked to confirm before each print.', 'info', 5000);
+        }
+    } else {
+        showToast('Failed to save print behavior', 'error');
     }
 }
 
@@ -5655,26 +6091,48 @@ async function updatePrinterStatusDot() {
         const sel = document.getElementById('printerSelect');
         const dot = document.getElementById('printerStatusDot');
         if (!sel || !dot) return;
-        const name = encodeURIComponent(sel.value || '');
+
+        // Check if printer is selected
+        if (!sel.value) {
+            dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:#6b7280"></span><span>Not Configured</span></span>`;
+            return;
+        }
+
+        const name = encodeURIComponent(sel.value);
         const resp = await fetch(`/api/printer/status?name=${name}`);
         const info = await resp.json();
         let statusText = 'Unknown';
         let color = '#6b7280';
-        
-        // Check session verification status first
-        if (printerVerificationStatus === 'verified') {
-            statusText = 'Ready'; color = '#16a34a';
+
+        // New logic: Status based on printer accessibility, not manual verification
+        if (info && info.error) {
+            // Printer is offline or inaccessible
+            statusText = 'Offline';
+            color = '#ef4444';
         } else if (info && typeof info.status_code === 'number') {
             const code = info.status_code;
-            // Map 0 to Unknown (gray) instead of Ready; Ready will be set only after verification
-            if (code !== 0) { statusText = 'Attention'; color = '#f59e0b'; }
-            else { statusText = 'Unknown'; color = '#6b7280'; }
-        } else if (info && info.error) {
-            statusText = 'Offline'; color = '#ef4444';
+            if (code === 0) {
+                // Status code 0 = printer is ready and accessible
+                statusText = 'Ready';
+                color = '#16a34a';
+            } else {
+                // Non-zero status = needs attention (paper jam, etc.)
+                statusText = 'Attention';
+                color = '#f59e0b';
+            }
+        } else {
+            // Unable to determine status
+            statusText = 'Unknown';
+            color = '#6b7280';
         }
+
         dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:${color}"></span><span>${statusText}</span></span>`;
     } catch (e) {
         console.error('Failed to update printer status:', e);
+        const dot = document.getElementById('printerStatusDot');
+        if (dot) {
+            dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:9999px;background:#ef4444"></span><span>Error</span></span>`;
+        }
     }
 }
 
@@ -5704,24 +6162,552 @@ async function testPrint() {
     const resultEl = document.getElementById('lastTestPrintResult');
     try {
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Testing...'; }
-        const resp = await fetch('/api/printer/test', { method: 'POST' });
+
+        // Send device name with test print request (Phase 3)
+        const deviceName = DevicePreferences.getDeviceName();
+        const resp = await fetch('/api/printer/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_name: deviceName })
+        });
         const res = await resp.json();
         if (res.success) {
-            printerVerificationStatus = 'verified'; // Update session status
-            if (resultEl) { resultEl.textContent = `Last test: Success (Printed) ${new Date().toLocaleTimeString()}`; resultEl.className = 'text-xs text-green-600'; }
-            const dot = document.getElementById('printerStatusDot');
-            if (dot) dot.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style=\"width:10px;height:10px;border-radius:9999px;background:#16a34a\"></span><span>Ready</span></span>`;
+            if (resultEl) {
+                resultEl.textContent = `Last test: Success (Printed) ${new Date().toLocaleTimeString()}`;
+                resultEl.className = 'text-xs text-green-600';
+            }
+            showToast('Test print sent successfully!', 'success');
+            // Refresh printer status to show current state
+            updatePrinterStatusDot();
         } else {
-            printerVerificationStatus = 'failed'; // Update session status
-            if (resultEl) { resultEl.textContent = `Last test: Failed (${new Date().toLocaleTimeString()})`; resultEl.className = 'text-xs text-red-600'; }
+            if (resultEl) {
+                resultEl.textContent = `Last test: Failed (${new Date().toLocaleTimeString()})`;
+                resultEl.className = 'text-xs text-red-600';
+            }
             showToast(res.message || 'Test print failed.', 'error');
+            updatePrinterStatusDot();
         }
     } catch (e) {
-        printerVerificationStatus = 'failed'; // Update session status
-        if (resultEl) { resultEl.textContent = `Last test: Error (${new Date().toLocaleTimeString()})`; resultEl.className = 'text-xs text-red-600'; }
+        if (resultEl) {
+            resultEl.textContent = `Last test: Error (${new Date().toLocaleTimeString()})`;
+            resultEl.className = 'text-xs text-red-600';
+        }
         showToast('Error performing test print.', 'error');
+        updatePrinterStatusDot();
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Test Print'; }
+    }
+}
+
+// --- First-Time Setup Wizard Functions (Phase 4: Multi-device printer redesign) ---
+let wizardCurrentStep = 1;
+
+async function checkAndShowSetupWizard() {
+    // Check if first-time setup is needed
+    if (DevicePreferences.isSetupCompleted()) {
+        console.log('[Setup Wizard] Setup already completed, skipping wizard');
+        return;
+    }
+
+    console.log('[Setup Wizard] First-time setup needed, showing wizard');
+
+    // Phase 8: Pre-populate device name with smart suggestion
+    const deviceNameInput = document.getElementById('wizardDeviceName');
+    if (deviceNameInput && !deviceNameInput.value) {
+        const suggestedName = generateDeviceNameSuggestion();
+        deviceNameInput.value = suggestedName;
+        deviceNameInput.placeholder = suggestedName;
+    }
+
+    const modal = document.getElementById('setupWizardModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        wizardCurrentStep = 1;
+        await wizardUpdateUI();
+    }
+}
+
+// Phase 8: Generate smart device name suggestion
+function generateDeviceNameSuggestion() {
+    // Try to detect device type
+    const userAgent = navigator.userAgent.toLowerCase();
+    let deviceType = 'Device';
+
+    if (userAgent.includes('ipad') || (userAgent.includes('mac') && 'ontouchend' in document)) {
+        deviceType = 'iPad';
+    } else if (userAgent.includes('iphone')) {
+        deviceType = 'iPhone';
+    } else if (userAgent.includes('android') && userAgent.includes('mobile')) {
+        deviceType = 'Phone';
+    } else if (userAgent.includes('android')) {
+        deviceType = 'Tablet';
+    } else if (userAgent.includes('windows')) {
+        deviceType = 'PC';
+    } else if (userAgent.includes('mac')) {
+        deviceType = 'Mac';
+    }
+
+    // Generate a unique number based on current timestamp
+    const uniqueNum = Math.floor(Date.now() / 1000) % 100;
+
+    return `${deviceType} ${uniqueNum}`;
+}
+
+async function wizardUpdateUI() {
+    // Hide all steps
+    document.getElementById('wizardStep1')?.classList.add('hidden');
+    document.getElementById('wizardStep2')?.classList.add('hidden');
+    document.getElementById('wizardStep3')?.classList.add('hidden');
+
+    // Show current step
+    document.getElementById(`wizardStep${wizardCurrentStep}`)?.classList.remove('hidden');
+
+    // Update progress indicators
+    for (let i = 1; i <= 3; i++) {
+        const indicator = document.getElementById(`wizardStep${i}Indicator`);
+        if (indicator) {
+            if (i <= wizardCurrentStep) {
+                indicator.classList.remove('bg-gray-300');
+                indicator.classList.add('bg-blue-600');
+            } else {
+                indicator.classList.remove('bg-blue-600');
+                indicator.classList.add('bg-gray-300');
+            }
+        }
+    }
+
+    // Update buttons
+    const backBtn = document.getElementById('wizardBackBtn');
+    const nextBtn = document.getElementById('wizardNextBtn');
+    const finishBtn = document.getElementById('wizardFinishBtn');
+
+    if (backBtn) {
+        if (wizardCurrentStep === 1) {
+            backBtn.classList.add('hidden');
+        } else {
+            backBtn.classList.remove('hidden');
+        }
+    }
+
+    if (wizardCurrentStep === 3) {
+        nextBtn?.classList.add('hidden');
+        finishBtn?.classList.remove('hidden');
+    } else {
+        nextBtn?.classList.remove('hidden');
+        finishBtn?.classList.add('hidden');
+    }
+
+    // Load printer selection and status on step 2
+    if (wizardCurrentStep === 2) {
+        await wizardLoadPrinters();
+        await wizardLoadPrinterStatus();
+    }
+
+    // Populate summary on step 3
+    if (wizardCurrentStep === 3) {
+        wizardPopulateSummary();
+    }
+}
+
+async function wizardGoNext() {
+    // Validate current step
+    if (wizardCurrentStep === 1) {
+        const deviceName = document.getElementById('wizardDeviceName')?.value.trim();
+        if (!deviceName) {
+            showToast('Please enter a device name', 'warning');
+            return;
+        }
+
+        // Save step 1 data
+        DevicePreferences.setDeviceName(deviceName);
+
+        const selectedBehavior = document.querySelector('input[name="wizardPrintBehavior"]:checked')?.value;
+        if (selectedBehavior) {
+            DevicePreferences.setPrintBehavior(selectedBehavior);
+        }
+    }
+
+    if (wizardCurrentStep < 3) {
+        wizardCurrentStep++;
+        await wizardUpdateUI();
+    }
+}
+
+function wizardGoBack() {
+    if (wizardCurrentStep > 1) {
+        wizardCurrentStep--;
+        wizardUpdateUI();
+    }
+}
+
+async function wizardLoadPrinterStatus() {
+    const printerNameEl = document.getElementById('wizardPrinterName');
+    const printerStatusEl = document.getElementById('wizardPrinterStatus');
+    const verificationInfoEl = document.getElementById('wizardVerificationInfo');
+    const verificationTextEl = document.getElementById('wizardVerificationText');
+
+    try {
+        const resp = await fetch('/api/printer/health');
+        const health = await resp.json();
+
+        if (printerNameEl) {
+            printerNameEl.textContent = health.printer_name || 'Not configured';
+        }
+
+        if (printerStatusEl) {
+            let statusHTML = '';
+            if (health.printer_verified && health.printer_online) {
+                statusHTML = '<span class="text-green-600"><i class="fas fa-check-circle mr-1"></i>Ready</span>';
+            } else if (!health.printer_configured) {
+                statusHTML = '<span class="text-gray-600"><i class="fas fa-exclamation-circle mr-1"></i>Not configured</span>';
+            } else if (!health.printer_online) {
+                statusHTML = '<span class="text-red-600"><i class="fas fa-times-circle mr-1"></i>Offline</span>';
+            } else {
+                statusHTML = '<span class="text-orange-600"><i class="fas fa-exclamation-triangle mr-1"></i>Not verified</span>';
+            }
+            printerStatusEl.innerHTML = statusHTML;
+        }
+
+        // Show verification info if available
+        if (health.printer_verified && health.verified_at && health.verified_by) {
+            const verifiedDate = new Date(health.verified_at);
+            const timeAgo = getTimeAgo(verifiedDate);
+            if (verificationTextEl) {
+                verificationTextEl.textContent = `Verified ${timeAgo} by ${health.verified_by}`;
+            }
+            verificationInfoEl?.classList.remove('hidden');
+        } else {
+            verificationInfoEl?.classList.add('hidden');
+        }
+    } catch (e) {
+        console.error('[Setup Wizard] Error loading printer status:', e);
+        if (printerStatusEl) {
+            printerStatusEl.innerHTML = '<span class="text-red-600"><i class="fas fa-times-circle mr-1"></i>Error</span>';
+        }
+    }
+}
+
+async function wizardTestPrint() {
+    console.log('[Setup Wizard] Test print button clicked');
+
+    const btn = document.getElementById('wizardTestPrintBtn');
+    if (!btn) {
+        console.error('[Setup Wizard] Test print button not found in DOM');
+        return;
+    }
+
+    try {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Printing...';
+
+        const deviceName = DevicePreferences.getDeviceName();
+        console.log('[Setup Wizard] Device name:', deviceName);
+
+        const resp = await fetch('/api/printer/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_name: deviceName })
+        });
+
+        console.log('[Setup Wizard] Test print response status:', resp.status);
+        const result = await resp.json();
+        console.log('[Setup Wizard] Test print result:', result);
+
+        if (result.success) {
+            showToast('Test print sent successfully!', 'success');
+            // Reload printer status to show updated verification
+            await wizardLoadPrinterStatus();
+        } else {
+            // Show detailed error message from server
+            const errorMsg = result.message || 'Test print failed';
+            console.warn('[Setup Wizard] Test print failed:', errorMsg);
+            showToast(errorMsg, 'error', 8000); // Longer duration for error messages
+        }
+    } catch (e) {
+        console.error('[Setup Wizard] Test print error:', e);
+        showToast('Network error while sending test print. Check console for details.', 'error', 8000);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-print mr-2"></i>Send Test Print';
+        }
+    }
+}
+
+async function wizardLoadPrinters() {
+    const selectEl = document.getElementById('wizardPrinterSelect');
+    if (!selectEl) return;
+
+    try {
+        // Show loading state
+        selectEl.innerHTML = '<option value="">Loading printers...</option>';
+        selectEl.disabled = true;
+
+        // Fetch available printers
+        const resp = await fetch('/api/printers');
+        if (!resp.ok) throw new Error('Failed to fetch printers');
+
+        const data = await resp.json();
+        const printers = data.printers || [];
+
+        // Populate dropdown
+        selectEl.innerHTML = '';
+        if (printers.length === 0) {
+            selectEl.innerHTML = '<option value="">No printers found</option>';
+        } else {
+            selectEl.innerHTML = '<option value="" disabled selected>-- Select a printer --</option>';
+
+            // Handle both old format (array of strings) and new format (array of objects)
+            const isNewFormat = printers.length > 0 && typeof printers[0] === 'object';
+
+            if (!isNewFormat) {
+                // Legacy fallback: simple string array
+                printers.forEach(name => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    selectEl.appendChild(option);
+                });
+            } else {
+                // New format with printer objects
+                printers.forEach(printer => {
+                    const { name, type, is_supported, display_hint, recommended, explanation } = printer;
+
+                    // Skip unsupported printers (PDF/virtual)
+                    if (is_supported === false) {
+                        return;
+                    }
+
+                    const option = document.createElement('option');
+                    option.value = name;
+
+                    // Build display text with visual indicators
+                    let displayText = name;
+                    if (display_hint) {
+                        displayText = `${display_hint} ${name}`;
+                    }
+
+                    option.textContent = displayText;
+
+                    // Mark recommended printers
+                    if (recommended) {
+                        option.setAttribute('data-recommended', 'true');
+                    }
+
+                    selectEl.appendChild(option);
+                });
+            }
+
+            // Select current printer if exists
+            const currentPrinter = data.selected || data.current_printer;
+            if (currentPrinter) {
+                selectEl.value = currentPrinter;
+            }
+        }
+
+        selectEl.disabled = false;
+    } catch (e) {
+        console.error('[Setup Wizard] Error loading printers:', e);
+        selectEl.innerHTML = '<option value="">Error loading printers</option>';
+        selectEl.disabled = false;
+        showToast('Failed to load printer list', 'error');
+    }
+}
+
+async function wizardRefreshPrinters() {
+    await wizardLoadPrinters();
+    showToast('Printer list refreshed', 'success');
+}
+
+async function wizardSavePrinter() {
+    const selectEl = document.getElementById('wizardPrinterSelect');
+    const saveBtn = document.getElementById('wizardSavePrinterBtn');
+
+    if (!selectEl || !saveBtn) return;
+
+    const selectedPrinter = selectEl.value;
+    if (!selectedPrinter) {
+        showToast('Please select a printer first', 'warning');
+        return;
+    }
+
+    try {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+
+        const resp = await fetch('/api/printer/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                printer_name: selectedPrinter
+            })
+        });
+
+        if (!resp.ok) throw new Error('Failed to save printer');
+
+        const result = await resp.json();
+
+        if (result.success) {
+            showToast('Printer saved successfully!', 'success');
+            // Reload printer status to show the saved printer
+            await wizardLoadPrinterStatus();
+        } else {
+            showToast(result.message || 'Failed to save printer', 'error');
+        }
+    } catch (e) {
+        console.error('[Setup Wizard] Error saving printer:', e);
+        showToast('Error saving printer configuration', 'error');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i>Save Selected Printer';
+        }
+    }
+}
+
+function wizardPopulateSummary() {
+    const summary = DevicePreferences.getSummary();
+
+    const deviceNameEl = document.getElementById('wizardSummaryDeviceName');
+    const printBehaviorEl = document.getElementById('wizardSummaryPrintBehavior');
+    const printerNameEl = document.getElementById('wizardSummaryPrinterName');
+
+    if (deviceNameEl) deviceNameEl.textContent = summary.deviceName;
+    if (printBehaviorEl) printBehaviorEl.textContent = summary.behaviorLabel;
+
+    // Get printer name from health check
+    fetch('/api/printer/health')
+        .then(resp => resp.json())
+        .then(health => {
+            if (printerNameEl) {
+                printerNameEl.textContent = health.printer_name || 'Not configured';
+            }
+        })
+        .catch(() => {
+            if (printerNameEl) printerNameEl.textContent = 'Unknown';
+        });
+}
+
+function wizardFinish() {
+    // Mark setup as completed
+    DevicePreferences.markSetupCompleted();
+
+    // Hide wizard
+    const modal = document.getElementById('setupWizardModal');
+    if (modal) {
+        modal.classList.remove('flex');
+        modal.classList.add('hidden');
+    }
+
+    showToast('Setup complete! Welcome to POSPal', 'success');
+    console.log('[Setup Wizard] Setup completed successfully');
+}
+
+// Helper function for time ago display
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} day${days !== 1 ? 's' : ''} ago`;
+}
+
+// --- Phase 7: Print Failure Alert Functions ---
+
+function playPrintFailureAlert() {
+    try {
+        // Create an audio context for playing alert sound
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create a simple beep sound using oscillator
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Configure beep sound (short, attention-getting)
+        oscillator.frequency.value = 800; // Hz - higher pitch for urgency
+        oscillator.type = 'sine';
+
+        // Volume envelope - fade in and out quickly
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
+
+        // Play the beep
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.15);
+
+        // Play a second beep for emphasis
+        setTimeout(() => {
+            const oscillator2 = audioContext.createOscillator();
+            const gainNode2 = audioContext.createGain();
+
+            oscillator2.connect(gainNode2);
+            gainNode2.connect(audioContext.destination);
+
+            oscillator2.frequency.value = 800;
+            oscillator2.type = 'sine';
+
+            gainNode2.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode2.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+            gainNode2.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
+
+            oscillator2.start(audioContext.currentTime);
+            oscillator2.stop(audioContext.currentTime + 0.15);
+        }, 200);
+
+    } catch (e) {
+        console.warn('[Print Alert] Could not play alert sound:', e);
+        // Silent fail - not critical if sound doesn't play
+    }
+}
+
+function setPrintFailureSessionIndicator() {
+    try {
+        // Set session storage flag
+        sessionStorage.setItem('pospal_print_failure_occurred', 'true');
+
+        // Update management button with indicator
+        updateManagementButtonIndicator();
+    } catch (e) {
+        console.warn('[Print Alert] Could not set session indicator:', e);
+    }
+}
+
+function updateManagementButtonIndicator() {
+    const hasPrintFailure = sessionStorage.getItem('pospal_print_failure_occurred') === 'true';
+    const managementBtn = document.getElementById('managementBtn');
+
+    if (!managementBtn) return;
+
+    // Remove existing indicator if present
+    const existingIndicator = managementBtn.querySelector('.print-failure-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+
+    // Add indicator if there's a print failure
+    if (hasPrintFailure) {
+        const indicator = document.createElement('span');
+        indicator.className = 'print-failure-indicator';
+        indicator.innerHTML = ' <span style="color: #ef4444; font-size: 1.2em;">⚠️</span>';
+        indicator.title = 'Print failure occurred - check Management → Orders';
+        managementBtn.appendChild(indicator);
+    }
+}
+
+function clearPrintFailureSessionIndicator() {
+    try {
+        sessionStorage.removeItem('pospal_print_failure_occurred');
+        updateManagementButtonIndicator();
+    } catch (e) {
+        console.warn('[Print Alert] Could not clear session indicator:', e);
     }
 }
 
@@ -7009,7 +7995,40 @@ function renderAnalytics(data) {
     const itemsPerOrderEl = document.getElementById('kpi-items-per-order');
     if (itemsPerOrderEl) itemsPerOrderEl.textContent = itemsPerOrder > 0 ? itemsPerOrder.toFixed(2) : '-';
 
-    // Payment metrics removed per requirements
+    // Payment Methods with transaction counts and visual progress bar
+    if (data.paymentMethods && data.paymentCounts) {
+        const cashAmount = data.paymentMethods.cash || 0;
+        const cardAmount = data.paymentMethods.card || 0;
+        const cashCount = data.paymentCounts.cash || 0;
+        const cardCount = data.paymentCounts.card || 0;
+        const totalAmount = cashAmount + cardAmount;
+
+        // Update amounts
+        document.getElementById('kpi-payment-cash').textContent = `€${cashAmount.toFixed(2)}`;
+        document.getElementById('kpi-payment-card').textContent = `€${cardAmount.toFixed(2)}`;
+
+        // Update transaction counts
+        const cashCountEl = document.getElementById('kpi-payment-cash-count');
+        const cardCountEl = document.getElementById('kpi-payment-card-count');
+        if (cashCountEl) cashCountEl.textContent = `${cashCount} transaction${cashCount !== 1 ? 's' : ''}`;
+        if (cardCountEl) cardCountEl.textContent = `${cardCount} transaction${cardCount !== 1 ? 's' : ''}`;
+
+        // Calculate percentages and update progress bar
+        let cashPercent = 50;
+        let cardPercent = 50;
+        if (totalAmount > 0) {
+            cashPercent = Math.round((cashAmount / totalAmount) * 100);
+            cardPercent = 100 - cashPercent;
+        }
+
+        const cashBarEl = document.getElementById('kpi-payment-cash-bar');
+        const cashPercentEl = document.getElementById('kpi-payment-cash-percent');
+        const cardPercentEl = document.getElementById('kpi-payment-card-percent');
+
+        if (cashBarEl) cashBarEl.style.width = `${cashPercent}%`;
+        if (cashPercentEl) cashPercentEl.textContent = `${cashPercent}% Cash`;
+        if (cardPercentEl) cardPercentEl.textContent = `${cardPercent}% Card`;
+    }
 
     // Dine-in only deployment: remove takeaway-related UI and logic
 
@@ -7396,58 +8415,70 @@ async function shutdownApplication() {
  */
 async function checkAutomaticActivation() {
     try {
-        // Check if there's a payment success flag in localStorage
+        // MIGRATION: Check for OLD browser-based license and prompt migration
+        const oldToken = localStorage.getItem('pospal_unlock_token');
+        const oldEmail = localStorage.getItem('pospal_customer_email');
+        const oldName = localStorage.getItem('pospal_customer_name');
+
+        if (oldToken && oldEmail) {
+            console.log('⚠️  OLD browser-based license detected - migration needed');
+
+            // Check if server already has a license
+            const serverStatus = await fetch('/api/license/status');
+            const serverData = await serverStatus.json();
+
+            if (!serverData.licensed) {
+                // Server doesn't have license yet - show migration message
+                console.log('Server has no license - prompting user to migrate');
+                showToast(
+                    `⚠️ Browser license detected for ${oldEmail}. Please re-activate using "Already paid? Enter unlock code" button to enable multi-device support.`,
+                    'warning',
+                    15000
+                );
+            } else {
+                console.log('Server already has license - migration not needed');
+            }
+
+            // Clear old browser license data
+            console.log('Cleaning up old browser license data...');
+            localStorage.removeItem('pospal_unlock_token');
+            localStorage.removeItem('pospal_customer_email');
+            localStorage.removeItem('pospal_customer_name');
+            localStorage.removeItem('pospal_license_status');
+            localStorage.removeItem('pospal_next_billing_date');
+            localStorage.removeItem('pospal_last_validated');
+            localStorage.removeItem('pospal_last_successful_validation');
+            localStorage.removeItem('pospal_cached_status');
+            localStorage.removeItem('pospal_daily_retry_count');
+            localStorage.removeItem('pospal_last_daily_check');
+            console.log('✅ Old browser license data cleared');
+        }
+
+        // Check for payment success (Stripe return)
         const paymentSuccess = localStorage.getItem('pospal_payment_success');
         const paymentTimestamp = localStorage.getItem('pospal_payment_timestamp');
-        const activationMethod = localStorage.getItem('pospal_activation_method');
-        
-        // Only check for automatic activation if payment was recent (within last 10 minutes)
-        if (paymentSuccess === 'true' && paymentTimestamp && activationMethod === 'automatic') {
+
+        if (paymentSuccess === 'true' && paymentTimestamp) {
             const paymentTime = parseInt(paymentTimestamp);
             const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
-            
+
             if (paymentTime > tenMinutesAgo) {
-                console.log('Recent automatic activation detected, checking license status...');
-                
-                // Check if we have all the required license data
-                const unlockToken = localStorage.getItem('pospal_unlock_token');
-                const customerEmail = localStorage.getItem('pospal_customer_email');
-                const customerName = localStorage.getItem('pospal_customer_name');
-                const licenseStatus = localStorage.getItem('pospal_license_status');
-                
-                if (unlockToken && customerEmail && licenseStatus === 'active') {
-                    console.log('Automatic activation successful! License data found:', {
-                        email: customerEmail,
-                        name: customerName,
-                        status: licenseStatus,
-                        activatedAt: new Date(paymentTime).toISOString()
-                    });
-                    
-                    // Show success notification
-                    showToast(`Welcome ${customerName || customerEmail}! Your POSPal license has been automatically activated.`, 'success', 8000);
-                    
-                    // Update license display immediately
-                    showActiveLicenseStatus();
-                    
-                    // Clear the payment success flag since we've processed it
-                    localStorage.removeItem('pospal_payment_success');
-                    localStorage.removeItem('pospal_payment_timestamp');
-                    
-                } else {
-                    console.log('Automatic activation incomplete - missing license data');
-                    showToast('Payment successful! Please check your email for activation instructions.', 'info', 6000);
-                }
-            } else {
-                console.log('Payment success flag is too old, ignoring...');
-                // Clean up old flags
-                localStorage.removeItem('pospal_payment_success');
-                localStorage.removeItem('pospal_payment_timestamp');
+                console.log('Recent payment detected - prompting activation');
+                showToast(
+                    'Payment successful! Click "Already paid? Enter unlock code" to activate your license on the server.',
+                    'success',
+                    10000
+                );
             }
+
+            // Clean up payment flags
+            localStorage.removeItem('pospal_payment_success');
+            localStorage.removeItem('pospal_payment_timestamp');
+            localStorage.removeItem('pospal_activation_method');
         }
-        
+
     } catch (error) {
         console.error('Error checking automatic activation:', error);
-        // Don't show error to user for this background check
     }
 }
 
@@ -7471,13 +8502,48 @@ async function loadLicenseInfo() {
     console.log('Loading license information for display...');
 
     try {
-        // Force a license validation to get the latest status from the server
-        console.log('Forcing license validation to get latest status...');
-        await FrontendLicenseManager.forceValidation();
+        // Fetch license status directly from server (single source of truth)
+        console.log('Fetching license status from server...');
+        let licenseData = null;
 
-        // Get license data from storage (now updated)
-        const licenseData = LicenseStorage.getLicenseData();
-        console.log('License data retrieved:', licenseData);
+        try {
+            const response = await fetch('/api/license/status', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+                const serverLicense = await response.json();
+                console.log('Server license data:', serverLicense);
+
+                // If server has active license, populate licenseData from it
+                if (serverLicense.licensed && serverLicense.active) {
+                    licenseData = {
+                        unlockToken: true,  // Set to truthy value so existing checks work
+                        customerEmail: serverLicense.email,
+                        customerName: serverLicense.customer_name,
+                        licenseStatus: serverLicense.subscription_status || 'active',
+                        nextBillingDate: serverLicense.next_billing_date,
+                        subscriptionPrice: serverLicense.subscription_price,
+                        subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+                        lastValidated: serverLicense.validated_at
+                    };
+                    console.log('Active server license found, license data populated');
+                }
+            } else {
+                console.warn('Server license status check failed:', response.status);
+            }
+        } catch (fetchError) {
+            console.error('Failed to fetch server license status:', fetchError);
+        }
+
+        // Fallback to cache if server fetch failed or returned no license
+        if (!licenseData) {
+            console.log('No server license found, checking cache...');
+            licenseData = LicenseStorage.getLicenseData();
+        }
+
+        console.log('License data for display:', licenseData);
 
         // Update license status badge
         const statusBadge = document.getElementById('license-status-badge');
@@ -7537,6 +8603,13 @@ async function loadLicenseInfo() {
 
         } else {
             console.log('No license found, showing default state');
+
+            // Clear footer status badge when no license exists
+            const footerStatus = document.getElementById('footer-trial-status');
+            if (footerStatus) {
+                footerStatus.textContent = '';
+                footerStatus.className = '';
+            }
 
             // Hide subscription details and show loading message
             const loadingElement = document.getElementById('license-loading');
@@ -8417,8 +9490,23 @@ function initializePortalReturnHandling() {
 
 async function openCustomerPortal() {
     try {
-        const customerEmail = localStorage.getItem('pospal_customer_email');
-        const unlockToken = localStorage.getItem('pospal_unlock_token');
+        // Fetch license credentials from server (localhost-only endpoint)
+        const credentialsResponse = await fetch('/api/license/credentials');
+
+        if (!credentialsResponse.ok) {
+            if (credentialsResponse.status === 404) {
+                showToast('No active subscription found. Please subscribe first.', 'warning');
+            } else if (credentialsResponse.status === 403) {
+                showToast('Customer Portal is only available on the server device.', 'warning');
+            } else {
+                showToast('Unable to access license credentials. Please try again.', 'error');
+            }
+            return;
+        }
+
+        const credentials = await credentialsResponse.json();
+        const customerEmail = credentials.email;
+        const unlockToken = credentials.unlockToken;
 
         if (!customerEmail || !unlockToken) {
             showToast('No active subscription found. Please subscribe first.', 'warning');
@@ -8602,6 +9690,56 @@ function updateUsageStatsDisplay(analytics) {
     }
 }
 
+// --- Localhost Detection for License Management Security ---
+/**
+ * Check if the user is accessing from localhost (server device)
+ * License management is restricted to localhost for security
+ */
+function isLocalhostAccess() {
+    const hostname = window.location.hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+/**
+ * Initialize license UI visibility based on localhost access
+ * Hides license management UI on non-localhost devices (tablets/phones)
+ */
+function initializeLicenseUIVisibility() {
+    const isLocalhost = isLocalhostAccess();
+
+    if (!isLocalhost) {
+        // Hide "Already paid? Enter unlock code" button
+        const unlockButton = document.querySelector('button[onclick="showUnlockDialog()"]');
+        if (unlockButton) {
+            unlockButton.style.display = 'none';
+        }
+
+        // Hide Server License Management panel in management component
+        const serverLicensePanel = document.querySelector('.bg-gradient-to-r.from-green-50.to-blue-50');
+        if (serverLicensePanel) {
+            serverLicensePanel.style.display = 'none';
+        }
+
+        // Add informational message in trial-actions section if it exists
+        const trialActions = document.getElementById('trial-actions');
+        if (trialActions && !document.getElementById('localhost-license-message')) {
+            const message = document.createElement('div');
+            message.id = 'localhost-license-message';
+            message.className = 'mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800';
+            message.innerHTML = `
+                <i class="fas fa-info-circle mr-2"></i>
+                <strong>License Management:</strong> Available only on the server device at
+                <code class="bg-blue-100 px-2 py-1 rounded">localhost:5000</code>
+            `;
+            trialActions.appendChild(message);
+        }
+
+        console.log('🔒 License management UI hidden - not localhost');
+    } else {
+        console.log('✅ License management UI available - localhost access');
+    }
+}
+
 // --- Unlock Dialog Functions ---
 function showUnlockDialog() {
     const dialog = document.getElementById('unlockTokenDialog');
@@ -8669,14 +9807,14 @@ function hideUnlockError() {
 
 function setUnlockLoading(loading) {
     const btn = document.getElementById('unlockSubmitBtn');
-    
+
     if (btn) {
         btn.disabled = loading;
         if (loading) {
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i><span>Validating...</span>';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i><span>Activating Server License...</span>';
         } else {
             // Reset to original state
-            btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Unlock POSPal</span>';
+            btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Activate for All Devices</span>';
         }
     }
 }
@@ -8684,11 +9822,11 @@ function setUnlockLoading(loading) {
 // Enhanced function to reset unlock button state
 function resetUnlockButtonState() {
     // Timer clearing now handled by TimerManager
-    
+
     const btn = document.getElementById('unlockSubmitBtn');
     if (btn) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Unlock POSPal</span>';
+        btn.innerHTML = '<i class="fas fa-unlock mr-2"></i><span>Activate for All Devices</span>';
     }
 }
 
@@ -8732,23 +9870,7 @@ async function generateDeviceFingerprint() {
     return await generateMachineFingerprint();
 }
 
-async function validateUnlockToken(email, token, machineFingerprint) {
-    const response = await fetch(`${WORKER_URL}/validate`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            email: email,
-            token: token,
-            machineFingerprint: machineFingerprint
-        })
-    });
-    
-    const result = await response.json();
-    return result;
-}
-
+// REMOVED: validateUnlockToken() - Not needed (server validates now)
 
 // Handle unlock form submission and page load events
 document.addEventListener('DOMContentLoaded', function() {
@@ -8758,72 +9880,62 @@ document.addEventListener('DOMContentLoaded', function() {
         unlockForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            // Get form values
             const email = document.getElementById('unlockEmail').value.trim();
             const token = document.getElementById('unlockToken').value.trim().toUpperCase();
-            
-            if (!email || !token) {
+            const password = document.getElementById('unlockPassword').value.trim();
+
+            // Validate inputs
+            if (!email || !token || !password) {
                 showUnlockError('Please fill in all fields.');
                 return;
             }
-            
+
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
                 showUnlockError('Please enter a valid email address.');
                 return;
             }
-            
+
             setUnlockLoadingWithAutoReset(true);
             hideUnlockError();
-            
+
             try {
-                // Generate machine fingerprint
-                const machineFingerprint = await generateMachineFingerprint();
-                
-                // Validate with server with timeout protection
-                const result = await Promise.race([
-                    validateUnlockToken(email, token, machineFingerprint),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('Request timeout')), 30000)
-                    )
-                ]);
-                
-                if (result.valid) {
-                    // Store token locally for validation
-                    localStorage.setItem('pospal_unlock_token', token);
-                    localStorage.setItem('pospal_customer_email', email);
-                    localStorage.setItem('pospal_customer_name', result.customerName);
+                // Call server license activation API
+                const response = await fetch('/api/license/activate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        unlock_token: token,
+                        password: password
+                    })
+                });
 
-                    // Store subscription status from API response
-                    const subscriptionStatus = result.subscriptionInfo?.status || 'active';
-                    const isActive = result.subscriptionInfo?.isActive !== false;
-                    localStorage.setItem('pospal_license_status', subscriptionStatus);
-                    localStorage.setItem('pospal_subscription_active', isActive.toString());
+                const result = await response.json();
 
+                if (response.ok && result.success) {
                     // Turn off loading state
                     setUnlockLoading(false);
 
-                    // Show success message based on status
-                    if (!isActive) {
-                        showToast(`⚠️ License added - Subscription ${subscriptionStatus}. Refreshing...`, 'warning', 2000);
-                    } else {
-                        showToast('🎉 License activated successfully! Refreshing...', 'success', 2000);
-                    }
+                    // Show success message
+                    showToast(`🎉 Server license activated for ${email}! All devices will use this license. Refreshing...`, 'success', 2000);
 
-                    // Refresh the entire page to update all UI elements
+                    // Refresh the entire page to load the new server license
                     setTimeout(() => {
                         window.location.reload();
-                    }, 1000);
+                    }, 2000);
 
                 } else {
-                    showUnlockError(result.error || 'Invalid email or unlock token. Please check and try again.');
+                    // Handle error response
+                    const errorMessage = result.error || 'Failed to activate license. Please try again.';
+                    showUnlockError(errorMessage);
                 }
-                
+
             } catch (error) {
-                console.error('Unlock validation error:', error);
-                if (error.message === 'Request timeout') {
-                    showUnlockError('Request timed out. Please check your internet connection and try again.');
-                } else {
-                    showUnlockError('Connection failed. Please check your internet connection and try again.');
-                }
+                console.error('Server license activation error:', error);
+                showUnlockError('Connection failed. Please check your internet connection and try again.');
             } finally {
                 // Clear timer and reset button state
                 TimerManager.clear('buttonReset');
@@ -11635,6 +12747,15 @@ function updateLicenseStatusIndicator(status, daysRemaining) {
             } else {
                 badgeClass = 'bg-yellow-100 text-yellow-800';
             }
+        } else if (status === 'active') {
+            statusText = 'Active';
+            badgeClass = 'bg-emerald-100 text-emerald-800';
+        } else if (status === 'inactive' || status === 'expired') {
+            statusText = 'Inactive';
+            badgeClass = 'bg-red-100 text-red-800';
+        } else if (status === 'cancelled') {
+            statusText = 'Cancelled';
+            badgeClass = 'bg-gray-100 text-gray-800';
         }
 
         if (statusText) {
@@ -11645,9 +12766,31 @@ function updateLicenseStatusIndicator(status, daysRemaining) {
 
     // Update footer status if it exists
     const footerStatus = document.getElementById('footer-trial-status');
-    if (footerStatus && status === 'warning' && daysRemaining !== undefined) {
-        footerStatus.textContent = `License: ${Math.ceil(daysRemaining)} days remaining`;
-        footerStatus.className = 'font-medium text-orange-600';
+    if (footerStatus) {
+        if (status === 'warning' && daysRemaining !== undefined) {
+            footerStatus.textContent = `License: ${Math.ceil(daysRemaining)} days remaining`;
+            footerStatus.className = 'font-medium text-orange-600';
+        } else if (status === 'active') {
+            if (daysRemaining !== undefined && daysRemaining <= 7) {
+                footerStatus.textContent = `Renews in ${Math.ceil(daysRemaining)} day${Math.ceil(daysRemaining) !== 1 ? 's' : ''}`;
+                if (daysRemaining <= 1) {
+                    footerStatus.className = 'font-medium text-red-600';
+                } else if (daysRemaining <= 3) {
+                    footerStatus.className = 'font-medium text-orange-600';
+                } else {
+                    footerStatus.className = 'font-medium text-yellow-600';
+                }
+            } else {
+                footerStatus.textContent = 'Active Subscription';
+                footerStatus.className = 'font-medium text-emerald-600';
+            }
+        } else if (status === 'inactive' || status === 'expired') {
+            footerStatus.textContent = 'Subscription Inactive';
+            footerStatus.className = 'font-medium text-red-600';
+        } else if (status === 'cancelled') {
+            footerStatus.textContent = 'Subscription Cancelled';
+            footerStatus.className = 'font-medium text-gray-600';
+        }
     }
 }
 
@@ -13653,4 +14796,213 @@ function formatOrderTime(timestamp) {
 
 // =============================================================================
 // END STAFF TABLE MANAGEMENT UI FUNCTIONALITY
+
+// =============================================================================
+// SERVER LICENSE MANAGEMENT (NEW: Multi-Device Support)
+// =============================================================================
+
+/**
+ * Activate license on the server (multi-device support)
+ * Once activated, all connected devices will use this license
+ */
+async function activateServerLicense() {
+    const emailInput = document.getElementById('server-license-email');
+    const tokenInput = document.getElementById('server-license-token');
+    const passwordInput = document.getElementById('server-license-password');
+    const activateBtn = document.getElementById('activate-server-license-btn');
+
+    // Get values
+    const email = emailInput?.value.trim();
+    const unlock_token = tokenInput?.value.trim();
+    const password = passwordInput?.value.trim();
+
+    // Validate inputs
+    if (!email || !unlock_token || !password) {
+        showToast('Please fill in all fields', 'error');
+        return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        showToast('Please enter a valid email address', 'error');
+        return;
+    }
+
+    try {
+        // Disable button and show loading
+        activateBtn.disabled = true;
+        activateBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Activating...';
+
+        // Call activation API
+        const response = await fetch('/api/license/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                unlock_token: unlock_token,
+                password: password
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // Success!
+            showToast(`✅ Server license activated for ${email}! All devices will now use this license.`, 'success', 8000);
+
+            // Clear form
+            emailInput.value = '';
+            tokenInput.value = '';
+            passwordInput.value = '';
+
+            // Update UI to show activated status
+            await updateServerLicenseStatusDisplay();
+
+            // Refresh main license display
+            await FrontendLicenseManager.validateLicense(true);
+
+        } else {
+            // Error
+            const errorMsg = data.error || 'License activation failed';
+            showToast(`❌ ${errorMsg}`, 'error', 6000);
+            console.error('Server license activation failed:', data);
+        }
+
+    } catch (error) {
+        console.error('Error activating server license:', error);
+        showToast('❌ Network error - please try again', 'error');
+    } finally {
+        // Re-enable button
+        activateBtn.disabled = false;
+        activateBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Activate Server License';
+    }
+}
+
+/**
+ * Deactivate server license (admin only)
+ */
+async function deactivateServerLicense() {
+    const passwordInput = document.getElementById('server-license-password');
+    const password = passwordInput?.value.trim();
+
+    if (!password) {
+        showToast('Please enter management password to deactivate', 'error');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to deactivate the server license? All devices will lose access.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/license/deactivate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            showToast('✅ Server license deactivated', 'success');
+            passwordInput.value = '';
+            await updateServerLicenseStatusDisplay();
+            await FrontendLicenseManager.validateLicense(true);
+        } else {
+            showToast(`❌ ${data.error || 'Deactivation failed'}`, 'error');
+        }
+
+    } catch (error) {
+        console.error('Error deactivating server license:', error);
+        showToast('❌ Network error - please try again', 'error');
+    }
+}
+
+/**
+ * Update server license status display in management panel
+ */
+async function updateServerLicenseStatusDisplay() {
+    try {
+        const response = await fetch('/api/license/status');
+        const data = await response.json();
+
+        const statusDisplay = document.getElementById('server-license-status-display');
+        const activateBtn = document.getElementById('activate-server-license-btn');
+        const deactivateBtn = document.getElementById('deactivate-server-license-btn');
+
+        if (!statusDisplay) return;
+
+        if (data.licensed && data.active) {
+            // Server license is active
+            statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
+            statusDisplay.classList.add('border-green-300', 'bg-green-50');
+            statusDisplay.innerHTML = `
+                <div class="flex items-start gap-3">
+                    <i class="fas fa-check-circle text-green-600 text-lg mt-0.5"></i>
+                    <div class="flex-1">
+                        <h6 class="text-sm font-semibold text-green-900">Server License Active</h6>
+                        <p class="text-xs text-green-700 mt-1">
+                            <strong>Email:</strong> ${data.email || 'N/A'}<br>
+                            <strong>Customer:</strong> ${data.customer_name || 'N/A'}<br>
+                            <strong>Status:</strong> ${data.subscription_status || 'active'}<br>
+                            ${data.next_billing_date ? `<strong>Next Billing:</strong> ${data.next_billing_date}` : ''}
+                        </p>
+                        <p class="text-xs text-gray-600 mt-2">
+                            <i class="fas fa-info-circle mr-1"></i>All connected devices are using this license.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            // Show deactivate button, hide activate button
+            if (activateBtn) activateBtn.classList.add('hidden');
+            if (deactivateBtn) deactivateBtn.classList.remove('hidden');
+
+        } else if (data.grace_period) {
+            // Grace period
+            statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
+            statusDisplay.classList.add('border-yellow-300', 'bg-yellow-50');
+            statusDisplay.innerHTML = `
+                <div class="flex items-start gap-3">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
+                    <div class="flex-1">
+                        <h6 class="text-sm font-semibold text-yellow-900">Server License - Grace Period</h6>
+                        <p class="text-xs text-yellow-700 mt-1">
+                            Server offline for ${data.days_offline || 0} days.
+                            ${data.grace_days_left || 0} days remaining.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            if (activateBtn) activateBtn.classList.add('hidden');
+            if (deactivateBtn) deactivateBtn.classList.remove('hidden');
+
+        } else {
+            // No server license
+            statusDisplay.classList.add('hidden');
+
+            if (activateBtn) activateBtn.classList.remove('hidden');
+            if (deactivateBtn) deactivateBtn.classList.add('hidden');
+        }
+
+    } catch (error) {
+        console.error('Error updating server license status:', error);
+    }
+}
+
+// Call on page load to update server license status
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        // Wait a bit for elements to be ready
+        setTimeout(() => {
+            updateServerLicenseStatusDisplay();
+        }, 500);
+    });
+}
+
+// =============================================================================
+// END SERVER LICENSE MANAGEMENT
+// =============================================================================
 // =============================================================================

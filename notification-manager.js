@@ -188,6 +188,11 @@ class NotificationManager {
     createNotification(config) {
         const id = crypto.randomUUID();
         const isMobile = window.innerWidth <= 768;
+        const baseClassName = this.getClassName(config.type, config.priority, isMobile);
+        const additionalClassName = (config.className || '').toString().trim();
+        const combinedClassName = additionalClassName
+            ? `${baseClassName} ${additionalClassName}`
+            : baseClassName;
 
         return {
             id,
@@ -201,7 +206,7 @@ class NotificationManager {
             autoHide: config.autoHide !== false,
             duration: config.duration || this.getDefaultDuration(config.type),
             position: this.getOptimalPosition(config.position, config.type, isMobile),
-            className: this.getClassName(config.type, config.priority, isMobile),
+            className: combinedClassName,
             zIndex: this.getZIndex(config.type, config.priority),
             updateInterval: config.updateInterval || null,
             onUpdate: config.onUpdate || null,

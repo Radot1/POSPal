@@ -80,6 +80,9 @@ def setup_signal_handlers():
 # --- Lightweight in-process pub-sub for server-sent events (SSE) ---
 _sse_subscribers: list[Queue] = []
 
+# --- Global hardware ID cache (calculated once at startup to prevent blocking) ---
+_cached_hardware_id: str | None = None
+
 def _sse_broadcast(event_name: str, payload: dict):
     try:
         data = json.dumps(payload, ensure_ascii=False)
@@ -158,6 +161,18 @@ def find_data_directory():
 
 DATA_DIR = find_data_directory()
 
+# Add file-based logging for built executables (no console available)
+# This allows debugging of PyInstaller builds by reading data/pospal_debug.log
+try:
+    log_file = os.path.join(DATA_DIR, 'pospal_debug.log')
+    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'))
+    logging.getLogger().addHandler(file_handler)
+    logging.info(f"File-based logging enabled: {log_file}")
+except Exception as e:
+    logging.warning(f"Could not set up file logging: {e}")
+
 def find_license_file():
     """Find license.key in the same directory as the executable"""
     # The license should always be next to the .exe file
@@ -203,6 +218,10 @@ LICENSE_CACHE_FILE = os.path.join(DATA_DIR, 'license_cache.enc')
 LICENSE_CACHE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'license_cache.enc')
 GRACE_PERIOD_DAYS = 10  # Days allowed offline after last successful validation
 CLOUD_VALIDATION_TIMEOUT = 3  # Seconds to wait for cloud validation response
+
+# Server-side license storage (NEW: Multi-device support)
+SERVER_LICENSE_FILE = os.path.join(DATA_DIR, 'server_license.enc')
+SERVER_LICENSE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'server_license.enc')
 
 # --- Migration Controller for Backend Systems ---
 # Environment variable to control migration rollout
@@ -1510,7 +1529,7 @@ def is_version_newer(latest_version, current_version):
 def load_config():
     # Ensure data directory exists BEFORE loading config
     os.makedirs(DATA_DIR, exist_ok=True)
-    
+
     defaults = {
         "printer_name": "Microsoft Print to PDF",
         "port": 5000,
@@ -1528,6 +1547,10 @@ def load_config():
         "cloudflare_api_key_enc": "",
         "cloudflare_store_slug": "",
         "cloudflare_store_slug_locked": False,
+        # Printer verification tracking (Phase 2: Multi-device printer redesign)
+        "printer_verified_at": None,
+        "printer_last_test_status": None,
+        "printer_verification_device": None,
         # Public viewer base, e.g., https://menus.example.com
         "cloudflare_public_base": "https://menus-5ar.pages.dev/"
     }
@@ -2239,6 +2262,150 @@ def serve_pospal_core():
 def serve_i18n_js():
     return send_from_directory('.', 'i18n.js')
 
+# Explicit JavaScript file routes with comprehensive debugging
+# Added extensive logging to diagnose why these routes return 404 while pospalCore.js works
+
+@app.route('/enhanced-error-handler.js')
+def serve_error_handler():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_error_handler() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'enhanced-error-handler.js'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('enhanced-error-handler.js')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('enhanced-error-handler.js')}")
+
+    try:
+        response = send_from_directory('.', 'enhanced-error-handler.js')
+        app.logger.info("✅ send_from_directory() succeeded for enhanced-error-handler.js")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
+@app.route('/enhanced-ux-manager.js')
+def serve_ux_manager():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_ux_manager() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'enhanced-ux-manager.js'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('enhanced-ux-manager.js')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('enhanced-ux-manager.js')}")
+
+    try:
+        response = send_from_directory('.', 'enhanced-ux-manager.js')
+        app.logger.info("✅ send_from_directory() succeeded for enhanced-ux-manager.js")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
+@app.route('/notification-manager.js')
+def serve_notification_manager():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_notification_manager() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'notification-manager.js'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('notification-manager.js')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('notification-manager.js')}")
+
+    try:
+        response = send_from_directory('.', 'notification-manager.js')
+        app.logger.info("✅ send_from_directory() succeeded for notification-manager.js")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
+@app.route('/customer-segmentation.js')
+def serve_customer_segmentation():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_customer_segmentation() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'customer-segmentation.js'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('customer-segmentation.js')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('customer-segmentation.js')}")
+
+    try:
+        response = send_from_directory('.', 'customer-segmentation.js')
+        app.logger.info("✅ send_from_directory() succeeded for customer-segmentation.js")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
+@app.route('/advanced-notification-intelligence.js')
+def serve_advanced_notification():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_advanced_notification() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'advanced-notification-intelligence.js'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('advanced-notification-intelligence.js')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('advanced-notification-intelligence.js')}")
+
+    try:
+        response = send_from_directory('.', 'advanced-notification-intelligence.js')
+        app.logger.info("✅ send_from_directory() succeeded for advanced-notification-intelligence.js")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
+@app.route('/licensing-dashboard.js')
+def serve_licensing_dashboard():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_licensing_dashboard() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'licensing-dashboard.js'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('licensing-dashboard.js')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('licensing-dashboard.js')}")
+
+    try:
+        response = send_from_directory('.', 'licensing-dashboard.js')
+        app.logger.info("✅ send_from_directory() succeeded for licensing-dashboard.js")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
+# Serve CSS files
+@app.route('/enhanced-ux-components.css')
+def serve_enhanced_ux_css():
+    app.logger.info("="*60)
+    app.logger.info("🔍 serve_enhanced_ux_css() CALLED")
+    app.logger.info(f"Flask app.root_path: {app.root_path}")
+    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
+    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'enhanced-ux-components.css'))}")
+    app.logger.info(f"File exists in cwd: {os.path.exists('enhanced-ux-components.css')}")
+    app.logger.info(f"Absolute path would be: {os.path.abspath('enhanced-ux-components.css')}")
+
+    try:
+        response = send_from_directory('.', 'enhanced-ux-components.css')
+        app.logger.info("✅ send_from_directory() succeeded for enhanced-ux-components.css")
+        return response
+    except Exception as e:
+        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
+        import traceback
+        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        raise
+
 @app.route('/locales/<path:filename>')
 def serve_locales(filename):
     return send_from_directory('locales', filename)
@@ -2593,6 +2760,75 @@ def printer_status():
         return jsonify({"name": name, "error": str(e)}), 200
 
 
+@app.route('/api/printer/health', methods=['GET'])
+def printer_health():
+    """
+    Comprehensive printer health check (passive - no printing)
+    Returns printer configuration, accessibility, and verification status
+    Phase 2: Multi-device printer redesign
+    """
+    try:
+        # Check if printer is configured
+        printer_configured = PRINTER_NAME and PRINTER_NAME != "Your_Printer_Name_Here" and PRINTER_NAME != "Microsoft Print to PDF"
+
+        if not printer_configured:
+            return jsonify({
+                "printer_configured": False,
+                "printer_name": None,
+                "printer_online": False,
+                "printer_verified": False,
+                "needs_verification": True,
+                "status_message": "No printer configured"
+            })
+
+        # Check if printer is accessible (online)
+        printer_online = False
+        status_code = None
+        try:
+            h = win32print.OpenPrinter(PRINTER_NAME)
+            try:
+                info = win32print.GetPrinter(h, 2)
+                status_code = info.get('Status', 0)
+                printer_online = True
+            finally:
+                win32print.ClosePrinter(h)
+        except Exception as e:
+            app.logger.warning(f"Printer '{PRINTER_NAME}' not accessible: {e}")
+            printer_online = False
+
+        # Get verification info from config
+        verified_at = config.get('printer_verified_at')
+        verified_by = config.get('printer_verification_device')
+        last_test_status = config.get('printer_last_test_status')
+
+        printer_verified = last_test_status == 'success' and verified_at is not None
+
+        # Determine if verification is needed
+        needs_verification = not printer_verified or not printer_online
+
+        return jsonify({
+            "printer_configured": True,
+            "printer_name": PRINTER_NAME,
+            "printer_online": printer_online,
+            "printer_verified": printer_verified,
+            "verified_at": verified_at,
+            "verified_by": verified_by,
+            "last_test_status": last_test_status,
+            "status_code": status_code,
+            "needs_verification": needs_verification,
+            "status_message": "Printer ready" if (printer_online and printer_verified) else
+                             "Printer offline" if not printer_online else
+                             "Printer not verified"
+        })
+    except Exception as e:
+        app.logger.error(f"Error in printer_health: {e}")
+        return jsonify({
+            "printer_configured": False,
+            "error": str(e),
+            "status_message": "Error checking printer health"
+        }), 500
+
+
 @app.route('/api/printer/select', methods=['POST'])
 def select_printer():
     data = request.get_json() or {}
@@ -2606,7 +2842,16 @@ def select_printer():
 
 @app.route('/api/printer/test', methods=['POST'])
 def test_print():
+    """
+    Test print endpoint with verification tracking
+    Phase 2: Multi-device printer redesign
+    Accepts device_name parameter and updates config with verification status
+    """
     try:
+        # Get device name from request (optional)
+        data = request.get_json() or {}
+        device_name = data.get('device_name', 'Unknown Device')
+
         # Check license status - allow both active subscriptions and active trials
         license_status = check_trial_status()
 
@@ -2624,6 +2869,12 @@ def test_print():
         app.logger.info(f"[TEST_PRINT] has_active_license={has_active_license}")
 
         if not has_active_license:
+            # Update config with failed verification
+            save_config({
+                'printer_last_test_status': 'failed',
+                'printer_verified_at': datetime.now().isoformat(),
+                'printer_verification_device': device_name
+            })
             return jsonify({
                 "success": False,
                 "message": "License inactive. Printing disabled.",
@@ -2644,6 +2895,12 @@ def test_print():
         # Check if selected printer is PDF/virtual BEFORE attempting print
         printer_classification = classify_printer_type(PRINTER_NAME)
         if not printer_classification.get('is_supported', True):
+            # Update config with failed verification
+            save_config({
+                'printer_last_test_status': 'failed',
+                'printer_verified_at': datetime.now().isoformat(),
+                'printer_verification_device': device_name
+            })
             return jsonify({
                 "success": False,
                 "message": f"❌ Cannot use this printer for thermal receipts. {printer_classification.get('explanation', 'Please select a thermal receipt printer.')}"
@@ -2651,18 +2908,41 @@ def test_print():
 
         ok = print_kitchen_ticket(test_order, copy_info="")
         if ok:
+            # Update config with successful verification
+            save_config({
+                'printer_last_test_status': 'success',
+                'printer_verified_at': datetime.now().isoformat(),
+                'printer_verification_device': device_name
+            })
+            app.logger.info(f"[TEST_PRINT] Printer verified successfully by device: {device_name}")
             return jsonify({"success": True, "message": "✓ Test print sent successfully!"})
 
         # If failed and looks like a PDF-type printer, clarify unsupported
         name_lower = str(PRINTER_NAME).lower()
+        error_message = "Test print failed. Check printer connection and try again."
         if 'pdf' in name_lower or 'xps' in name_lower or 'onenote' in name_lower:
-            return jsonify({
-                "success": False,
-                "message": "❌ PDF/Virtual printer detected. Please select your thermal receipt printer from the dropdown."
-            }), 200
+            error_message = "❌ PDF/Virtual printer detected. Please select your thermal receipt printer from the dropdown."
 
-        return jsonify({"success": False, "message": "Test print failed. Check printer connection and try again."}), 200
+        # Update config with failed verification
+        save_config({
+            'printer_last_test_status': 'failed',
+            'printer_verified_at': datetime.now().isoformat(),
+            'printer_verification_device': device_name
+        })
+
+        return jsonify({"success": False, "message": error_message}), 200
     except Exception as e:
+        # Update config with failed verification
+        try:
+            data = request.get_json() or {}
+            device_name = data.get('device_name', 'Unknown Device')
+            save_config({
+                'printer_last_test_status': 'failed',
+                'printer_verified_at': datetime.now().isoformat(),
+                'printer_verification_device': device_name
+            })
+        except:
+            pass
         return jsonify({"success": False, "message": str(e)}), 200
 
 
@@ -5688,58 +5968,72 @@ def handle_order():
         'paymentMethod': order_data_from_client.get('paymentMethod', 'Cash')
     }
 
+    # Phase 6: Check device print behavior
+    device_print_behavior = order_data_from_client.get('devicePrintBehavior', 'auto')
+    device_name = order_data_from_client.get('deviceName', 'Unknown Device')
+    app.logger.info(f"Order #{authoritative_order_number} from device '{device_name}' with print behavior: {device_print_behavior}")
+
     print_status_summary = "Not Printed"
     printed_all = True
     printed_any = False
-    copies_to_print = max(1, int(config.get('copies_per_order', COPIES_PER_ORDER)))
-    
-    # Calculate dynamic delay based on order complexity
-    total_items = sum(int(item.get('quantity', 1)) for item in order_data_internal.get('items', []))
-    base_delay_between_copies = 0.5
-    item_based_delay = min(total_items * 0.3, 10.0)  # 0.3s per item, max 10s
-    dynamic_delay = base_delay_between_copies + item_based_delay
-    
-    # Calculate retry delay based on order complexity
-    base_retry_delay = 1.0
-    retry_delay = base_retry_delay + item_based_delay
-    
-    app.logger.info(f"Order #{authoritative_order_number} has {total_items} items. Using {dynamic_delay:.1f}s delay between copies and {retry_delay:.1f}s retry delay.")
 
-    for i in range(1, copies_to_print + 1):
-        if i > 1:
-            app.logger.info(f"Waiting {dynamic_delay:.1f}s before printing copy {i} (order complexity: {total_items} items)")
-            time.sleep(dynamic_delay)
-        app.logger.info(f"Attempting to print copy {i} for order #{authoritative_order_number}")
-        try:
-            ok = print_kitchen_ticket(order_data_internal, copy_info="")
-            if not ok:
-                app.logger.warning(f"Print failed, waiting {retry_delay:.1f}s before retry for copy {i} (order #{authoritative_order_number})")
-                time.sleep(retry_delay)
-                app.logger.warning(f"Retrying print for copy {i} (order #{authoritative_order_number})")
+    # Phase 6: Skip printing if device behavior is 'disabled'
+    if device_print_behavior == 'disabled':
+        app.logger.info(f"Order #{authoritative_order_number} - Device '{device_name}' has printing disabled. Order will be saved without printing.")
+        print_status_summary = "Print Disabled by Device"
+    else:
+        # Proceed with normal printing
+        copies_to_print = max(1, int(config.get('copies_per_order', COPIES_PER_ORDER)))
+
+        # Calculate dynamic delay based on order complexity
+        total_items = sum(int(item.get('quantity', 1)) for item in order_data_internal.get('items', []))
+        base_delay_between_copies = 0.5
+        item_based_delay = min(total_items * 0.3, 10.0)  # 0.3s per item, max 10s
+        dynamic_delay = base_delay_between_copies + item_based_delay
+
+        # Calculate retry delay based on order complexity
+        base_retry_delay = 1.0
+        retry_delay = base_retry_delay + item_based_delay
+
+        app.logger.info(f"Order #{authoritative_order_number} has {total_items} items. Using {dynamic_delay:.1f}s delay between copies and {retry_delay:.1f}s retry delay.")
+
+        for i in range(1, copies_to_print + 1):
+            if i > 1:
+                app.logger.info(f"Waiting {dynamic_delay:.1f}s before printing copy {i} (order complexity: {total_items} items)")
+                time.sleep(dynamic_delay)
+            app.logger.info(f"Attempting to print copy {i} for order #{authoritative_order_number}")
+            try:
                 ok = print_kitchen_ticket(order_data_internal, copy_info="")
-        except Exception as e_print:
-            app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (copy {i}): {str(e_print)}")
-            ok = False
-        printed_any = printed_any or ok
-        if not ok and i == 1:
-            app.logger.warning(f"Order #{authoritative_order_number} - FIRST COPY FAILED to print. Order will NOT be saved or further processed.")
-            return jsonify({
-                "status": "error_print_failed_copy1",
-                "order_number": authoritative_order_number,
-                "printed": "Copy 1 Failed",
-                "logged": False,
-                "message": f"Order #{authoritative_order_number} - FIRST COPY FAILED. Order NOT saved. Check printer!"
-            }), 200
-        if not ok:
-            printed_all = False
+                if not ok:
+                    app.logger.warning(f"Print failed, waiting {retry_delay:.1f}s before retry for copy {i} (order #{authoritative_order_number})")
+                    time.sleep(retry_delay)
+                    app.logger.warning(f"Retrying print for copy {i} (order #{authoritative_order_number})")
+                    ok = print_kitchen_ticket(order_data_internal, copy_info="")
+            except Exception as e_print:
+                app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (copy {i}): {str(e_print)}")
+                ok = False
 
-    if printed_any and printed_all:
-        print_status_summary = "All Copies Printed"
-        app.logger.info(f"Order #{authoritative_order_number} - All copies printed successfully ({copies_to_print}).")
-    elif printed_any and not printed_all:
-        print_status_summary = "Some Copies Printed, Some Failed"
-        app.logger.warning(f"Order #{authoritative_order_number} - Some copies printed, some failed (requested {copies_to_print}).")
-    
+            printed_any = printed_any or ok
+
+            # Phase 6: REMOVED hard rejection on first print failure
+            # Orders are now ALWAYS saved, even if printing fails
+            # This prevents data loss due to printer issues
+            if not ok:
+                printed_all = False
+                app.logger.warning(f"Order #{authoritative_order_number} - Copy {i} FAILED to print, but order will still be saved.")
+
+    # Phase 6: Update print status summary
+    if device_print_behavior != 'disabled':
+        if printed_any and printed_all:
+            print_status_summary = "All Copies Printed"
+            app.logger.info(f"Order #{authoritative_order_number} - All copies printed successfully.")
+        elif printed_any and not printed_all:
+            print_status_summary = "Some Copies Printed, Some Failed"
+            app.logger.warning(f"Order #{authoritative_order_number} - Some copies printed, some failed.")
+        elif not printed_any:
+            print_status_summary = "All Print Attempts Failed"
+            app.logger.error(f"Order #{authoritative_order_number} - All print attempts failed, but order will be saved.")
+
     csv_log_succeeded = False
     try:
         csv_log_succeeded = record_order_in_csv(order_data_internal, print_status_summary)
@@ -5757,15 +6051,26 @@ def handle_order():
             "message": f"Order #{authoritative_order_number} - PRINT STATUS: {print_status_summary}. FAILED TO SAVE TO RECORDS. NOTIFY STAFF IMMEDIATELY."
         }), 200
 
+    # Phase 6: Enhanced final status determination
     final_status_code = "error_unknown"
     message = "An unexpected issue occurred."
 
-    if printed_any and printed_all and csv_log_succeeded:
-        message = f"Order #{authoritative_order_number} processed: all copies printed ({copies_to_print}), and logged successfully!"
+    if device_print_behavior == 'disabled' and csv_log_succeeded:
+        # Device has printing disabled - order saved successfully without printing
+        message = f"Order #{authoritative_order_number} saved successfully (printing disabled on this device)"
+        final_status_code = "success"
+    elif printed_any and printed_all and csv_log_succeeded:
+        # Normal success - all printed and saved
+        message = f"Order #{authoritative_order_number} processed: all copies printed and logged successfully!"
         final_status_code = "success"
     elif printed_any and not printed_all and csv_log_succeeded:
-        message = f"Order #{authoritative_order_number} processed: Some copies PRINTED & LOGGED. Some FAILED. Please check printer."
-        final_status_code = "warning_print_partial_failed" 
+        # Partial print success
+        message = f"Order #{authoritative_order_number} saved! Some copies printed, some failed. Check printer."
+        final_status_code = "warning_print_partial_failed"
+    elif not printed_any and csv_log_succeeded:
+        # Phase 6: NEW - No prints succeeded but order was saved (previously would have been rejected)
+        message = f"Order #{authoritative_order_number} saved but printing FAILED. Order is safe - reprint from management panel."
+        final_status_code = "success_order_saved_print_failed" 
 
     # Track order analytics (regardless of print/log status)
     try:
@@ -6681,6 +6986,110 @@ def recalculate_table_total(table_id):
         app.logger.error(f"Failed to recalculate table total for table {table_id}: {e}")
         return 0.0
 
+def update_csv_payment_methods_for_table(order_numbers, payments, total_amount):
+    """
+    Update CSV rows for table orders with actual payment methods used.
+    This is called when a table is cleared to ensure analytics reflect actual payment methods.
+
+    Args:
+        order_numbers: List of order numbers from the table session
+        payments: List of payment records with 'method' and 'amount' fields
+        total_amount: Total amount for the table
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        if not order_numbers or not payments:
+            app.logger.info("[CSV_UPDATE] No orders or payments to update")
+            return True  # Nothing to update is not an error
+
+        # Determine primary payment method
+        payment_totals = {'Cash': 0.0, 'Card': 0.0}
+        for payment in payments:
+            method = str(payment.get('method', 'Cash')).capitalize()
+            amount = float(payment.get('amount', 0.0))
+            if method in payment_totals:
+                payment_totals[method] += amount
+
+        # Use the method with highest amount, or "Mixed" if split relatively evenly
+        cash_total = payment_totals['Cash']
+        card_total = payment_totals['Card']
+
+        if cash_total > 0 and card_total > 0:
+            # Split payment - determine if it's predominantly one method or truly mixed
+            total_paid = cash_total + card_total
+            cash_percent = (cash_total / total_paid) * 100 if total_paid > 0 else 0
+
+            if cash_percent >= 80:
+                primary_method = 'Cash'
+            elif cash_percent <= 20:
+                primary_method = 'Card'
+            else:
+                primary_method = 'Mixed'
+        elif card_total > 0:
+            primary_method = 'Card'
+        else:
+            primary_method = 'Cash'
+
+        app.logger.info(f"[CSV_UPDATE] Determined primary payment method: {primary_method} (Cash: €{cash_total:.2f}, Card: €{card_total:.2f})")
+
+        # Update CSV rows for each order
+        updated_count = 0
+        for order_number in order_numbers:
+            try:
+                # Find CSV files that might contain this order (check last 7 days)
+                csv_files_to_check = []
+                for days_ago in range(7):
+                    date = datetime.now() - timedelta(days=days_ago)
+                    csv_path = os.path.join(DATA_DIR, f"orders_{date.strftime('%Y-%m-%d')}.csv")
+                    if os.path.exists(csv_path):
+                        csv_files_to_check.append(csv_path)
+
+                # Search for and update the order in CSV files
+                for csv_path in csv_files_to_check:
+                    try:
+                        # Read the CSV file
+                        rows = []
+                        order_found = False
+
+                        with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
+                            reader = csv.DictReader(csvfile)
+                            fieldnames = reader.fieldnames
+
+                            for row in reader:
+                                if row.get('order_number') == str(order_number):
+                                    # Update the payment method
+                                    row['payment_method'] = primary_method
+                                    order_found = True
+                                    app.logger.info(f"[CSV_UPDATE] Updated order #{order_number} in {os.path.basename(csv_path)} to {primary_method}")
+                                rows.append(row)
+
+                        # Write back if order was found
+                        if order_found:
+                            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                                writer.writeheader()
+                                writer.writerows(rows)
+
+                            updated_count += 1
+                            break  # Found and updated, no need to check other files
+
+                    except Exception as e:
+                        app.logger.warning(f"[CSV_UPDATE] Error processing {csv_path}: {e}")
+                        continue
+
+            except Exception as e:
+                app.logger.warning(f"[CSV_UPDATE] Failed to update order #{order_number}: {e}")
+                continue
+
+        app.logger.info(f"[CSV_UPDATE] Successfully updated {updated_count}/{len(order_numbers)} orders with payment method: {primary_method}")
+        return True
+
+    except Exception as e:
+        app.logger.error(f"[CSV_UPDATE] Failed to update CSV payment methods: {e}")
+        return False
+
 def close_table_session(table_id):
     """Close table session and mark as paid"""
     try:
@@ -6736,6 +7145,21 @@ def clear_table_session(table_id):
 
             except Exception as e:
                 app.logger.error(f"Failed to process session history for table {table_id}: {e}")
+
+            # Update CSV payment methods for all orders in this table session
+            try:
+                order_numbers = session.get("orders", [])
+                payments = session.get("payments", [])
+                total_amount = session.get("total_amount", 0.0)
+
+                if order_numbers and payments:
+                    app.logger.info(f"[CLEAR_TABLE] Updating CSV payment methods for {len(order_numbers)} orders from table {table_id}")
+                    update_csv_payment_methods_for_table(order_numbers, payments, total_amount)
+                else:
+                    app.logger.info(f"[CLEAR_TABLE] No orders or payments to update for table {table_id}")
+            except Exception as e:
+                # Don't fail the entire clear operation if CSV update fails
+                app.logger.error(f"[CLEAR_TABLE] Failed to update CSV payment methods for table {table_id}: {e}")
 
             # Clear the session
             app.logger.info(f"[CLEAR_TABLE] Deleting session for table {table_id} and saving")
@@ -7975,6 +8399,442 @@ def disconnect_license():
             "details": str(e)
         }), 500
 
+# ============================================================================
+# SERVER-SIDE LICENSE ACTIVATION ENDPOINTS (NEW: Multi-Device Support)
+# ============================================================================
+
+@app.route('/api/license/activate', methods=['POST'])
+def activate_server_license():
+    """
+    Activate license on the server (admin only)
+
+    This endpoint allows administrators to activate a license centrally on the server.
+    Once activated, all connected devices/browsers will inherit the server's license status
+    without requiring individual activation.
+
+    Request JSON:
+        {
+            "email": "customer@example.com",
+            "unlock_token": "ABC123XYZ",
+            "password": "9999"  # Management password for security
+        }
+
+    Returns:
+        JSON response with validation status and license info
+    """
+    try:
+        # Rate limiting
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
+        if not check_rate_limit(client_ip, 'license-activate', max_requests=5, window_seconds=300):
+            app.logger.warning(f"Rate limit exceeded for license-activate from {client_ip}")
+            return jsonify({
+                "error": "Too many requests. Please try again later.",
+                "code": "RATE_LIMIT"
+            }), 429
+
+        # SECURITY: Only allow license management from localhost (server device)
+        # Prevents tablets/remote devices from modifying server licensing
+        remote_addr = request.remote_addr
+        if remote_addr not in ['127.0.0.1', '::1']:
+            app.logger.warning(f"License activation blocked from non-localhost IP: {remote_addr}")
+            return jsonify({
+                "success": False,
+                "error": "License management is only available on the server device. Please access via http://localhost:5000",
+                "code": "LOCALHOST_ONLY"
+            }), 403
+
+        # Parse and validate request
+        try:
+            data = request.get_json()
+            if not data or not isinstance(data, dict):
+                return jsonify({
+                    "error": "Invalid request format",
+                    "code": "INVALID_REQUEST"
+                }), 400
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return jsonify({
+                "error": "Invalid JSON in request",
+                "code": "INVALID_JSON"
+            }), 400
+
+        # Validate required fields
+        email = data.get('email')
+        unlock_token = data.get('unlock_token')
+        password = data.get('password')
+
+        if not email or not unlock_token or not password:
+            return jsonify({
+                "error": "Missing required fields: email, unlock_token, password",
+                "code": "MISSING_FIELDS"
+            }), 400
+
+        # Sanitize inputs
+        email = sanitize_string_input(email, 254)
+        unlock_token = sanitize_string_input(unlock_token, 512)
+        password = sanitize_string_input(password, 100)
+
+        # Validate email format
+        if not validate_email(email):
+            return jsonify({
+                "error": "Invalid email format",
+                "code": "INVALID_EMAIL"
+            }), 400
+
+        # Verify management password from config.json (admin only)
+        try:
+            with open(os.path.join(DATA_DIR, 'config.json'), 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                stored_password = config_data.get('management_password', '9999')
+        except Exception as e:
+            app.logger.error(f"Error reading management password: {e}")
+            stored_password = '9999'  # Default fallback
+
+        if password != stored_password:
+            app.logger.warning(f"Invalid management password for license activation attempt: {email}")
+            return jsonify({
+                "error": "Invalid management password. Only administrators can activate server licenses.",
+                "code": "INVALID_PASSWORD"
+            }), 401
+
+        app.logger.info(f"Starting server license activation for: {email[:5]}***")
+
+        # Get hardware ID for validation
+        hardware_id = get_enhanced_hardware_id()
+
+        # Validate license with Cloudflare Workers
+        app.logger.info("Validating license with Cloudflare Workers...")
+        success, license_data, error_msg = _validate_license_with_cloud(
+            email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
+        )
+
+        if not success or not license_data:
+            app.logger.error(f"Server license activation failed: {error_msg}")
+            return jsonify({
+                "success": False,
+                "error": error_msg or "License validation failed",
+                "code": "VALIDATION_FAILED"
+            }), 400
+
+        # Check if license is valid/active
+        if not license_data.get('valid'):
+            app.logger.error(f"Server license activation failed: License not valid")
+            return jsonify({
+                "success": False,
+                "error": "License is not valid or subscription is inactive",
+                "code": "LICENSE_INACTIVE",
+                "subscription_status": license_data.get('subscriptionInfo', {}).get('status')
+            }), 400
+
+        # Save server license
+        if not save_server_license(email, unlock_token):
+            app.logger.error("Failed to save server license to disk")
+            return jsonify({
+                "success": False,
+                "error": "Failed to save license to server",
+                "code": "SAVE_FAILED"
+            }), 500
+
+        # Save license cache for offline grace period support
+        _save_license_cache(license_data)
+
+        app.logger.info(f"Server license activated successfully for: {email[:5]}***")
+
+        # Return success with license info
+        subscription_info = license_data.get('subscriptionInfo', {})
+        return jsonify({
+            "success": True,
+            "message": "Server license activated successfully. All devices will now use this license.",
+            "license": {
+                "email": email,
+                "customer_name": license_data.get('customerName'),
+                "status": subscription_info.get('status'),
+                "next_billing_date": subscription_info.get('nextBillingDate'),
+                "activated_at": datetime.now().isoformat()
+            }
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error during server license activation: {e}")
+        return jsonify({
+            "error": "Internal server error during activation",
+            "code": "SERVER_ERROR",
+            "details": str(e)
+        }), 500
+
+@app.route('/api/health', methods=['GET', 'HEAD'])
+def health_check():
+    """
+    Simple health check endpoint with no blocking operations.
+    Returns immediately to confirm server is responsive.
+
+    Used by enhanced-ux-manager.js to test server connectivity.
+    """
+    return jsonify({"status": "ok"}), 200
+
+@app.route('/api/license/credentials', methods=['GET'])
+def get_license_credentials():
+    """
+    Get license credentials for Customer Portal access (localhost only)
+
+    SECURITY: This endpoint is localhost-only to prevent credentials from being
+    exposed to tablets/remote devices. Only the server device can access portal.
+
+    Returns:
+        JSON with email and unlock_token for portal session creation
+    """
+    # SECURITY: Only allow from localhost
+    remote_addr = request.remote_addr
+    if remote_addr not in ['127.0.0.1', '::1']:
+        app.logger.warning(f"License credentials access blocked from non-localhost IP: {remote_addr}")
+        return jsonify({
+            "error": "License credentials are only available on the server device",
+            "code": "LOCALHOST_ONLY"
+        }), 403
+
+    try:
+        # Load server license
+        server_license = load_server_license()
+
+        if not server_license:
+            return jsonify({
+                "error": "No server license found",
+                "code": "NO_LICENSE"
+            }), 404
+
+        # Return credentials (localhost-only, so safe to expose)
+        return jsonify({
+            "email": server_license.get('customer_email'),
+            "unlockToken": server_license.get('unlock_token')
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f"Error getting license credentials: {e}")
+        return jsonify({
+            "error": "Failed to retrieve license credentials",
+            "code": "SERVER_ERROR"
+        }), 500
+
+@app.route('/api/license/status', methods=['GET'])
+def get_server_license_status():
+    """
+    Get server license status (all users)
+
+    This endpoint returns the current license status from the server.
+    All connected devices use this to check if the server has an active license.
+
+    Returns:
+        JSON response with license status and details
+    """
+    try:
+        # Load server license credentials
+        server_license = load_server_license()
+
+        if not server_license:
+            app.logger.debug("No server license found")
+            return jsonify({
+                "licensed": False,
+                "active": False,
+                "message": "No server license activated",
+                "trial_available": True
+            }), 200
+
+        # Get email and token from server license
+        email = server_license.get('customer_email')
+        unlock_token = server_license.get('unlock_token')
+
+        app.logger.info(f"Checking server license status for: {email[:5]}***")
+
+        # Get hardware ID
+        hardware_id = get_enhanced_hardware_id()
+
+        # Validate with Cloudflare Workers (with timeout)
+        success, license_data, error_msg = _validate_license_with_cloud(
+            email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
+        )
+
+        if success and license_data:
+            # Update cache with fresh validation
+            _save_license_cache(license_data)
+
+            subscription_info = license_data.get('subscription_info', {})  # Fixed: use snake_case key
+            app.logger.info(f"Server license valid - status: {subscription_info.get('status')}")
+
+            # Extract price information from subscription
+            subscription_amount = subscription_info.get('amount') or subscription_info.get('plan', {}).get('amount')
+            subscription_currency = subscription_info.get('currency', 'eur').upper()
+
+            # Convert from cents to currency units if needed (Stripe uses cents)
+            if subscription_amount and subscription_amount >= 100:
+                subscription_price = subscription_amount / 100.0
+            else:
+                subscription_price = subscription_amount or 20.0  # Fallback to 20
+
+            return jsonify({
+                "licensed": True,
+                "active": license_data.get('valid', False),
+                "email": email,
+                "customer_name": license_data.get('customerName'),
+                "subscription_status": subscription_info.get('status'),
+                "subscription_price": subscription_price,
+                "subscription_currency": subscription_currency,
+                "next_billing_date": subscription_info.get('nextBillingDate'),
+                "current_period_end": subscription_info.get('currentPeriodEnd'),
+                "activated_at": server_license.get('activated_at'),
+                "validated_at": datetime.now().isoformat(),
+                "source": "server_license"
+            }), 200
+
+        else:
+            # Cloud validation failed - try cache with grace period
+            app.logger.warning(f"Cloud validation failed: {error_msg}")
+
+            cache_data = _load_license_cache()
+            if cache_data:
+                last_validation = cache_data.get('last_validation')
+                if last_validation:
+                    days_offline, is_expired, warning_level = _calculate_grace_period_status(last_validation)
+
+                    if not is_expired:
+                        # Still within grace period
+                        days_left = GRACE_PERIOD_DAYS - days_offline
+                        app.logger.info(f"Using cached license - grace period: {days_left} days left")
+
+                        cached_license = cache_data.get('license_data', {})
+                        subscription_info = cached_license.get('subscriptionInfo', {})
+
+                        return jsonify({
+                            "licensed": True,
+                            "active": True,
+                            "grace_period": True,
+                            "days_offline": days_offline,
+                            "grace_days_left": days_left,
+                            "email": email,
+                            "customer_name": cached_license.get('customerName'),
+                            "subscription_status": subscription_info.get('status'),
+                            "warning": f"Server offline for {days_offline} days. {days_left} days remaining.",
+                            "source": "server_license_cached"
+                        }), 200
+
+            # No valid license or grace period expired
+            app.logger.error("Server license validation failed and grace period expired")
+            return jsonify({
+                "licensed": False,
+                "active": False,
+                "error": error_msg or "License validation failed",
+                "email": email,
+                "source": "server_license_failed"
+            }), 200
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error getting server license status: {e}")
+        return jsonify({
+            "licensed": False,
+            "active": False,
+            "error": "Internal server error",
+            "code": "SERVER_ERROR"
+        }), 500
+
+@app.route('/api/license/deactivate', methods=['POST'])
+def deactivate_server_license():
+    """
+    Deactivate server license (admin only)
+
+    This endpoint removes the server license, requiring reactivation.
+    All connected devices will lose access when the license is deactivated.
+
+    Request JSON:
+        {
+            "password": "9999"  # Management password for security
+        }
+
+    Returns:
+        JSON response confirming deactivation
+    """
+    try:
+        # Rate limiting
+        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
+        if not check_rate_limit(client_ip, 'license-deactivate', max_requests=5, window_seconds=300):
+            app.logger.warning(f"Rate limit exceeded for license-deactivate from {client_ip}")
+            return jsonify({
+                "error": "Too many requests. Please try again later.",
+                "code": "RATE_LIMIT"
+            }), 429
+
+        # SECURITY: Only allow license management from localhost (server device)
+        # Prevents tablets/remote devices from modifying server licensing
+        remote_addr = request.remote_addr
+        if remote_addr not in ['127.0.0.1', '::1']:
+            app.logger.warning(f"License deactivation blocked from non-localhost IP: {remote_addr}")
+            return jsonify({
+                "success": False,
+                "error": "License management is only available on the server device. Please access via http://localhost:5000",
+                "code": "LOCALHOST_ONLY"
+            }), 403
+
+        # Parse and validate request
+        try:
+            data = request.get_json()
+            if not data or not isinstance(data, dict):
+                return jsonify({
+                    "error": "Invalid request format",
+                    "code": "INVALID_REQUEST"
+                }), 400
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return jsonify({
+                "error": "Invalid JSON in request",
+                "code": "INVALID_JSON"
+            }), 400
+
+        # Validate password
+        password = data.get('password')
+        if not password:
+            return jsonify({
+                "error": "Missing required field: password",
+                "code": "MISSING_FIELDS"
+            }), 400
+
+        password = sanitize_string_input(password, 100)
+
+        # Verify management password (admin only)
+        try:
+            with open(os.path.join(DATA_DIR, 'config.json'), 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                stored_password = config_data.get('management_password', '9999')
+        except Exception as e:
+            app.logger.error(f"Error reading management password: {e}")
+            stored_password = '9999'
+
+        if password != stored_password:
+            app.logger.warning("Invalid management password for license deactivation attempt")
+            return jsonify({
+                "error": "Invalid management password. Only administrators can deactivate server licenses.",
+                "code": "INVALID_PASSWORD"
+            }), 401
+
+        app.logger.info("Deactivating server license...")
+
+        # Delete server license files
+        if delete_server_license():
+            app.logger.info("Server license deactivated successfully")
+            return jsonify({
+                "success": True,
+                "message": "Server license deactivated successfully. All devices will lose access."
+            }), 200
+        else:
+            app.logger.warning("No server license found to deactivate")
+            return jsonify({
+                "success": False,
+                "message": "No server license was found to deactivate"
+            }), 404
+
+    except Exception as e:
+        app.logger.error(f"Unexpected error during server license deactivation: {e}")
+        return jsonify({
+            "error": "Internal server error during deactivation",
+            "code": "SERVER_ERROR",
+            "details": str(e)
+        }), 500
+
 @app.route('/api/system_status')
 def get_system_status():
     """System diagnostic endpoint for troubleshooting customer issues"""
@@ -8035,57 +8895,98 @@ def get_enhanced_hardware_id():
     to eliminate false "Computer Changed" emails after application rebuilds.
 
     Returns the full 64-character SHA256 hash (not truncated) for consistency.
+
+    OPTIMIZED: Uses global cache and parallel WMIC execution to prevent blocking.
     """
+    global _cached_hardware_id
+
+    # Return cached value if available (hardware ID never changes)
+    if _cached_hardware_id:
+        return _cached_hardware_id
+
     import subprocess
     import platform
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
     try:
         # Get MAC address (unified algorithm - primary identifier)
         mac = ':'.join(['{:02x}'.format((uuid.getnode() >> i) & 0xff) for i in range(0, 8*6, 8)][::-1])
 
         # Get CPU info (EXACT match to unified algorithm)
+        cpu_info = 'Unknown'
         try:
             cpu_info = platform.processor()
             if not cpu_info:
+                # Fallback to WMIC
+                pass
+        except:
+            pass
+
+        # Run all 3 WMIC commands in parallel to reduce blocking time
+        def get_cpu_wmic():
+            try:
                 result = subprocess.run(['wmic', 'cpu', 'get', 'name'],
                                       capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
-                cpu_info = result.stdout.split('\n')[1].strip() if result.stdout else 'Unknown'
-        except:
-            cpu_info = 'Unknown'
+                return result.stdout.split('\n')[1].strip() if result.stdout else 'Unknown'
+            except:
+                return 'Unknown'
 
-        # Get disk serial (EXACT match to unified algorithm)
-        disk_serial = 'Unknown'
-        try:
-            result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'],
-                                  capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
-            if result.stdout:
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line and line != 'SerialNumber':
-                        disk_serial = line
-                        break
-        except:
-            pass
+        def get_disk_serial():
+            try:
+                result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'],
+                                      capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+                if result.stdout:
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line and line != 'SerialNumber':
+                            return line
+            except:
+                pass
+            return 'Unknown'
 
-        # Get Windows ID (EXACT match to unified algorithm)
-        windows_id = 'Unknown'
-        try:
-            result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'],
-                                  capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
-            if result.stdout:
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line and line != 'UUID':
-                        windows_id = line
-                        break
-        except:
-            pass
+        def get_windows_id():
+            try:
+                result = subprocess.run(['wmic', 'csproduct', 'get', 'uuid'],
+                                      capture_output=True, text=True, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
+                if result.stdout:
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line and line != 'UUID':
+                            return line
+            except:
+                pass
+            return 'Unknown'
+
+        # Execute all WMIC calls in parallel (reduces ~15s to ~5s)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Only run WMIC for CPU if platform.processor() failed
+            if cpu_info == 'Unknown':
+                future_cpu = executor.submit(get_cpu_wmic)
+            else:
+                future_cpu = None
+
+            future_disk = executor.submit(get_disk_serial)
+            future_windows = executor.submit(get_windows_id)
+
+            # Wait for results with timeout
+            try:
+                if future_cpu:
+                    cpu_info = future_cpu.result(timeout=5)
+                disk_serial = future_disk.result(timeout=5)
+                windows_id = future_windows.result(timeout=5)
+            except FuturesTimeoutError:
+                app.logger.warning("WMIC command timeout - using partial hardware ID")
+                disk_serial = disk_serial if 'disk_serial' in locals() else 'Unknown'
+                windows_id = windows_id if 'windows_id' in locals() else 'Unknown'
 
         # Combine all identifiers and hash (EXACT same as unified algorithm)
         combined = f"{mac}|{cpu_info}|{disk_serial}|{windows_id}"
         hardware_id = hashlib.sha256(combined.encode()).hexdigest()  # Full 64-char hash, not truncated
+
+        # Cache the result globally
+        _cached_hardware_id = hardware_id
 
         return hardware_id
 
@@ -8166,6 +9067,7 @@ def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, time
         if response.get('valid'):
             # The worker returns the license data directly in the response
             license_data = {
+                'valid': response.get('valid'),  # Include 'valid' field from API response
                 'customer_email': customer_email,
                 'unlock_token': unlock_token,
                 'hardware_id': hardware_id,
@@ -8301,6 +9203,163 @@ def _clear_license_cache():
         app.logger.info("License cache cleared")
     except Exception as e:
         app.logger.error(f"Failed to clear license cache: {e}")
+
+# ============================================================================
+# SERVER-SIDE LICENSE MANAGEMENT (NEW: Multi-Device Support)
+# ============================================================================
+# These functions manage centralized license credentials on the server,
+# allowing all connected devices to inherit the server's license status
+# without requiring per-device activation.
+# ============================================================================
+
+def save_server_license(customer_email, unlock_token):
+    """
+    Save license credentials to server storage (encrypted)
+
+    This stores the email and unlock_token centrally on the server,
+    allowing all connected devices to use the same license without
+    requiring individual activation on each browser/device.
+
+    Args:
+        customer_email: Customer email address
+        unlock_token: License unlock token
+
+    Returns:
+        bool: True if saved successfully, False otherwise
+    """
+    try:
+        # Validate inputs
+        if not customer_email or not unlock_token:
+            app.logger.error("Cannot save server license: missing email or token")
+            return False
+
+        # Get hardware ID for machine binding
+        hardware_id = get_enhanced_hardware_id()
+
+        # Create license data structure
+        license_data = {
+            'customer_email': customer_email,
+            'unlock_token': unlock_token,
+            'hardware_id': hardware_id,
+            'activated_at': datetime.now().isoformat(),
+            'version': '1.0'
+        }
+
+        # Encrypt the data
+        encrypted_data = _encrypt_license_data(license_data)
+        if not encrypted_data:
+            app.logger.error("Failed to encrypt server license data")
+            return False
+
+        # Ensure directories exist
+        os.makedirs(os.path.dirname(SERVER_LICENSE_FILE), exist_ok=True)
+        os.makedirs(os.path.dirname(SERVER_LICENSE_BACKUP), exist_ok=True)
+
+        # Save to primary location
+        with open(SERVER_LICENSE_FILE, 'w') as f:
+            f.write(encrypted_data)
+
+        # Save backup copy
+        with open(SERVER_LICENSE_BACKUP, 'w') as f:
+            f.write(encrypted_data)
+
+        app.logger.info(f"Server license saved successfully for {customer_email[:5]}***")
+        return True
+
+    except Exception as e:
+        app.logger.error(f"Failed to save server license: {e}")
+        return False
+
+def load_server_license():
+    """
+    Load license credentials from server storage (decrypted)
+
+    Returns:
+        dict: License data containing email and unlock_token, or None if not found
+        Example: {
+            'customer_email': 'user@example.com',
+            'unlock_token': 'ABC123XYZ',
+            'hardware_id': '...',
+            'activated_at': '2025-10-27T...',
+            'version': '1.0'
+        }
+    """
+    try:
+        license_file = None
+
+        # Try primary file first, then backup
+        for file_path in [SERVER_LICENSE_FILE, SERVER_LICENSE_BACKUP]:
+            if os.path.exists(file_path):
+                license_file = file_path
+                break
+
+        if not license_file:
+            app.logger.debug("No server license file found")
+            return None
+
+        # Read encrypted data
+        with open(license_file, 'r') as f:
+            encrypted_data = f.read().strip()
+
+        if not encrypted_data:
+            app.logger.warning("Server license file is empty")
+            return None
+
+        # Decrypt the data
+        license_data = _decrypt_license_data(encrypted_data)
+        if not license_data:
+            app.logger.warning("Failed to decrypt server license")
+            return None
+
+        # Validate data structure
+        required_fields = ['customer_email', 'unlock_token', 'hardware_id']
+        if not all(field in license_data for field in required_fields):
+            app.logger.warning("Server license missing required fields")
+            return None
+
+        # Verify hardware ID matches (license is machine-specific for security)
+        current_hw_id = get_enhanced_hardware_id()
+        if license_data['hardware_id'] != current_hw_id:
+            app.logger.warning("Server license hardware ID mismatch - license invalid")
+            app.logger.debug(f"Stored HW: {license_data['hardware_id'][:20]}...")
+            app.logger.debug(f"Current HW: {current_hw_id[:20]}...")
+            return None
+
+        app.logger.info(f"Server license loaded successfully for {license_data['customer_email'][:5]}***")
+        return license_data
+
+    except Exception as e:
+        app.logger.error(f"Failed to load server license: {e}")
+        return None
+
+def delete_server_license():
+    """
+    Delete server license files (deactivate server license)
+
+    Returns:
+        bool: True if deleted successfully, False otherwise
+    """
+    try:
+        deleted_any = False
+
+        for file_path in [SERVER_LICENSE_FILE, SERVER_LICENSE_BACKUP]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                app.logger.info(f"Deleted server license file: {file_path}")
+                deleted_any = True
+
+        if deleted_any:
+            app.logger.info("Server license deactivated successfully")
+            # Also clear the license cache when deactivating
+            _clear_license_cache()
+            return True
+        else:
+            app.logger.warning("No server license files found to delete")
+            return False
+
+    except Exception as e:
+        app.logger.error(f"Failed to delete server license: {e}")
+        return False
 
 def _calculate_grace_period_status(last_validation_timestamp):
     """
@@ -8771,9 +9830,10 @@ def get_analytics():
 
                                 # Daypart removed per requirements
                                 
-                                # Payment methods
+                                # Payment methods (skip 'Pending' for table orders not yet cleared)
                                 payment_method = row.get('payment_method') or row.get('Payment Method', 'Cash')
-                                payment_methods[payment_method] += 1
+                                if payment_method != 'Pending':
+                                    payment_methods[payment_method] += 1
                                 
                                 # Top items (parse items JSON)
                                 try:
@@ -8862,8 +9922,15 @@ def get_analytics():
                         if start <= order_date < end:
                             amt = float(row.get('order_total') or row.get('Total') or 0.0)
                             pm = (row.get('payment_method') or row.get('Payment Method') or 'Cash').capitalize()
-                            if pm == 'Card':
+                            # Skip 'Pending' orders (table orders not yet cleared)
+                            if pm == 'Pending':
+                                continue
+                            elif pm == 'Card':
                                 payment_amounts['card'] += amt
+                            elif pm == 'Mixed':
+                                # For mixed payments, split 50/50 between cash and card for analytics
+                                payment_amounts['cash'] += amt / 2
+                                payment_amounts['card'] += amt / 2
                             else:
                                 payment_amounts['cash'] += amt
                     except Exception:
@@ -8879,7 +9946,10 @@ def get_analytics():
                 "cash": round(payment_amounts['cash'], 2),
                 "card": round(payment_amounts['card'], 2)
             },
-            "paymentCounts": { key: payment_methods.get(key.capitalize(), 0) for key in ['cash','card'] },
+            "paymentCounts": {
+                'cash': payment_methods.get('Cash', 0) + payment_methods.get('Mixed', 0),
+                'card': payment_methods.get('Card', 0) + payment_methods.get('Mixed', 0)
+            },
             "salesByHour": sales_by_hour_list,
             
             "salesByCategory": sales_by_category_list,
@@ -9348,7 +10418,7 @@ if __name__ == '__main__':
             if UNIFIED_LICENSES_ENABLED:
                 try:
                     license_init_success = initialize_license_integration(
-                        app, app.logger, DATA_DIR, PROGRAM_DATA_DIR, 
+                        app, app.logger, DATA_DIR, PROGRAM_DATA_DIR,
                         BASE_DIR, str(APP_SECRET_KEY), call_cloudflare_api
                     )
                     if license_init_success:
@@ -9358,7 +10428,35 @@ if __name__ == '__main__':
                 except Exception as e:
                     app.logger.error(f"License integration initialization error: {e}")
                     UNIFIED_LICENSES_ENABLED = False
-            
+
+            # Check for server license on startup (NEW: Multi-device support)
+            try:
+                server_license = load_server_license()
+                if server_license:
+                    email = server_license.get('customer_email', 'unknown')
+                    app.logger.info(f"Server license found for: {email[:5]}***")
+                    app.logger.info("All connected devices will use this server license")
+
+                    # Validate server license in background to update cache
+                    try:
+                        unlock_token = server_license.get('unlock_token')
+                        hardware_id = get_enhanced_hardware_id()
+                        success, license_data, error_msg = _validate_license_with_cloud(
+                            email, unlock_token, hardware_id, timeout=5
+                        )
+                        if success and license_data:
+                            _save_license_cache(license_data)
+                            app.logger.info("Server license validated successfully on startup")
+                        else:
+                            app.logger.warning(f"Server license validation failed on startup: {error_msg}")
+                            app.logger.warning("Will use cached license data with grace period")
+                    except Exception as validation_error:
+                        app.logger.warning(f"Server license validation error on startup: {validation_error}")
+                else:
+                    app.logger.info("No server license found - devices will need individual activation or can use trial")
+            except Exception as e:
+                app.logger.error(f"Error checking server license on startup: {e}")
+
             # Log the data directory that was found
             app.logger.info(f"POSPal startup: Using data directory: {DATA_DIR}")
             app.logger.info(f"POSPal startup: Menu file path: {MENU_FILE}")
@@ -9403,7 +10501,18 @@ if __name__ == '__main__':
     from waitress import serve
     port = config.get('port', 5000)
     app.logger.info(f"Starting POSPal Server v{CURRENT_VERSION} on http://0.0.0.0:{port}")
-    
+
+    # Pre-calculate hardware ID at startup to prevent blocking on first request
+    app.logger.info("Initializing hardware fingerprint (one-time calculation)...")
+    try:
+        hw_id = get_enhanced_hardware_id()
+        if hw_id and hw_id != "hardware_id_generation_failed":
+            app.logger.info(f"Hardware ID cached successfully: {hw_id[:16]}...")
+        else:
+            app.logger.warning("Hardware ID generation failed - will retry on demand")
+    except Exception as e:
+        app.logger.warning(f"Hardware ID initialization failed: {e} - will calculate on demand")
+
     # Enhanced network information for mobile connection troubleshooting
     try:
         import socket

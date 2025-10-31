@@ -144,6 +144,86 @@
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <!-- Left Column: Status Details & Customer Intelligence -->
                         <div class="lg:col-span-2 space-y-6">
+                            <!-- SERVER LICENSE ACTIVATION SECTION (NEW: Multi-Device Support) -->
+                            <div class="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-lg border-2 border-green-200 shadow-md">
+                                <h4 class="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                                    <i class="fas fa-server text-green-600 mr-2"></i>
+                                    Server License Management
+                                    <span class="ml-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded-full">Multi-Device</span>
+                                </h4>
+                                <p class="text-sm text-gray-600 mb-4">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Activate your license once on the server. All connected devices will automatically use this license.
+                                </p>
+
+                                <!-- Server License Status Display -->
+                                <div id="server-license-status-display" class="mb-4 p-4 rounded-lg border hidden">
+                                    <!-- Will be populated by JavaScript -->
+                                </div>
+
+                                <!-- Server License Activation Form -->
+                                <div id="server-license-activation-form">
+                                    <div class="bg-white p-4 rounded-lg border border-gray-300 shadow-sm">
+                                        <h5 class="text-sm font-semibold text-gray-700 mb-3">Activate Server License</h5>
+                                        <div class="space-y-3">
+                                            <div>
+                                                <label class="text-xs font-medium text-gray-600 block mb-1">
+                                                    Customer Email
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    id="server-license-email"
+                                                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                                    placeholder="customer@example.com"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="text-xs font-medium text-gray-600 block mb-1">
+                                                    Unlock Token
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    id="server-license-token"
+                                                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                                    placeholder="ABC123XYZ"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="text-xs font-medium text-gray-600 block mb-1">
+                                                    Management Password
+                                                </label>
+                                                <input
+                                                    type="password"
+                                                    id="server-license-password"
+                                                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                                    placeholder="••••"
+                                                />
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <button
+                                                    id="activate-server-license-btn"
+                                                    onclick="activateServerLicense()"
+                                                    class="flex-1 btn-success py-2 px-4 text-sm rounded-md flex items-center justify-center">
+                                                    <i class="fas fa-check-circle mr-2"></i>
+                                                    Activate Server License
+                                                </button>
+                                                <button
+                                                    id="deactivate-server-license-btn"
+                                                    onclick="deactivateServerLicense()"
+                                                    class="btn-outline py-2 px-4 text-sm rounded-md hidden">
+                                                    <i class="fas fa-times-circle mr-1"></i>
+                                                    Deactivate
+                                                </button>
+                                            </div>
+                                            <div class="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded p-2">
+                                                <i class="fas fa-lightbulb mr-1 text-yellow-600"></i>
+                                                <strong>Tip:</strong> After payment, check your email for the unlock token. Enter it here to activate the license for all devices on this server.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Detailed Status Section -->
                             <div class="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
                                 <h4 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -420,8 +500,41 @@
                     <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
                     <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Total Orders</h4><p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p></div>
                     <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
-                    <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="font-semibold text-gray-700 mb-2">Payment Methods</h4><div class="space-y-2 mt-3"><div class="flex justify-between items-center"><span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span><span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span></div><div class="flex justify-between items-center"><span class="text-sm text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span><span id="kpi-payment-card" class="font-bold text-gray-800">€0.00</span></div></div></div>
+                    <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500">Items per Order</h4><p id="kpi-items-per-order" class="text-3xl font-bold text-gray-900 mt-1">-</p></div>
                 </div>
+
+                <!-- Payment Methods Section -->
+                <div class="bg-white p-4 rounded-lg border mb-4">
+                    <h4 class="font-semibold text-gray-700 mb-3">Payment Methods</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span>
+                                <span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span>
+                            </div>
+                            <div class="text-xs text-gray-500 ml-6" id="kpi-payment-cash-count">0 transactions</div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span>
+                                <span id="kpi-payment-card" class="font-bold text-gray-800">€0.00</span>
+                            </div>
+                            <div class="text-xs text-gray-500 ml-6" id="kpi-payment-card-count">0 transactions</div>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-gray-200">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
+                                <div id="kpi-payment-cash-bar" class="bg-green-500 h-full transition-all duration-300" style="width: 50%"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500">
+                            <span id="kpi-payment-cash-percent">50% Cash</span>
+                            <span id="kpi-payment-card-percent">50% Card</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     <div class="bg-white p-4 rounded-lg border lg:col-span-2"><h4 class="font-semibold text-gray-700 mb-3">Sales by Hour</h4><div class="overflow-x-auto pb-2"><div id="analytics-chart-container" class="h-64 flex items-end space-x-4"><p class="text-xs text-gray-500 italic w-full text-center">Loading chart data...</p></div></div></div>
                     <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2">Sales by Category</h4><div id="kpi-sales-by-category" class="space-y-2 max-h-64 overflow-y-auto"><p class="text-xs text-gray-500 italic">Loading data...</p></div></div>

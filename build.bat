@@ -170,6 +170,13 @@ pyinstaller ^
     --add-data "..\i18n.js;." ^
     --add-data "..\locales;locales" ^
     --add-data "..\pospalCore.js;." ^
+    --add-data "..\enhanced-error-handler.js;." ^
+    --add-data "..\enhanced-ux-manager.js;." ^
+    --add-data "..\notification-manager.js;." ^
+    --add-data "..\customer-segmentation.js;." ^
+    --add-data "..\advanced-notification-intelligence.js;." ^
+    --add-data "..\licensing-dashboard.js;." ^
+    --add-data "..\enhanced-ux-components.css;." ^
     --icon "..\app_icon.ico" ^
     ..\app.py
 
@@ -229,6 +236,13 @@ if defined BUILD_ONEDIR (
         --add-data "..\i18n.js;." ^
         --add-data "..\locales;locales" ^
         --add-data "..\pospalCore.js;." ^
+        --add-data "..\enhanced-error-handler.js;." ^
+        --add-data "..\enhanced-ux-manager.js;." ^
+        --add-data "..\notification-manager.js;." ^
+        --add-data "..\customer-segmentation.js;." ^
+        --add-data "..\advanced-notification-intelligence.js;." ^
+        --add-data "..\licensing-dashboard.js;." ^
+        --add-data "..\enhanced-ux-components.css;." ^
         --icon "..\app_icon.ico" ^
         ..\app.py
     if %errorlevel% neq 0 (

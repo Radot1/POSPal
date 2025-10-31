@@ -1003,11 +1003,20 @@ async function handleCheckoutCompleted(event, env) {
     next_billing_date: monthFromNow.toISOString()
   };
 
+  // Pricing data - default to null (will be populated from Stripe)
+  let pricingData = {
+    subscription_amount: null,
+    subscription_currency: 'eur'
+  };
+
   if (subscriptionId) {
     try {
       // For test webhooks, use mock billing data instead of calling Stripe API
       if (subscriptionId.includes('test_phase2')) {
         console.log('Using default billing data for test subscription');
+        // Use default pricing for test subscriptions
+        pricingData.subscription_amount = 2000; // €20.00
+        pricingData.subscription_currency = 'eur';
       } else {
         const stripe = createStripeHelper(env);
         const subscription = await stripe.get(`/subscriptions/${subscriptionId}`);
@@ -1027,6 +1036,17 @@ async function handleCheckoutCompleted(event, env) {
             console.log('Billing data captured from Stripe:', billingData);
           } else {
             console.warn('Invalid timestamp values in subscription, using defaults');
+          }
+
+          // Extract pricing information from subscription
+          // Stripe subscriptions have items array with price information
+          if (subscription.items && subscription.items.data && subscription.items.data.length > 0) {
+            const priceObj = subscription.items.data[0].price;
+            if (priceObj) {
+              pricingData.subscription_amount = priceObj.unit_amount; // Amount in cents
+              pricingData.subscription_currency = priceObj.currency; // e.g., 'eur', 'usd'
+              console.log('Pricing data captured from Stripe:', pricingData);
+            }
           }
         } else {
           console.warn('Subscription fetch returned error or missing data, using defaults');
@@ -1067,10 +1087,12 @@ async function handleCheckoutCompleted(event, env) {
           UPDATE customers
           SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?,
               current_period_start = ?, current_period_end = ?, next_billing_date = ?,
+              subscription_amount = ?, subscription_currency = ?,
               last_seen = datetime('now')
           WHERE id = ?
         `).bind(subscriptionId, session.customer, session.id,
                 billingData.current_period_start, billingData.current_period_end, billingData.next_billing_date,
+                pricingData.subscription_amount, pricingData.subscription_currency,
                 customerId).run();
         
         // Don't send another welcome email, just log the event
@@ -1083,10 +1105,12 @@ async function handleCheckoutCompleted(event, env) {
           SET subscription_id = ?, stripe_customer_id = ?, stripe_session_id = ?,
               subscription_status = 'active', payment_failures = 0,
               current_period_start = ?, current_period_end = ?, next_billing_date = ?,
+              subscription_amount = ?, subscription_currency = ?,
               last_seen = datetime('now')
           WHERE id = ?
         `).bind(subscriptionId, session.customer, session.id,
                 billingData.current_period_start, billingData.current_period_end, billingData.next_billing_date,
+                pricingData.subscription_amount, pricingData.subscription_currency,
                 customerId).run();
         
         console.log(`Reactivated customer ${customerEmail} with subscription ${subscriptionId}`);
@@ -1094,13 +1118,14 @@ async function handleCheckoutCompleted(event, env) {
     } else {
       // New customer - create fresh record
       unlockToken = generateUnlockToken();
-      
+
       const insertResult = await env.DB.prepare(`
         INSERT INTO customers
         (email, name, stripe_customer_id, stripe_session_id, unlock_token, subscription_id,
          subscription_status, current_period_start, current_period_end, next_billing_date,
+         subscription_amount, subscription_currency,
          created_at, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, datetime('now'), datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
       `).bind(
         customerEmail,
         customerName,
@@ -1110,7 +1135,9 @@ async function handleCheckoutCompleted(event, env) {
         subscriptionId,
         billingData.current_period_start,
         billingData.current_period_end,
-        billingData.next_billing_date
+        billingData.next_billing_date,
+        pricingData.subscription_amount,
+        pricingData.subscription_currency
       ).run();
       
       customerId = insertResult.meta.last_row_id;
@@ -1183,8 +1210,13 @@ async function handlePaymentSucceeded(event, env) {
     return createResponse({ received: true });
   }
 
-  // Fetch subscription details from Stripe to get updated billing dates
+  // Fetch subscription details from Stripe to get updated billing dates and pricing
   let billingData = {};
+  let pricingData = {
+    subscription_amount: null,
+    subscription_currency: null
+  };
+
   try {
     const stripe = createStripeHelper(env);
     const subscription = await stripe.get(`/subscriptions/${subscriptionId}`);
@@ -1195,6 +1227,16 @@ async function handlePaymentSucceeded(event, env) {
         current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
         next_billing_date: new Date(subscription.current_period_end * 1000).toISOString()
       };
+
+      // Extract pricing information from subscription
+      if (subscription.items && subscription.items.data && subscription.items.data.length > 0) {
+        const priceObj = subscription.items.data[0].price;
+        if (priceObj) {
+          pricingData.subscription_amount = priceObj.unit_amount; // Amount in cents
+          pricingData.subscription_currency = priceObj.currency; // e.g., 'eur', 'usd'
+          console.log('Payment renewal - pricing data updated:', pricingData);
+        }
+      }
 
       console.log('Payment renewal - billing data updated:', billingData);
     }
@@ -1216,14 +1258,22 @@ async function handlePaymentSucceeded(event, env) {
 
     const wasInactive = customer.subscription_status !== 'active';
 
-    // IMMEDIATE REACTIVATION - clear any inactive status and update billing dates
+    // IMMEDIATE REACTIVATION - clear any inactive status and update billing dates and pricing
     await env.DB.prepare(`
       UPDATE customers
       SET subscription_status = 'active',
           current_period_start = ?, current_period_end = ?, next_billing_date = ?,
+          subscription_amount = ?, subscription_currency = ?,
           last_seen = datetime('now')
       WHERE subscription_id = ?
-    `).bind(billingData.current_period_start, billingData.current_period_end, billingData.next_billing_date, subscriptionId).run();
+    `).bind(
+      billingData.current_period_start,
+      billingData.current_period_end,
+      billingData.next_billing_date,
+      pricingData.subscription_amount,
+      pricingData.subscription_currency,
+      subscriptionId
+    ).run();
     
     // Log audit event
     await logAuditEvent(env.DB, customer.id, wasInactive ? 'payment_succeeded_immediate_reactivation' : 'payment_succeeded_renewal', {

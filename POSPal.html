@@ -60,72 +60,45 @@
         .status-indicator-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .7; } }
 
-        /* Connection Status Indicator */
-        .connection-status-indicator {
-            position: fixed;
-            top: 1rem;
-            left: 1rem;
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.5rem 0.75rem;
-            border-radius: 0.5rem;
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-            transition: all 0.3s ease;
-            backdrop-filter: blur(8px);
+        /* Settings gear status halo + label */
+        .settings-gear {
+            position: relative;
+            isolation: isolate;
         }
+        .settings-gear::after {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 9999px;
+            background: var(--gear-halo, transparent);
+            opacity: 0.9;
+            z-index: -1;
+            transition: background 0.25s ease, opacity 0.25s ease;
+        }
+        .settings-gear.status-live    { --gear-halo: rgba(16,185,129,0.35); }
+        .settings-gear.status-polling { --gear-halo: rgba(245,158,11,0.45); }
+        .settings-gear.status-offline { --gear-halo: rgba(239,68,68,0.45); }
+        .settings-gear.status-checking{ --gear-halo: rgba(148,163,184,0.4); }
 
-        .connection-status-indicator .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            transition: all 0.3s ease;
+        .gear-status-label {
+            display: none;
+            margin-top: 0.5rem;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #ffffff;
+            align-self: center;
+            background: #4b5563;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            text-align: center;
+            min-width: 7rem;
+            letter-spacing: 0.02em;
         }
-
-        .connection-status-indicator.live .status-dot {
-            background-color: #10b981;
-            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
-            animation: pulse-green 2s ease-in-out infinite;
-        }
-
-        .connection-status-indicator.polling .status-dot {
-            background-color: #f59e0b;
-            box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
-            animation: pulse-orange 1.5s ease-in-out infinite;
-        }
-
-        .connection-status-indicator.offline .status-dot {
-            background-color: #ef4444;
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-            animation: pulse-red 1s ease-in-out infinite;
-        }
-
-        .connection-status-indicator.checking .status-dot {
-            background-color: #6b7280;
-            animation: pulse-gray 1s ease-in-out infinite;
-        }
-
-        @keyframes pulse-green {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(1.1); }
-        }
-
-        @keyframes pulse-orange {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.6; transform: scale(1.15); }
-        }
-
-        @keyframes pulse-red {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.2); }
-        }
-
-        @keyframes pulse-gray {
-            0%, 100% { opacity: 0.5; }
-            50% { opacity: 1; }
-        }
+        .gear-status-label.status-polling { background:#92400e; }
+        .gear-status-label.status-offline { background:#7f1d1d; }
+        .gear-status-label.status-checking { background:#475569; }
+        .gear-status-label.active { display: inline-flex; justify-content: center; }
 
         /* ==================================================================================
            TABLE MANAGEMENT MODE SWITCHING CSS
@@ -721,16 +694,17 @@
     </aside>
 
     <!-- Settings Gear & Tables Button -->
-    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40 flex flex-col gap-3">
+    <div id="settings-gear-container" class="fixed bottom-20 right-4 z-40 flex flex-col items-center gap-3">
         <!-- Tables Button (only visible when table management enabled) -->
         <button id="tablesBtn" onclick="openTablesModal()" class="table-mode-only bg-green-600 hover:bg-green-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition" title="Tables" style="display: none;">
             <i class="fas fa-utensils text-xl"></i>
         </button>
 
-        <!-- Settings Gear -->
-        <button onclick="openLoginModal()" class="bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Settings">
+        <!-- Settings Gear with connection status -->
+        <button id="settingsGear" onclick="openLoginModal()" class="settings-gear status-checking bg-gray-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center hover:bg-gray-800 transition" title="Management Panel - Checking connection..." aria-live="polite" aria-label="Management Panel - Checking connection">
             <i class="fas fa-cog text-xl"></i>
         </button>
+        <span id="gearStatusLabel" class="gear-status-label status-checking active" aria-live="polite">Checking...</span>
     </div>
 
     <!-- MODALS -->
@@ -996,17 +970,39 @@
                         </div>
                     </div>
 
-                    <!-- Hardware ID Card (Simplified) -->
-                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-3" data-i18n="ui.license.yourHardwareId">Hardware ID</h4>
-                        <div class="bg-gray-50 p-4 rounded-lg flex items-center justify-between border">
-                            <code id="hardware-id-display" class="text-sm font-mono text-gray-800 flex-1 mr-4 break-all">Loading...</code>
-                            <button id="copy-hwid-btn" class="copy-btn flex-shrink-0 px-3 py-2 text-sm" onclick="copyHardwareId()">
-                                <i class="far fa-copy mr-1"></i>
-                                <span data-i18n="ui.license.copy">Copy</span>
-                            </button>
+                    
+                    <!-- Device & Advanced Controls -->
+                    <div class="mb-6 grid gap-6 lg:grid-cols-2">
+                        <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                            <h4 class="text-lg font-semibold text-gray-800 mb-2">Device Session</h4>
+                            <p class="text-sm text-gray-600 mb-4">This terminal is currently signed in. Release it before moving POSPal to replacement hardware.</p>
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between bg-gray-50 border rounded-lg px-4 py-3 text-sm text-gray-700">
+                                    <span class="font-medium">Current Device</span>
+                                    <span id="license-session-label" class="text-gray-500">Active</span>
+                                </div>
+                                <button onclick="showDisconnectLicenseModal()"
+                                        id="disconnect-license-btn"
+                                        class="w-full btn-outline py-2 px-3 text-sm rounded-md text-left text-red-600 hover:bg-red-50 border-red-300 transition-colors">
+                                    <i class="fas fa-unlink mr-2"></i>
+                                    Release This Device
+                                </button>
+                                <p class="text-xs text-gray-500">Releasing ends this session immediately and clears cached license data on this device.</p>
+                            </div>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2" data-i18n="ui.license.hwidHelp">This unique identifier locks your license to this specific computer.</p>
+
+                        <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                            <h4 class="text-lg font-semibold text-gray-800 mb-2">Advanced Details</h4>
+                            <p class="text-sm text-gray-600 mb-4">Support may request these identifiers when troubleshooting activations.</p>
+                            <div class="bg-gray-50 p-4 rounded-lg flex items-center justify-between border">
+                                <code id="hardware-id-display" class="text-sm font-mono text-gray-800 flex-1 mr-4 break-all">Loading...</code>
+                                <button id="copy-hwid-btn" class="copy-btn flex-shrink-0 px-3 py-2 text-sm" onclick="copyHardwareId()">
+                                    <i class="far fa-copy mr-1"></i>
+                                    Copy
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">POSPal shares this fingerprint automatically during validation. Copy it only if Support asks for it.</p>
+                        </div>
                     </div>
 
                     <!-- About Section -->
@@ -1851,11 +1847,7 @@
         <span id="toast-message">Toast message here</span>
     </div>
 
-    <!-- Connection Status Indicator (only visible in table management mode) -->
-    <div id="connectionStatusIndicator" class="connection-status-indicator checking table-mode-only" style="display: none;">
-        <div class="status-dot"></div>
-        <span class="text-sm font-medium text-gray-700" id="connectionStatusText">Checking...</span>
-    </div>
+    <!-- Removed legacy connection status indicator in favor of gear-based status -->
 
     <!-- Subscription Modal -->
     <!-- Subscription Modal - Stacked Card Design -->
@@ -2067,3 +2059,7 @@
     <script src="pospalCore.js"></script>
 </body>
 </html>
+
+
+
+
