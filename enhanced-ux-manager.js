@@ -21,6 +21,9 @@ class POSPalUXManager {
         // Monitor online/offline status
         window.addEventListener('online', () => {
             this.updateConnectionStatus('online');
+            if (window.OfflineInterruptionManager) {
+                window.OfflineInterruptionManager.handleOnline({ source: 'ux-manager' });
+            }
             this.showConnectionRestored();
         });
 
@@ -53,7 +56,7 @@ class POSPalUXManager {
     loadEnhancedCSS() {
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = 'enhanced-ux-components.css';
+        link.href = '/assets/desktop-support.css';
         document.head.appendChild(link);
     }
 
@@ -180,22 +183,13 @@ class POSPalUXManager {
      * Show offline banner
      */
     showOfflineBanner() {
-        let banner = document.getElementById('offline-banner');
-        
-        if (!banner) {
-            banner = document.createElement('div');
-            banner.id = 'offline-banner';
-            banner.className = 'offline-mode-banner';
-            banner.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: center;">
-                    <i class="fas fa-wifi-slash" style="margin-right: 12px;"></i>
-                    <span>You're offline - Some features may be limited</span>
-                    <button class="reconnect-btn" onclick="window.pospalUXManager.testConnection()">
-                        Try to reconnect
-                    </button>
-                </div>
-            `;
-            document.body.appendChild(banner);
+        if (window.OfflineInterruptionManager) {
+            window.OfflineInterruptionManager.handleOffline({
+                reason: 'ux-manager-offline',
+                showModal: false,
+                message: 'Network connection lost. POSPal is running in grace mode.',
+                summary: 'Orders continue locally. Restore internet to resume syncing.'
+            });
         }
     }
 
@@ -203,10 +197,8 @@ class POSPalUXManager {
      * Show connection restored notification
      */
     showConnectionRestored() {
-        // Remove offline banner
-        const banner = document.getElementById('offline-banner');
-        if (banner) {
-            banner.remove();
+        if (window.OfflineInterruptionManager) {
+            window.OfflineInterruptionManager.handleOnline({ source: 'ux-manager' });
         }
         
         // Show success notification

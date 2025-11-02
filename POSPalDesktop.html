@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>POSPal - Desktop</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="./static/vendor/tailwindcdn.js"></script>
+    <link rel="stylesheet" href="./static/css/fonts.css">
+    <link rel="stylesheet" href="./static/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/assets/desktop-support.css">
     <style>
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -207,6 +208,131 @@
         .gear-status-label.status-offline { background:#7f1d1d; }
         .gear-status-label.status-checking { background:#475569; }
         .gear-status-label.active { display: inline-flex; justify-content: center; }
+
+        /* Offline interruption modal */
+        #offlineInterruptionModal { display: none; }
+
+        .offline-interruption-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(6px);
+            z-index: 120;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+
+        .offline-interruption-card {
+            background: #ffffff;
+            border-radius: 18px;
+            box-shadow: 0 25px 70px rgba(15, 23, 42, 0.25);
+            width: min(640px, 100%);
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .offline-interruption-header {
+            padding: 1.75rem 2rem 1.25rem;
+            border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .offline-interruption-body {
+            padding: 1.5rem 2rem;
+            overflow-y: auto;
+        }
+
+        .offline-interruption-footer {
+            padding: 1.25rem 2rem 1.75rem;
+            border-top: 1px solid rgba(226, 232, 240, 0.8);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
+
+        .offline-interruption-icon {
+            height: 3rem;
+            width: 3rem;
+            border-radius: 9999px;
+            background: rgba(248, 113, 113, 0.12);
+            color: #b91c1c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .offline-resolution-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .offline-resolution-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .offline-resolution-list li i {
+            color: #2563eb;
+            margin-top: 0.2rem;
+        }
+
+        .offline-status-strip {
+            position: fixed;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.92);
+            color: #ffffff;
+            padding: 0.65rem 1rem;
+            border-radius: 9999px;
+            box-shadow: 0 15px 45px rgba(15, 23, 42, 0.35);
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            z-index: 95;
+        }
+
+        .offline-status-strip.offline-visible { display: inline-flex; }
+
+        .offline-status-strip .badge {
+            background: rgba(248, 113, 113, 0.25);
+            padding: 0.15rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .offline-status-strip .retry-btn {
+            background: rgba(248, 250, 252, 0.15);
+            border: 1px solid rgba(248, 250, 252, 0.25);
+            color: #e2e8f0;
+            padding: 0.35rem 0.9rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            transition: background 0.2s ease;
+        }
+
+        .offline-status-strip .retry-btn:hover {
+            background: rgba(248, 250, 252, 0.25);
+        }
+
+        .offline-status-strip .help-link {
+            color: rgba(226, 232, 240, 0.8);
+            font-size: 0.75rem;
+            text-decoration: underline;
+            cursor: pointer;
+        }
 
         /* Reduced motion support */
         @media (prefers-reduced-motion: reduce) {
@@ -1008,6 +1134,64 @@
         </div>
     </div>
 
+    <!-- Offline Interruption Modal -->
+    <div id="offlineInterruptionModal" class="offline-interruption-backdrop" style="display:none;">
+        <div class="offline-interruption-card">
+            <div class="offline-interruption-header">
+                <div class="flex items-start gap-4">
+                    <div class="offline-interruption-icon">
+                        <i class="fas fa-plug-circle-exclamation"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-2xl font-semibold text-slate-900" data-i18n="ui.offlineModal.title">Internet connection lost - POS running in grace mode</h2>
+                        <p class="text-sm text-slate-600 mt-2">
+                            <span data-i18n="ui.offlineModal.summary">We can't reach the licensing service right now. POSPal will keep working using the last verified license.</span>
+                            <span id="offlineModalGraceText" class="font-medium text-slate-900 block mt-1"></span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="offline-interruption-body space-y-6">
+                <section>
+                    <h3 class="text-sm uppercase tracking-wide text-slate-500 font-semibold" data-i18n="ui.offlineModal.section.whatHappened">What happened</h3>
+                    <p class="text-base text-slate-700 mt-2" data-i18n="ui.offlineModal.detail">The internet connection dropped, so we're using cached license data. Orders, payments, and printing continue to work normally.</p>
+                </section>
+                <section>
+                    <h3 class="text-sm uppercase tracking-wide text-slate-500 font-semibold" data-i18n="ui.offlineModal.section.resolve">How to resolve it</h3>
+                    <ul class="offline-resolution-list text-sm text-slate-700">
+                        <li>
+                            <i class="fas fa-wifi"></i>
+                            <span data-i18n="ui.offlineModal.step.checkNetwork">Check the router or internet modem and make sure cables and power are secure.</span>
+                        </li>
+                        <li>
+                            <i class="fas fa-network-wired"></i>
+                            <span data-i18n="ui.offlineModal.step.verifyLan">Verify the POS server still has LAN access. If needed, restart the router or modem.</span>
+                        </li>
+                        <li>
+                            <i class="fas fa-rotate"></i>
+                            <span data-i18n="ui.offlineModal.step.retry">Once internet is back, press "Retry Connection" to re-validate the license.</span>
+                        </li>
+                    </ul>
+                </section>
+                <section>
+                    <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 flex items-start gap-3">
+                        <i class="fas fa-circle-info text-slate-500 mt-1"></i>
+                        <p class="text-sm text-slate-700" data-i18n="ui.offlineModal.note">POSPal tracks how long we run offline. If the grace period expires before internet returns, licensing features may pause. Resolve connectivity as soon as possible.</p>
+                    </div>
+                </section>
+            </div>
+            <div class="offline-interruption-footer">
+                <button id="offlineOfflineHelpButton" type="button" class="text-sm text-slate-600 hover:text-slate-800 underline decoration-dotted decoration-1" data-i18n="ui.offlineModal.help">Need help troubleshooting?</button>
+                <span id="offlineModalCountdown" class="text-xs text-slate-500 mr-auto hidden"></span>
+                <button id="offlineContinueButton" type="button" class="btn-secondary py-2 px-4" data-i18n="ui.offlineModal.continue">Continue in grace mode</button>
+                <button id="offlineRetryButton" type="button" class="btn-primary py-2 px-4 flex items-center gap-2">
+                    <i class="fas fa-sync-alt"></i>
+                    <span data-i18n="ui.offlineModal.retry">Retry connection</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Legacy Quick Select Bar (Hidden - replaced by modal) -->
     <div id="tableQuickSelectBar" class="hidden" style="display: none;">
         <!-- Kept for backward compatibility but hidden -->
@@ -1049,7 +1233,7 @@
             <div id="order-items-container" class="flex-1 overflow-y-auto -mr-2 pr-2 space-y-1 min-h-0">
                 <p id="empty-order-message" class="text-gray-500 text-center py-8 italic" data-i18n="ui.order.empty">Your order is empty.</p>
             </div>
-            <div id="order-total" class="text-2xl font-bold text-right mt-4 pt-4 border-t border-gray-200 flex-shrink-0"><span data-i18n="ui.order.total">Total:</span> €0.00</div>
+            <div id="order-total" class="text-2xl font-bold text-right mt-4 pt-4 border-t border-gray-200 flex-shrink-0"><span data-i18n="ui.order.total">Total:</span> &euro;0.00</div>
         </div>
         
         <div id="desktopNumpadMini" class="bg-white p-2 rounded-lg shadow-md">
@@ -1127,7 +1311,7 @@
         </button>
 
         <!-- Settings Gear with connection status -->
-        <button id="settingsGear" onclick="openLoginModal()" class="settings-gear status-checking text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition" title="Management Panel - Checking connection..." aria-live="polite" aria-label="Management Panel � Checking connection">
+        <button id="settingsGear" onclick="openLoginModal()" class="settings-gear status-checking text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition" title="Management Panel - Checking connection..." aria-live="polite" aria-label="Management Panel � Checking connection">
             <i class="fas fa-cog text-2xl"></i>
         </button>
         <span id="gearStatusLabel" class="gear-status-label status-checking active" aria-live="polite">Checking...</span>
@@ -1426,9 +1610,9 @@
                         </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.grossRevenue">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.grossRevenue">Gross Revenue</h4><p id="kpi-gross-revenue" class="text-3xl font-bold text-gray-900 mt-1">&euro;0.00</p></div>
                         <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.totalOrders">Total Orders</h4><p id="kpi-total-orders" class="text-3xl font-bold text-gray-900 mt-1">0</p></div>
-                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.avgOrderValue">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">€0.00</p></div>
+                        <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.avgOrderValue">Avg. Order Value</h4><p id="kpi-atv" class="text-3xl font-bold text-gray-900 mt-1">&euro;0.00</p></div>
                         <div class="bg-gray-50 p-4 rounded-lg shadow"><h4 class="text-sm font-medium text-gray-500" data-i18n="ui.analytics.kpi.itemsPerOrder">Items per Order</h4><p id="kpi-items-per-order" class="text-3xl font-bold text-gray-900 mt-1">-</p></div>
                     </div>
 
@@ -1439,14 +1623,14 @@
                             <div>
                                 <div class="flex justify-between items-center mb-2">
                                     <span class="text-sm text-gray-600"><i class="fas fa-money-bill-wave mr-2 text-green-500"></i>Cash</span>
-                                    <span id="kpi-payment-cash" class="font-bold text-gray-800">€0.00</span>
+                                    <span id="kpi-payment-cash" class="font-bold text-gray-800">&euro;0.00</span>
                                 </div>
                                 <div class="text-xs text-gray-500 ml-6" id="kpi-payment-cash-count">0 transactions</div>
                             </div>
                             <div>
                                 <div class="flex justify-between items-center mb-2">
                                     <span class="text-sm text-gray-600"><i class="far fa-credit-card mr-2 text-blue-500"></i>Card</span>
-                                    <span id="kpi-payment-card" class="font-bold text-gray-800">€0.00</span>
+                                    <span id="kpi-payment-card" class="font-bold text-gray-800">&euro;0.00</span>
                                 </div>
                                 <div class="text-xs text-gray-500 ml-6" id="kpi-payment-card-count">0 transactions</div>
                             </div>
@@ -1477,7 +1661,7 @@
                             <div class="bg-white p-4 rounded-lg border h-full" style="display:flex; flex-direction:column"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.worstSellersQty">Underperforming Items (by Qty)</h4><div id="kpi-worst-sellers" class="space-y-2" style="flex-grow:1; overflow-y:auto"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.loadingData">Loading data...</p></div></div>
                         </div>
 
-                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.topAddons">Top Add‑ons / Options</h4><div id="kpi-top-addons" class="space-y-2"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.noAddonData">No add‑on data.</p></div></div>
+                        <div class="bg-white p-4 rounded-lg border"><h4 class="font-semibold text-gray-700 mb-2" data-i18n="ui.analytics.topAddons">Top Add�&euro;�ons / Options</h4><div id="kpi-top-addons" class="space-y-2"><p style="font-size:12px; color:#6b7280; font-style:italic" data-i18n="ui.analytics.noAddonData">No add�&euro;�on data.</p></div></div>
                     </div>
                 </div>
                 <div id="itemsManagement" class="hidden">
@@ -1556,7 +1740,7 @@
                                 <!-- Monthly Amount -->
                                 <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
                                     <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Monthly Cost</div>
-                                    <div id="subscription-price" class="text-lg font-bold text-green-800">€20.00</div>
+                                    <div id="subscription-price" class="text-lg font-bold text-green-800">&euro;20.00</div>
                                 </div>
 
                                 <!-- Subscription Status -->
@@ -1606,7 +1790,7 @@
                                 <!-- Revenue Tracked -->
                                 <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
                                     <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Revenue Tracked</div>
-                                    <div id="trial-revenue-amount" class="text-lg font-bold text-green-800">€0.00</div>
+                                    <div id="trial-revenue-amount" class="text-lg font-bold text-green-800">&euro;0.00</div>
                                 </div>
                             </div>
                         </div>
@@ -1616,9 +1800,9 @@
                             <div class="mb-6">
                                 <button type="button" class="btn-primary px-8 py-3 rounded-lg text-base font-semibold mb-3 hover:transform hover:scale-105 transition-all duration-200 shadow-md" onclick="showEmbeddedPayment()">
                                     <i class="fas fa-credit-card mr-3"></i>
-                                    Subscribe - €20/month
+                                    Subscribe - &euro;20/month
                                 </button>
-                                <p class="text-xs text-gray-500 mb-4">Instant access • Cancel anytime</p>
+                                <p class="text-xs text-gray-500 mb-4">Instant access �&euro;� Cancel anytime</p>
 
                                 <button type="button" class="btn-secondary px-6 py-2 rounded-md text-sm font-medium" onclick="showUnlockDialog()">
                                     <i class="fas fa-key mr-2"></i>
@@ -2198,7 +2382,7 @@
 
                 <div class="mb-6">
                     <div class="text-center text-3xl font-bold text-gray-800" id="paymentTotalDisplay">
-                        €0.00
+                        &euro;0.00
                     </div>
                     <div class="text-center text-sm text-gray-500 mt-1">
                         Total Amount
@@ -2340,7 +2524,7 @@
                     <input type="hidden" id="itemId" name="itemId">
                     <div class="grid gap-4 md:grid-cols-2">
                         <div><label for="itemName" class="block text-sm font-medium text-gray-700">Item Name</label><input type="text" id="itemName" name="itemName" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
-                        <div><label for="itemPrice" class="block text-sm font-medium text-gray-700">Base Price (€)</label><input type="number" step="0.01" id="itemPrice" name="itemPrice" inputmode="decimal" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
+                        <div><label for="itemPrice" class="block text-sm font-medium text-gray-700">Base Price (&euro;)</label><input type="number" step="0.01" id="itemPrice" name="itemPrice" inputmode="decimal" class="mt-1 block w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm" required></div>
                     </div>
                     <div><label for="itemCategory" class="block text-sm font-medium text-gray-700">Category</label><select id="itemCategory" name="itemCategory" class="mt-1 block w-full px-3 py-2 border border-gray-400 bg-white rounded-md shadow-sm sm:text-sm" required></select></div>
 
@@ -2432,7 +2616,7 @@
                             <div id="itemOptionsListDisplayModal" class="flex flex-wrap gap-2 mb-2 min-h-[40px] border border-gray-200 p-2 rounded-md bg-white"><p class="text-xs text-gray-500 italic w-full">No general options added</p></div>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
                                 <div class="md:col-span-2"><label for="newOptionNameInputModal" class="block text-xs font-medium text-gray-600">Option Name</label><input type="text" id="newOptionNameInputModal" placeholder="e.g., Peppercorn Sauce" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm"></div>
-                                <div><label for="newOptionPriceInputModal" class="block text-xs font-medium text-gray-600">Price Change (€)</label><input type="number" step="0.01" id="newOptionPriceInputModal" placeholder="e.g., 2.00 or -0.50" inputmode="decimal" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm"></div>
+                                <div><label for="newOptionPriceInputModal" class="block text-xs font-medium text-gray-600">Price Change (&euro;)</label><input type="number" step="0.01" id="newOptionPriceInputModal" placeholder="e.g., 2.00 or -0.50" inputmode="decimal" class="mt-1 w-full px-3 py-2 border border-gray-400 rounded-md shadow-sm sm:text-sm"></div>
                             </div>
                             <button type="button" onclick="addOptionToItemFormTempModal()" class="mt-2 px-4 py-2 btn-secondary text-sm w-full md:w-auto">Add Option</button>
                         </div>
@@ -2510,7 +2694,7 @@
                         <button onclick="hideUnlockDialog(); showEmbeddedPayment();"
                                 class="block w-full text-green-600 hover:text-green-700 font-medium text-sm">
                             <i class="fas fa-credit-card mr-1"></i>
-                            Subscribe for €20/month
+                            Subscribe for &euro;20/month
                         </button>
                         <button onclick="showLicenseRecoveryModal()" 
                                 class="block w-full text-blue-600 hover:text-blue-700 font-medium text-sm">
@@ -2701,11 +2885,11 @@
                                     class="w-full bg-gradient-to-r from-green-600 to-green-500 text-white py-4 px-6 rounded-xl font-bold text-lg hover:from-green-700 hover:to-green-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]">
                                 <div class="flex items-center justify-center gap-2">
                                     <i class="fas fa-lock text-sm"></i>
-                                    <span>Subscribe for €20/month</span>
+                                    <span>Subscribe for &euro;20/month</span>
                                 </div>
                             </button>
                             <p class="text-center text-xs text-gray-500 mt-2">
-                                Secure payment via Stripe • Cancel anytime
+                                Secure payment via Stripe �&euro;� Cancel anytime
                             </p>
                         </div>
                     </form>
@@ -2758,7 +2942,7 @@
                                 <i class="fas fa-shield-alt"></i>
                                 SSL Encrypted
                             </span>
-                            <span>•</span>
+                            <span>�&euro;�</span>
                             <span class="flex items-center gap-1">
                                 <i class="fas fa-credit-card"></i>
                                 All cards accepted
@@ -2941,17 +3125,26 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script src="i18n.js"></script>
-    <script src="enhanced-error-handler.js"></script>
-    <script src="enhanced-ux-manager.js"></script>
-    <script src="notification-manager.js"></script>
-    <script src="customer-segmentation.js"></script>
-    <script src="advanced-notification-intelligence.js"></script>
-    <script src="licensing-dashboard.js"></script>
-    <script src="pospalCore.js"></script>
+    <div id="offlineStatusStrip" class="offline-status-strip" style="display:none;">
+        <span class="badge" data-i18n="ui.offlineStatusStrip.offline">Offline</span>
+        <span class="text-sm" id="offlineStatusMessage"></span>
+        <button id="offlineStripRetryButton" class="retry-btn" type="button">
+            <i class="fas fa-sync-alt"></i>
+            <span data-i18n="ui.offlineStatusStrip.retry">Retry</span>
+        </button>
+        <span id="offlineStripCountdown" class="text-xs text-slate-300"></span>
+        <span id="offlineStripHelpLink" class="help-link" data-i18n="ui.offlineStatusStrip.help">Troubleshoot</span>
+    </div>
+
+    <script src="./static/js/qrcode.min.js" defer></script>
+    <script src="i18n.js" defer></script>
+    <script src="/assets/desktop-support.js" defer></script>
+    <script src="pospalCore.js" defer></script>
 </body>
 </html>
+
+
+
 
 
 

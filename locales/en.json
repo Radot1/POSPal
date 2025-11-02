@@ -135,10 +135,10 @@
       "topItemsRevenue": "Top Items (by Revenue)",
       "bestSellersQty": "Best Selling Items (by Qty)",
       "worstSellersQty": "Underperforming Items (by Qty)",
-      "topAddons": "Top Add‑ons / Options",
+      "topAddons": "Top Add\u2011ons / Options",
       "loadingChartData": "Loading chart data...",
       "loadingData": "Loading data...",
-      "noAddonData": "No add‑on data."
+      "noAddonData": "No add\u2011on data."
     },
     "footer": {
       "version": "POSPal Version:",
@@ -171,13 +171,62 @@
       "generalLabel": "General Item Options:",
       "noGeneral": "No general options added",
       "optionName": "Option Name",
-      "priceChange": "Price Change (€)",
+      "priceChange": "Price Change (\u20ac)",
       "addOption": "Add Option"
+    },
+    "offlineStatusStrip": {
+      "offline": "Offline",
+      "retry": "Retry",
+      "help": "View recovery steps",
+      "messageGrace": "POSPal is running in grace mode until the connection returns.",
+      "messageOffline": "Device offline. POSPal is running in grace mode.",
+      "messageUnreachable": "Cannot reach the licensing service. POSPal is running in grace mode.",
+      "countdown": "Grace ends in {{time}}",
+      "graceExpired": "Grace period expired",
+      "graceExpiredShort": "Grace expired",
+      "retrying": "Retrying..."
+    },
+    "offlineModal": {
+      "title": "Internet connection lost - POS running in grace mode",
+      "summary": "We can't reach the licensing service right now. POSPal will keep working using the last verified license.",
+      "detail": "The internet connection dropped, so we're using cached license data. Orders, payments, and printing continue to work normally.",
+      "note": "POSPal tracks how long we run offline. If the grace period expires before internet returns, licensing features may pause. Resolve connectivity as soon as possible.",
+      "help": "Need help troubleshooting?",
+      "continue": "Continue in grace mode",
+      "retry": "Retry connection",
+      "message": {
+        "unreachable": "Cannot reach the licensing service. POSPal is running in grace mode."
+      },
+      "section": {
+        "whatHappened": "What happened",
+        "whatToDo": "What you can do",
+        "resolve": "How to resolve it",
+        "status": "Current status"
+      },
+      "step": {
+        "checkRouter": "Check the modem/router and ensure cables are connected.",
+        "contactProvider": "If the internet outage persists, contact your internet provider.",
+        "retry": "Once you're back online, click retry below to restore full licensing sync.",
+        "checkNetwork": "Check the router or internet modem and make sure cables and power are secure.",
+        "verifyLan": "Verify the POS server still has LAN access. If needed, restart the router or modem."
+      },
+      "status": {
+        "lastValidated": "Last successful validation:",
+        "graceExpiry": "Grace period remaining:",
+        "trial": "Failover mode:"
+      },
+      "mode": {
+        "trial": "Grace mode (full features)"
+      },
+      "action": {
+        "retryNow": "Retry connection",
+        "dismiss": "Continue without internet",
+        "support": "Need help? Contact POSPal support"
+      },
+      "graceSummary": "Orders continue locally while we retry the licensing service."
     },
     "common": {
       "loading": "Loading..."
     }
   }
 }
-
-

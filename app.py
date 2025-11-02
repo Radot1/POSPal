@@ -1,6 +1,7 @@
-CURRENT_VERSION = "1.2.1"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
+CURRENT_VERSION = "1.2.2"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
 from flask import Flask, request, jsonify, send_from_directory, Response
+from werkzeug.http import http_date
 from datetime import datetime, timedelta, date
 import csv
 import os
@@ -15,6 +16,7 @@ import hashlib
 import logging
 import sys  # Added for auto-update functionality
 from collections import Counter, defaultdict # Added for analytics
+import copy
 from queue import Queue, Empty
 import atexit
 import socket
@@ -45,6 +47,14 @@ if os.name == 'nt':  # Windows only
     subprocess.Popen = _silent_Popen
 
 app = Flask(__name__)
+
+@app.after_request
+def enforce_utf8_charset(response):
+    content_type = response.headers.get('Content-Type', '')
+    if content_type.startswith('text/') and 'charset=' not in content_type.lower():
+        base_type = content_type.split(';', 1)[0]
+        response.headers['Content-Type'] = f'{base_type}; charset=utf-8'
+    return response
 
 # --- Prevent browser caching of JavaScript/HTML files ---
 @app.after_request
@@ -93,6 +103,19 @@ def _sse_broadcast(event_name: str, payload: dict):
             q.put((event_name, data))
         except Exception:
             pass
+
+
+def _broadcast_license_status(payload: dict, source: str = "unknown"):
+    """Broadcast license status updates to SSE subscribers."""
+    if not isinstance(payload, dict):
+        return
+    enriched_payload = copy.deepcopy(payload)
+    enriched_payload.setdefault("_emitted_at", datetime.now().isoformat())
+    enriched_payload.setdefault("_broadcast_source", source)
+    try:
+        _sse_broadcast('license_status_update', enriched_payload)
+    except Exception as exc:
+        app.logger.warning(f"Failed to broadcast license status update: {exc}")
 
 # --- Cleanup handler for proper shutdown ---
 def _cleanup_on_exit():
@@ -218,6 +241,128 @@ LICENSE_CACHE_FILE = os.path.join(DATA_DIR, 'license_cache.enc')
 LICENSE_CACHE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'license_cache.enc')
 GRACE_PERIOD_DAYS = 10  # Days allowed offline after last successful validation
 CLOUD_VALIDATION_TIMEOUT = 3  # Seconds to wait for cloud validation response
+CLOUD_FAILURE_BACKOFF_SECONDS = 60  # How long to skip cloud validation after a failure
+CLOUD_VALIDATION_CACHE_SECONDS = 30  # Minimum seconds between cloud calls when local cache is still fresh
+LICENSE_STATUS_CACHE_TTL_SECONDS = 30  # TTL for cached /api/license/status responses
+
+# Track recent cloud validation failures to avoid repeated blocking calls when offline
+_last_cloud_failure = {"timestamp": None, "error": None}
+
+# Ensure we never run more than one outbound cloud validation at a time
+_cloud_validation_lock = threading.Lock()
+
+
+class LicenseStatusCoordinator:
+    """Coordinate cached server license status responses and background refreshes."""
+
+    def __init__(self, compute_callable, ttl_seconds=LICENSE_STATUS_CACHE_TTL_SECONDS):
+        self._compute_callable = compute_callable
+        self._ttl_seconds = ttl_seconds
+        self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._cached_payload: dict | None = None
+        self._cached_timestamp: datetime | None = None
+        self._refresh_in_progress = False
+
+    def _age_seconds(self) -> float | None:
+        if not self._cached_timestamp:
+            return None
+        return (datetime.now() - self._cached_timestamp).total_seconds()
+
+    def _is_fresh(self) -> bool:
+        age = self._age_seconds()
+        return age is not None and age < self._ttl_seconds
+
+    def invalidate(self):
+        with self._condition:
+            self._cached_payload = None
+            self._cached_timestamp = None
+            self._condition.notify_all()
+
+    def _update_cache(self, payload: dict | None):
+        with self._condition:
+            if payload is not None:
+                self._cached_payload = copy.deepcopy(payload)
+                self._cached_timestamp = datetime.now()
+            else:
+                self._cached_payload = None
+                self._cached_timestamp = None
+            self._condition.notify_all()
+
+    def _background_refresh(self):
+        try:
+            payload = self._compute_callable(force_refresh=True)
+            if payload is not None:
+                _broadcast_license_status(payload, source="background_refresh")
+                self._update_cache(payload)
+        except Exception as exc:
+            app.logger.error(f"Background license status refresh failed: {exc}")
+        finally:
+            with self._condition:
+                self._refresh_in_progress = False
+                self._condition.notify_all()
+
+    def get_status(self, force_refresh: bool = False) -> tuple[dict | None, bool]:
+        """
+        Return (payload, served_from_cache).
+        If force_refresh is False and cache is warm, returns cached immediately and triggers async refresh when stale.
+        """
+        with self._condition:
+            if not force_refresh and self._cached_payload and self._is_fresh():
+                return copy.deepcopy(self._cached_payload), True
+
+            if not force_refresh and self._cached_payload and not self._refresh_in_progress:
+                # Cache is present but stale; return it immediately and refresh asynchronously.
+                self._refresh_in_progress = True
+                threading.Thread(target=self._background_refresh, daemon=True).start()
+                return copy.deepcopy(self._cached_payload), True
+
+            # At this point we either have no cache, or a refresh is requested.
+            while self._refresh_in_progress:
+                self._condition.wait(timeout=5)
+                if not force_refresh and self._cached_payload and self._is_fresh():
+                    return copy.deepcopy(self._cached_payload), True
+
+            self._refresh_in_progress = True
+
+        try:
+            payload = self._compute_callable(force_refresh=True)
+            if payload is not None:
+                _broadcast_license_status(payload, source="direct_refresh")
+            self._update_cache(payload)
+            return copy.deepcopy(payload) if payload is not None else None, False
+        except Exception as exc:
+            app.logger.error(f"Unable to compute license status payload: {exc}")
+            with self._condition:
+                self._refresh_in_progress = False
+                self._condition.notify_all()
+            return (copy.deepcopy(self._cached_payload) if self._cached_payload else None), True
+        finally:
+            with self._condition:
+                self._refresh_in_progress = False
+                self._condition.notify_all()
+
+
+def _record_cloud_failure(error_message: str | None = None) -> None:
+    """Remember the most recent cloud validation failure."""
+    _last_cloud_failure["timestamp"] = datetime.now()
+    _last_cloud_failure["error"] = error_message or "Cloud validation failed"
+
+
+def _clear_cloud_failure() -> None:
+    """Clear the cached cloud failure state after a successful validation."""
+    _last_cloud_failure["timestamp"] = None
+    _last_cloud_failure["error"] = None
+
+
+def _should_skip_cloud_validation() -> bool:
+    """Return True when recent cloud validation failed and we should back off temporarily."""
+    last_failure = _last_cloud_failure.get("timestamp")
+    if not last_failure:
+        return False
+
+    elapsed = (datetime.now() - last_failure).total_seconds()
+    return elapsed < CLOUD_FAILURE_BACKOFF_SECONDS
 
 # Server-side license storage (NEW: Multi-device support)
 SERVER_LICENSE_FILE = os.path.join(DATA_DIR, 'server_license.enc')
@@ -2265,146 +2410,147 @@ def serve_i18n_js():
 # Explicit JavaScript file routes with comprehensive debugging
 # Added extensive logging to diagnose why these routes return 404 while pospalCore.js works
 
-@app.route('/enhanced-error-handler.js')
-def serve_error_handler():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_error_handler() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'enhanced-error-handler.js'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('enhanced-error-handler.js')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('enhanced-error-handler.js')}")
+
+SUPPORT_ASSETS = {
+    "js": {
+        "files": [
+            "enhanced-error-handler.js",
+            "enhanced-ux-manager.js",
+            "notification-manager.js",
+            "customer-segmentation.js",
+            "advanced-notification-intelligence.js",
+            "licensing-dashboard.js",
+        ],
+        "mimetype": "application/javascript",
+    },
+    "css": {
+        "files": [
+            "enhanced-ux-components.css",
+        ],
+        "mimetype": "text/css",
+    },
+}
+
+
+
+def _resolve_support_paths(files):
+    search_roots = []
+    frozen_root = getattr(sys, '_MEIPASS', None)
+    if frozen_root and frozen_root not in search_roots:
+        search_roots.append(frozen_root)
+    for candidate in (BASE_DIR, os.getcwd(), DATA_DIR, os.path.dirname(DATA_DIR)):
+        if candidate and candidate not in search_roots:
+            search_roots.append(candidate)
+
+    resolved_paths = []
+    missing = []
+    for name in files:
+        found_path = None
+        for root in search_roots:
+            candidate = os.path.join(root, name)
+            if os.path.exists(candidate):
+                found_path = candidate
+                break
+        if found_path:
+            resolved_paths.append(found_path)
+        else:
+            missing.append(name)
+            resolved_paths.append(None)
+
+    if missing:
+        app.logger.error(
+            "Support assets missing: %s (searched: %s)",
+            ", ".join(missing),
+            ", ".join(search_roots)
+        )
+        return None
+
+    return resolved_paths
+
+
+_support_asset_cache = {
+    "js": {"content": None, "etag": None, "last_modified": None, "signature": None},
+    "css": {"content": None, "etag": None, "last_modified": None, "signature": None},
+}
+
+
+def _build_support_asset(kind):
+    config = SUPPORT_ASSETS[kind]
+    files = config["files"]
+    file_paths = _resolve_support_paths(files)
+    if not file_paths:
+        return None
 
     try:
-        response = send_from_directory('.', 'enhanced-error-handler.js')
-        app.logger.info("✅ send_from_directory() succeeded for enhanced-error-handler.js")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+        mtimes = tuple(os.path.getmtime(path) for path in file_paths)
+    except FileNotFoundError as exc:
+        app.logger.error(f"Support asset missing during mtime check: {exc}")
+        return None
 
-@app.route('/enhanced-ux-manager.js')
-def serve_ux_manager():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_ux_manager() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'enhanced-ux-manager.js'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('enhanced-ux-manager.js')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('enhanced-ux-manager.js')}")
+    cache = _support_asset_cache[kind]
+    if cache["content"] is not None and cache["signature"] == mtimes:
+        return cache
 
-    try:
-        response = send_from_directory('.', 'enhanced-ux-manager.js')
-        app.logger.info("✅ send_from_directory() succeeded for enhanced-ux-manager.js")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+    parts = []
+    for filename, path in zip(files, file_paths):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                parts.append('\n/* ===== {} ===== */\n'.format(filename))
+                parts.append(handle.read())
+        except FileNotFoundError as exc:
+            app.logger.error(f"Support asset not found during bundle build: {exc}")
+            return None
 
-@app.route('/notification-manager.js')
-def serve_notification_manager():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_notification_manager() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'notification-manager.js'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('notification-manager.js')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('notification-manager.js')}")
+    bundle_text = "".join(parts)
+    etag = hashlib.sha256(bundle_text.encode("utf-8")).hexdigest()
+    last_modified = datetime.fromtimestamp(max(mtimes)) if mtimes else datetime.utcnow()
 
-    try:
-        response = send_from_directory('.', 'notification-manager.js')
-        app.logger.info("✅ send_from_directory() succeeded for notification-manager.js")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+    cache.update(
+        {
+            "content": bundle_text,
+            "etag": etag,
+            "last_modified": last_modified,
+            "signature": mtimes,
+        }
+    )
+    return cache
 
-@app.route('/customer-segmentation.js')
-def serve_customer_segmentation():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_customer_segmentation() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'customer-segmentation.js'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('customer-segmentation.js')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('customer-segmentation.js')}")
 
-    try:
-        response = send_from_directory('.', 'customer-segmentation.js')
-        app.logger.info("✅ send_from_directory() succeeded for customer-segmentation.js")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+def _serve_support_asset(kind):
+    cache = _build_support_asset(kind)
+    if not cache or not cache.get("content"):
+        return jsonify({"error": "Support assets unavailable"}), 500
 
-@app.route('/advanced-notification-intelligence.js')
-def serve_advanced_notification():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_advanced_notification() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'advanced-notification-intelligence.js'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('advanced-notification-intelligence.js')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('advanced-notification-intelligence.js')}")
+    etag = cache["etag"]
+    last_modified = cache["last_modified"]
+    content = cache["content"]
+    mimetype = SUPPORT_ASSETS[kind]["mimetype"]
 
-    try:
-        response = send_from_directory('.', 'advanced-notification-intelligence.js')
-        app.logger.info("✅ send_from_directory() succeeded for advanced-notification-intelligence.js")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+    if etag and request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
 
-@app.route('/licensing-dashboard.js')
-def serve_licensing_dashboard():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_licensing_dashboard() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'licensing-dashboard.js'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('licensing-dashboard.js')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('licensing-dashboard.js')}")
+    if last_modified:
+        last_modified_header = http_date(last_modified.timestamp())
+        if request.headers.get("If-Modified-Since") == last_modified_header:
+            return Response(status=304)
 
-    try:
-        response = send_from_directory('.', 'licensing-dashboard.js')
-        app.logger.info("✅ send_from_directory() succeeded for licensing-dashboard.js")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+    response = Response(content, mimetype=mimetype)
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    if etag:
+        response.headers["ETag"] = etag
+    if last_modified:
+        response.headers["Last-Modified"] = http_date(last_modified.timestamp())
+    return response
 
-# Serve CSS files
-@app.route('/enhanced-ux-components.css')
-def serve_enhanced_ux_css():
-    app.logger.info("="*60)
-    app.logger.info("🔍 serve_enhanced_ux_css() CALLED")
-    app.logger.info(f"Flask app.root_path: {app.root_path}")
-    app.logger.info(f"Current os.getcwd(): {os.getcwd()}")
-    app.logger.info(f"File exists in root_path: {os.path.exists(os.path.join(app.root_path, 'enhanced-ux-components.css'))}")
-    app.logger.info(f"File exists in cwd: {os.path.exists('enhanced-ux-components.css')}")
-    app.logger.info(f"Absolute path would be: {os.path.abspath('enhanced-ux-components.css')}")
 
-    try:
-        response = send_from_directory('.', 'enhanced-ux-components.css')
-        app.logger.info("✅ send_from_directory() succeeded for enhanced-ux-components.css")
-        return response
-    except Exception as e:
-        app.logger.error(f"❌ send_from_directory() FAILED: {type(e).__name__}: {e}")
-        import traceback
-        app.logger.error(f"Full traceback:\n{traceback.format_exc()}")
-        raise
+@app.route('/assets/desktop-support.js')
+def serve_desktop_support_js():
+    return _serve_support_asset("js")
+
+
+@app.route('/assets/desktop-support.css')
+def serve_desktop_support_css():
+    return _serve_support_asset("css")
 
 @app.route('/locales/<path:filename>')
 def serve_locales(filename):
@@ -6345,16 +6491,20 @@ def check_trial_status_legacy():
             cloud_validation_attempted = True
             
             # Attempt cloud validation with timeout
-            success, cloud_license_data, error_msg = _validate_license_with_cloud(
-                customer_email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
+            success, cloud_license_data, error_msg, from_cache = _validate_license_with_cloud(
+                customer_email,
+                unlock_token,
+                hardware_id,
+                CLOUD_VALIDATION_TIMEOUT,
+                cache_data=cache_data
             )
             
-            if success and cloud_license_data:
-                app.logger.info("CLOUD VALIDATION SUCCESS - updating cache")
-                
+            if success and cloud_license_data and not from_cache:
+                app.logger.info("Cloud validation success - updating cache with fresh data")
+
                 # Update cache with fresh validation
                 _save_license_cache(cloud_license_data)
-                
+
                 # Process cloud validation result
                 valid_until = cloud_license_data.get('valid_until')
                 if valid_until:
@@ -6388,6 +6538,12 @@ def check_trial_status_legacy():
                 else:
                     # Permanent license
                     return {"licensed": True, "active": True, "subscription": False, "source": "cloud_validation"}
+            elif cloud_license_data:
+                if from_cache:
+                    app.logger.info("Using cached license data without contacting cloud (fresh cache)")
+                else:
+                    app.logger.info("Cloud validation skipped/backoff - using cached payload")
+                return cloud_license_data
             else:
                 app.logger.warning(f"Cloud validation failed: {error_msg}")
     
@@ -7859,10 +8015,10 @@ def validate_license_api():
             if not result.get('licensed') and result.get('message') == 'Integration system not available':
                 app.logger.warning("Unified system not available, falling back to direct cloud validation")
                 try:
-                    success, cloud_data, error_msg = _validate_license_with_cloud(
+                    success, cloud_data, error_msg, from_cache = _validate_license_with_cloud(
                         customer_email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
                     )
-                    if success and cloud_data:
+                    if success and cloud_data and not from_cache:
                         app.logger.info("Direct cloud validation successful")
                         result = {
                             'licensed': True,
@@ -7875,6 +8031,12 @@ def validate_license_api():
                             '_unified_system': False,
                             '_fallback_method': 'direct_cloud_api'
                         }
+                    elif cloud_data:
+                        if from_cache:
+                            app.logger.info("Direct validation reused cached license payload")
+                        else:
+                            app.logger.info("Direct cloud validation skipped/backoff - using cached payload")
+                        result = cloud_data
                     else:
                         app.logger.error(f"Direct cloud validation failed: {error_msg}")
                         result = {
@@ -8503,8 +8665,12 @@ def activate_server_license():
 
         # Validate license with Cloudflare Workers
         app.logger.info("Validating license with Cloudflare Workers...")
-        success, license_data, error_msg = _validate_license_with_cloud(
-            email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
+        success, license_data, error_msg, from_cache = _validate_license_with_cloud(
+            email,
+            unlock_token,
+            hardware_id,
+            CLOUD_VALIDATION_TIMEOUT,
+            force_refresh=True
         )
 
         if not success or not license_data:
@@ -8614,6 +8780,232 @@ def get_license_credentials():
             "code": "SERVER_ERROR"
         }), 500
 
+
+def _get_cached_license_payload(email: str | None, source_hint: str = "server_license_cached"):
+    """
+    Build the cached license payload used when cloud validation is unavailable.
+
+    Returns:
+        dict payload if cache is valid, otherwise None.
+    """
+    cache_data = _load_license_cache()
+    if not cache_data:
+        return None
+
+    last_validation = cache_data.get('last_validation')
+    if not last_validation:
+        return None
+
+    days_offline, is_expired, warning_level = _calculate_grace_period_status(last_validation)
+    if is_expired:
+        return None
+
+    days_left = GRACE_PERIOD_DAYS - days_offline
+    cached_license = cache_data.get('license_data', {})
+    subscription_info = cached_license.get('subscriptionInfo', {})
+    customer_name = cached_license.get('customerName')
+    subscription_status = subscription_info.get('status')
+    next_billing_date = subscription_info.get('nextBillingDate')
+    current_period_end = subscription_info.get('currentPeriodEnd')
+    subscription_amount = subscription_info.get('amount') or subscription_info.get('plan', {}).get('amount')
+    subscription_currency = (subscription_info.get('currency') or 'eur').upper() if subscription_info else None
+
+    if subscription_amount and subscription_amount >= 100:
+        subscription_price = subscription_amount / 100.0
+    else:
+        subscription_price = subscription_amount
+
+    response_payload = {
+        "licensed": True,
+        "active": True,
+        "grace_period": True,
+        "days_offline": days_offline,
+        "grace_days_left": days_left,
+        "email": email,
+        "customer_name": customer_name,
+        "subscription_status": subscription_status,
+        "next_billing_date": next_billing_date,
+        "subscription_price": subscription_price,
+        "subscription_currency": subscription_currency,
+        "current_period_end": current_period_end,
+        "warning": f"Server offline for {days_offline} days. {days_left} days remaining.",
+        "source": source_hint
+    }
+
+    if warning_level is not None:
+        response_payload["warning_level"] = warning_level
+
+    return response_payload
+
+
+def _build_cached_license_response(email: str, source_hint: str = "server_license_cached"):
+    """
+    Return a cached license response if grace period allows continued operation.
+
+    Args:
+        email: Customer email associated with the cached license.
+        source_hint: String to identify the response source in logs/UI.
+
+    Returns:
+        (jsonify(result), status_code) when cache is valid, otherwise None.
+    """
+    payload = _get_cached_license_payload(email, source_hint)
+    if not payload:
+        return None
+    return jsonify(payload), 200
+
+
+def _derive_subscription_price(subscription_info: dict | None):
+    """Return (price, currency_upper) derived from subscription info."""
+    if not subscription_info:
+        return None, None
+
+    amount = subscription_info.get('amount')
+    if amount is None:
+        plan = subscription_info.get('plan') or {}
+        amount = plan.get('amount')
+
+    currency = (subscription_info.get('currency')
+                or subscription_info.get('plan', {}).get('currency')
+                or 'eur')
+    currency = currency.upper() if isinstance(currency, str) else None
+
+    if amount is None:
+        return None, currency
+
+    try:
+        amount_value = float(amount)
+    except (TypeError, ValueError):
+        return None, currency
+
+    if amount_value >= 100:
+        amount_value = amount_value / 100.0
+    return amount_value, currency
+
+
+def _normalize_license_status_payload(email: str | None,
+                                      payload: dict,
+                                      server_license: dict | None,
+                                      source: str) -> dict:
+    """Normalize various payload shapes to a consistent license status response."""
+    result: dict[str, object] = {}
+    email_value = payload.get('email') or email
+    subscription_info = payload.get('subscription_info') or {}
+    subscription_price = payload.get('subscription_price')
+    subscription_currency = payload.get('subscription_currency')
+    if subscription_price is None:
+        price, currency = _derive_subscription_price(subscription_info)
+        subscription_price = price
+        subscription_currency = subscription_currency or currency
+
+    result.update({
+        "licensed": payload.get('licensed', payload.get('valid', True)),
+        "active": payload.get('active', payload.get('valid', False)),
+        "email": email_value,
+        "customer_name": payload.get('customer_name') or payload.get('customerName'),
+        "subscription_status": payload.get('subscription_status') or subscription_info.get('status'),
+        "subscription_price": subscription_price,
+        "subscription_currency": subscription_currency,
+        "next_billing_date": payload.get('next_billing_date') or subscription_info.get('nextBillingDate'),
+        "current_period_end": payload.get('current_period_end') or subscription_info.get('currentPeriodEnd'),
+        "grace_period": payload.get('grace_period', False),
+        "grace_days_left": payload.get('grace_days_left'),
+        "days_offline": payload.get('days_offline'),
+        "source": payload.get('source', source),
+        "validated_at": payload.get('validated_at'),
+        "timestamp": datetime.now().isoformat(),
+    })
+
+    if server_license:
+        result.setdefault("activated_at", server_license.get('activated_at'))
+
+    return result
+
+
+def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
+    """Generate the canonical license status payload for /api/license/status."""
+    server_license = load_server_license()
+    if not server_license:
+        return {
+            "licensed": False,
+            "active": False,
+            "message": "No server license activated",
+            "trial_available": True,
+            "source": "server_license_missing",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    email = server_license.get('customer_email')
+    unlock_token = server_license.get('unlock_token')
+
+    if not email or not unlock_token:
+        return {
+            "licensed": False,
+            "active": False,
+            "error": "Server license credentials incomplete",
+            "source": "server_license_incomplete",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    hardware_id = get_enhanced_hardware_id()
+
+    success, license_data, error_msg, from_cache = _validate_license_with_cloud(
+        email,
+        unlock_token,
+        hardware_id,
+        CLOUD_VALIDATION_TIMEOUT,
+        force_refresh=force_refresh
+    )
+
+    if success and license_data:
+        if not from_cache:
+            _save_license_cache(license_data)
+        payload = _normalize_license_status_payload(
+            email,
+            license_data,
+            server_license,
+            source="server_license_cache" if from_cache else "server_license_cloud"
+        )
+        payload["active"] = license_data.get('valid', True)
+        if not payload.get("validated_at"):
+            payload["validated_at"] = license_data.get('validated_at') or datetime.now().isoformat()
+        payload["_cache_hit"] = from_cache
+        return payload
+
+    if license_data:
+        normalized = _normalize_license_status_payload(
+            email,
+            license_data,
+            server_license,
+            source=license_data.get('source', 'server_license_cached_payload')
+        )
+        normalized["_cache_hit"] = True
+        return normalized
+
+    cached_payload = _get_cached_license_payload(email, "server_license_cached_direct")
+    if cached_payload:
+        normalized = _normalize_license_status_payload(
+            email,
+            cached_payload,
+            server_license,
+            source=cached_payload.get('source', 'server_license_cached_direct')
+        )
+        normalized["_cache_hit"] = True
+        return normalized
+
+    return {
+        "licensed": False,
+        "active": False,
+        "error": error_msg or "License validation failed",
+        "email": email,
+        "source": "server_license_failed",
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+license_status_coordinator = LicenseStatusCoordinator(_compute_server_license_status)
+
+
 @app.route('/api/license/status', methods=['GET'])
 def get_server_license_status():
     """
@@ -8626,113 +9018,38 @@ def get_server_license_status():
         JSON response with license status and details
     """
     try:
-        # Load server license credentials
-        server_license = load_server_license()
+        force_refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes', 'force'}
+        payload, served_from_cache = license_status_coordinator.get_status(force_refresh=force_refresh)
 
-        if not server_license:
-            app.logger.debug("No server license found")
-            return jsonify({
-                "licensed": False,
-                "active": False,
-                "message": "No server license activated",
-                "trial_available": True
-            }), 200
-
-        # Get email and token from server license
-        email = server_license.get('customer_email')
-        unlock_token = server_license.get('unlock_token')
-
-        app.logger.info(f"Checking server license status for: {email[:5]}***")
-
-        # Get hardware ID
-        hardware_id = get_enhanced_hardware_id()
-
-        # Validate with Cloudflare Workers (with timeout)
-        success, license_data, error_msg = _validate_license_with_cloud(
-            email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
-        )
-
-        if success and license_data:
-            # Update cache with fresh validation
-            _save_license_cache(license_data)
-
-            subscription_info = license_data.get('subscription_info', {})  # Fixed: use snake_case key
-            app.logger.info(f"Server license valid - status: {subscription_info.get('status')}")
-
-            # Extract price information from subscription
-            subscription_amount = subscription_info.get('amount') or subscription_info.get('plan', {}).get('amount')
-            subscription_currency = subscription_info.get('currency', 'eur').upper()
-
-            # Convert from cents to currency units if needed (Stripe uses cents)
-            if subscription_amount and subscription_amount >= 100:
-                subscription_price = subscription_amount / 100.0
-            else:
-                subscription_price = subscription_amount or 20.0  # Fallback to 20
-
-            return jsonify({
-                "licensed": True,
-                "active": license_data.get('valid', False),
-                "email": email,
-                "customer_name": license_data.get('customerName'),
-                "subscription_status": subscription_info.get('status'),
-                "subscription_price": subscription_price,
-                "subscription_currency": subscription_currency,
-                "next_billing_date": subscription_info.get('nextBillingDate'),
-                "current_period_end": subscription_info.get('currentPeriodEnd'),
-                "activated_at": server_license.get('activated_at'),
-                "validated_at": datetime.now().isoformat(),
-                "source": "server_license"
-            }), 200
-
+        cache_state = "empty"
+        if payload:
+            cache_state = "cache_hit" if served_from_cache else "refreshed"
         else:
-            # Cloud validation failed - try cache with grace period
-            app.logger.warning(f"Cloud validation failed: {error_msg}")
-
-            cache_data = _load_license_cache()
-            if cache_data:
-                last_validation = cache_data.get('last_validation')
-                if last_validation:
-                    days_offline, is_expired, warning_level = _calculate_grace_period_status(last_validation)
-
-                    if not is_expired:
-                        # Still within grace period
-                        days_left = GRACE_PERIOD_DAYS - days_offline
-                        app.logger.info(f"Using cached license - grace period: {days_left} days left")
-
-                        cached_license = cache_data.get('license_data', {})
-                        subscription_info = cached_license.get('subscriptionInfo', {})
-
-                        return jsonify({
-                            "licensed": True,
-                            "active": True,
-                            "grace_period": True,
-                            "days_offline": days_offline,
-                            "grace_days_left": days_left,
-                            "email": email,
-                            "customer_name": cached_license.get('customerName'),
-                            "subscription_status": subscription_info.get('status'),
-                            "warning": f"Server offline for {days_offline} days. {days_left} days remaining.",
-                            "source": "server_license_cached"
-                        }), 200
-
-            # No valid license or grace period expired
-            app.logger.error("Server license validation failed and grace period expired")
-            return jsonify({
+            payload = {
                 "licensed": False,
                 "active": False,
-                "error": error_msg or "License validation failed",
-                "email": email,
-                "source": "server_license_failed"
-            }), 200
+                "message": "No license data available",
+                "source": "server_license_unavailable",
+                "timestamp": datetime.now().isoformat()
+            }
+
+        response_payload = copy.deepcopy(payload)
+        response_payload["_cache_state"] = cache_state
+        response_payload["_requested_force_refresh"] = force_refresh
+
+        return jsonify(response_payload), 200
 
     except Exception as e:
         app.logger.error(f"Unexpected error getting server license status: {e}")
-        return jsonify({
+        fallback = {
             "licensed": False,
             "active": False,
-            "error": "Internal server error",
-            "code": "SERVER_ERROR"
-        }), 500
+            "error": "Unable to verify license while offline",
+            "source": "server_license_exception",
+            "details": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+        return jsonify(fallback), 200
 
 @app.route('/api/license/deactivate', methods=['POST'])
 def deactivate_server_license():
@@ -9043,12 +9360,75 @@ def _decrypt_license_data(encrypted_data):
         app.logger.error(f"Failed to decrypt license data: {e}")
         return None
 
-def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, timeout=CLOUD_VALIDATION_TIMEOUT):
+def _validate_license_with_cloud(
+    customer_email,
+    unlock_token,
+    hardware_id,
+    timeout=CLOUD_VALIDATION_TIMEOUT,
+    cache_data=None,
+    force_refresh=False
+):
     """
     Validate license with Cloudflare Worker with timeout and error handling
     Returns: (success: bool, license_data: dict, error_message: str)
     """
+    if _should_skip_cloud_validation():
+        backoff_remaining = CLOUD_FAILURE_BACKOFF_SECONDS - (
+            (datetime.now() - _last_cloud_failure["timestamp"]).total_seconds()
+            if _last_cloud_failure.get("timestamp") else 0
+        )
+        app.logger.warning(
+            "Skipping cloud validation due to recent failure. "
+            f"Backoff remaining: {max(int(backoff_remaining), 0)}s"
+        )
+        cached_payload = _get_cached_license_payload(customer_email, "server_license_cached_backoff")
+        return False, cached_payload, _last_cloud_failure.get("error") or "Cloud validation backoff active", bool(cached_payload)
+
+    def _cache_age_seconds(cache_info):
+        if not cache_info:
+            return None
+        last_validation = cache_info.get('last_validation')
+        if not last_validation:
+            return None
+        try:
+            return (datetime.now() - datetime.fromisoformat(last_validation)).total_seconds()
+        except ValueError:
+            return None
+
+    cache_info = cache_data or _load_license_cache()
+    if not force_refresh:
+        age_seconds = _cache_age_seconds(cache_info)
+        if age_seconds is not None and age_seconds < CLOUD_VALIDATION_CACHE_SECONDS:
+            license_data = cache_info.get('license_data')
+            if license_data:
+                app.logger.info(
+                    "Skipping cloud validation - cached license confirmation "
+                    f"{age_seconds:.1f}s old (threshold {CLOUD_VALIDATION_CACHE_SECONDS}s)"
+                )
+                return True, dict(license_data), None, True
+
+    lock_acquired = _cloud_validation_lock.acquire(blocking=False)
+    if not lock_acquired:
+        if not force_refresh and cache_info and cache_info.get('license_data'):
+            app.logger.info("Cloud validation already in progress - returning cached license data")
+            return True, dict(cache_info['license_data']), None, True
+        # Wait for the in-flight validation to finish before re-checking freshness
+        _cloud_validation_lock.acquire()
+        lock_acquired = True
+        cache_info = _load_license_cache()
+
     try:
+        if not force_refresh:
+            age_seconds = _cache_age_seconds(cache_info)
+            if age_seconds is not None and age_seconds < CLOUD_VALIDATION_CACHE_SECONDS:
+                license_data = cache_info.get('license_data')
+                if license_data:
+                    app.logger.info(
+                        "Skipping cloud validation after lock acquisition - cached license confirmation "
+                        f"{age_seconds:.1f}s old"
+                    )
+                    return True, dict(license_data), None, True
+
         app.logger.info(f"Attempting cloud license validation for {customer_email[:5]}*** with {timeout}s timeout")
         
         # Prepare validation data
@@ -9062,6 +9442,7 @@ def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, time
         response = call_cloudflare_api('/validate', validation_data, timeout=timeout, max_retries=1)
         
         if not response:
+            _record_cloud_failure("No response from cloud validation service")
             return False, None, "No response from cloud validation service"
             
         if response.get('valid'):
@@ -9084,17 +9465,23 @@ def _validate_license_with_cloud(customer_email, unlock_token, hardware_id, time
                 license_data['subscription_id'] = subscription_info.get('subscriptionId')
                 license_data['subscription_status'] = subscription_info.get('status')
                 
+            _clear_cloud_failure()
             app.logger.info(f"Cloud validation successful for {customer_email[:5]}***")
-            return True, license_data, None
+            return True, license_data, None, False
         else:
             error_msg = response.get('error', 'Unknown cloud validation error')
             app.logger.warning(f"Cloud validation failed: {error_msg}")
-            return False, None, error_msg
+            _record_cloud_failure(error_msg)
+            return False, None, error_msg, False
             
     except Exception as e:
         error_msg = f"Cloud validation exception: {str(e)}"
         app.logger.error(error_msg)
-        return False, None, error_msg
+        _record_cloud_failure(error_msg)
+        return False, None, error_msg, False
+    finally:
+        if lock_acquired:
+            _cloud_validation_lock.release()
 
 def _save_license_cache(license_data, last_validation_timestamp=None):
     """Save validated license data to encrypted local cache"""
@@ -9201,6 +9588,7 @@ def _clear_license_cache():
             if os.path.exists(cache_path):
                 os.remove(cache_path)
         app.logger.info("License cache cleared")
+        license_status_coordinator.invalidate()
     except Exception as e:
         app.logger.error(f"Failed to clear license cache: {e}")
 
@@ -9264,6 +9652,7 @@ def save_server_license(customer_email, unlock_token):
             f.write(encrypted_data)
 
         app.logger.info(f"Server license saved successfully for {customer_email[:5]}***")
+        license_status_coordinator.invalidate()
         return True
 
     except Exception as e:
@@ -9352,6 +9741,7 @@ def delete_server_license():
             app.logger.info("Server license deactivated successfully")
             # Also clear the license cache when deactivating
             _clear_license_cache()
+            license_status_coordinator.invalidate()
             return True
         else:
             app.logger.warning("No server license files found to delete")
@@ -10441,12 +10831,17 @@ if __name__ == '__main__':
                     try:
                         unlock_token = server_license.get('unlock_token')
                         hardware_id = get_enhanced_hardware_id()
-                        success, license_data, error_msg = _validate_license_with_cloud(
+                        success, license_data, error_msg, from_cache = _validate_license_with_cloud(
                             email, unlock_token, hardware_id, timeout=5
                         )
                         if success and license_data:
-                            _save_license_cache(license_data)
-                            app.logger.info("Server license validated successfully on startup")
+                            if from_cache:
+                                app.logger.info("Server license cache already fresh on startup - skipping cloud call")
+                            else:
+                                _save_license_cache(license_data)
+                                app.logger.info("Server license validated successfully on startup")
+                        elif license_data:
+                            app.logger.info("Server license validation skipped/backoff on startup - using cached payload")
                         else:
                             app.logger.warning(f"Server license validation failed on startup: {error_msg}")
                             app.logger.warning("Will use cached license data with grace period")
@@ -10578,9 +10973,15 @@ if __name__ == '__main__':
     try:
         from waitress.server import create_server
 
-        app.logger.info("Starting Waitress server with graceful shutdown support...")
-        _server_instance = create_server(app, host='0.0.0.0', port=config.get('port', 5000))
-        app.logger.info(f"Server created on port {config.get('port', 5000)}")
+        waitress_threads = max(int(config.get('waitress_threads', 12)), 4)
+        app.logger.info(f"Starting Waitress server with graceful shutdown support (threads={waitress_threads})...")
+        _server_instance = create_server(
+            app,
+            host='0.0.0.0',
+            port=config.get('port', 5000),
+            threads=waitress_threads
+        )
+        app.logger.info(f"Server created on port {config.get('port', 5000)} (threads={waitress_threads})")
         _server_instance.run()  # This blocks until shutdown
     except KeyboardInterrupt:
         app.logger.info("KeyboardInterrupt received, shutting down gracefully...")
@@ -10588,3 +10989,27 @@ if __name__ == '__main__':
     except Exception as e:
         app.logger.error(f"Server error: {e}")
         shutdown_server()
+# Track recent cloud validation failures to avoid repeated blocking calls when offline
+_last_cloud_failure = {"timestamp": None, "error": None}
+
+
+def _record_cloud_failure(error_message: str | None = None) -> None:
+    """Remember the most recent cloud validation failure."""
+    _last_cloud_failure["timestamp"] = datetime.now()
+    _last_cloud_failure["error"] = error_message or "Cloud validation failed"
+
+
+def _clear_cloud_failure() -> None:
+    """Clear the cached cloud failure state after a successful validation."""
+    _last_cloud_failure["timestamp"] = None
+    _last_cloud_failure["error"] = None
+
+
+def _should_skip_cloud_validation() -> bool:
+    """Return True when recent cloud validation failed and we should back off temporarily."""
+    last_failure = _last_cloud_failure.get("timestamp")
+    if not last_failure:
+        return False
+
+    elapsed = (datetime.now() - last_failure).total_seconds()
+    return elapsed < CLOUD_FAILURE_BACKOFF_SECONDS

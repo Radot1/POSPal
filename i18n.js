@@ -79,6 +79,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch {}
         });
+        es.addEventListener('license_status_update', (event) => {
+            try {
+                if (typeof window.handleLicenseStatusSSE === 'function') {
+                    window.handleLicenseStatusSSE(event);
+                }
+            } catch (error) {
+                console.error('License status SSE handler error:', error);
+            }
+        });
     } catch {}
     // Poll fallback every 30s in case SSE is blocked by network/proxy
     try {

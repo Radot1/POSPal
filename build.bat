@@ -4,11 +4,11 @@ REM Build script for POSPal
 REM Description: This script creates a new 'build_output' directory and performs
 REM              the entire build process within it, keeping the root
 REM              directory clean.
-REM Version: 1.2.1 (Containerized Build Process)
+REM Version: 1.2.2(Containerized Build Process)
 REM ============================================================================
 setlocal
 
-set VERSION=1.2.1
+set VERSION=1.2.2
 set BUILD_DIR=build_output
 set RELEASE_DIR=POSPal_v%VERSION%
 set RELEASE_DIR_ONEDIR=POSPal_onedir_v%VERSION%
@@ -177,6 +177,7 @@ pyinstaller ^
     --add-data "..\advanced-notification-intelligence.js;." ^
     --add-data "..\licensing-dashboard.js;." ^
     --add-data "..\enhanced-ux-components.css;." ^
+    --add-data "..\static;static" ^
     --icon "..\app_icon.ico" ^
     ..\app.py
 
@@ -243,6 +244,7 @@ if defined BUILD_ONEDIR (
         --add-data "..\advanced-notification-intelligence.js;." ^
         --add-data "..\licensing-dashboard.js;." ^
         --add-data "..\enhanced-ux-components.css;." ^
+        --add-data "..\static;static" ^
         --icon "..\app_icon.ico" ^
         ..\app.py
     if %errorlevel% neq 0 (

@@ -10,6 +10,207 @@ let printerVerificationStatus = 'unknown'; // 'unknown', 'verified', 'failed'
 const SELECTED_TABLE_KEY = 'pospal_selected_table';
 const UNIVERSAL_COMMENT_KEY = 'pospal_universal_comment';
 const WORKER_URL = 'https://pospal-licensing-v2-production.bzoumboulis.workers.dev';
+const DEFAULT_GRACE_PERIOD_DAYS = 7;
+const LICENSE_STATUS_TTL_MS = 30_000;
+const NETWORK_ERROR_HINTS = [
+    'Failed to fetch',
+    'NetworkError',
+    'ERR_NETWORK',
+    'ERR_INTERNET_DISCONNECTED',
+    'ERR_CONNECTION',
+    'ECONNRESET',
+    'ECONNREFUSED'
+];
+
+function isLikelyNetworkError(error) {
+    if (!error) return false;
+    const message = String(error.message || error).toLowerCase();
+    return NETWORK_ERROR_HINTS.some((hint) => message.includes(hint.toLowerCase())) || !navigator.onLine;
+}
+
+function parseTimestamp(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+
+        if (/^\d+$/.test(trimmed)) {
+            const numeric = parseInt(trimmed, 10);
+            return Number.isNaN(numeric) ? null : numeric;
+        }
+
+        let parsed = Date.parse(trimmed);
+        if (!Number.isNaN(parsed)) return parsed;
+
+        // Try appending Z for naive ISO strings
+        parsed = Date.parse(`${trimmed}Z`);
+        return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    return null;
+}
+
+function formatDateTime(timestamp) {
+    const parsed = parseTimestamp(timestamp);
+    if (!parsed) return '--';
+    const date = new Date(parsed);
+    if (Number.isNaN(date.getTime())) return '--';
+
+    return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatDuration(ms) {
+    if (typeof ms !== 'number' || Number.isNaN(ms)) return '--';
+    if (ms <= 0) return 'expired';
+
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0 && parts.length < 2) parts.push(`${hours}h`);
+    if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+
+    if (!parts.length) return '<1m';
+    return parts.join(' ');
+}
+
+function translate(key, fallback) {
+    if (typeof window !== 'undefined' && window.i18next && typeof window.i18next.t === 'function') {
+        const result = window.i18next.t(key);
+        if (result && result !== key) {
+            return result;
+        }
+    }
+    return fallback;
+}
+
+function getElementByIds(ids) {
+    for (const id of ids) {
+        if (!id) continue;
+        const element = document.getElementById(id);
+        if (element) return element;
+    }
+    return null;
+}
+
+const ServerLicenseStatus = {
+    _initialized: false,
+    _status: null,
+    _lastFetchedAt: 0,
+    _loadingPromise: null,
+    _subscribers: new Set(),
+
+    init() {
+        if (this._initialized) return;
+        this._initialized = true;
+
+        // Expose SSE handler hook for i18n.js EventSource bootstrap
+        window.handleLicenseStatusSSE = (event) => {
+            try {
+                const payload = JSON.parse(event.data || '{}');
+                this._onStatusUpdate(payload, 'sse');
+            } catch (error) {
+                console.error('Failed to parse license status SSE payload', error);
+            }
+        };
+    },
+
+    _onStatusUpdate(payload, origin = 'unknown') {
+        if (!payload || typeof payload !== 'object') return;
+        this._status = payload;
+        this._lastFetchedAt = Date.now();
+        this._status._arrival_origin = origin;
+        this._broadcast(payload);
+    },
+
+    _broadcast(payload) {
+        for (const subscriber of this._subscribers) {
+            try {
+                subscriber(payload);
+            } catch (error) {
+                console.error('License status subscriber error:', error);
+            }
+        }
+    },
+
+    async _fetchStatus(forceRefresh = false) {
+        const query = forceRefresh ? '?refresh=1' : '';
+        const response = await fetch(`/api/license/status${query}`, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`License status fetch failed with status ${response.status}`);
+        }
+        const data = await response.json();
+        this._onStatusUpdate(data, forceRefresh ? 'force_fetch' : 'fetch');
+        return this._status;
+    },
+
+    ensureFetch(forceRefresh = false) {
+        this.init();
+
+        const now = Date.now();
+        if (!forceRefresh && this._status && (now - this._lastFetchedAt) < LICENSE_STATUS_TTL_MS) {
+            return Promise.resolve(this._status);
+        }
+
+        if (this._loadingPromise) {
+            if (forceRefresh) {
+                // Chain a forced refresh after the current promise resolves
+                this._loadingPromise = this._loadingPromise.catch(() => null).then(() => this._fetchStatus(true));
+                return this._loadingPromise;
+            }
+            return this._loadingPromise;
+        }
+
+        this._loadingPromise = this._fetchStatus(forceRefresh)
+            .catch((error) => {
+                console.error('License status fetch error:', error);
+                throw error;
+            })
+            .finally(() => {
+                this._loadingPromise = null;
+            });
+
+        return this._loadingPromise;
+    },
+
+    getCurrentStatus() {
+        return this._status;
+    },
+
+    subscribe(handler) {
+        if (typeof handler !== 'function') return () => {};
+        this._subscribers.add(handler);
+        if (this._status) {
+            try {
+                handler(this._status);
+            } catch (error) {
+                console.error('License status subscriber error:', error);
+            }
+        }
+        return () => {
+            this._subscribers.delete(handler);
+        };
+    },
+
+    forceRefresh() {
+        return this.ensureFetch(true);
+    }
+};
+
+ServerLicenseStatus.init();
+
+let serverLicenseDisplayUnsubscribe = null;
 
 // --- Device Preferences Manager (Phase 3: Multi-device printer redesign) ---
 const DevicePreferences = {
@@ -572,6 +773,395 @@ const LicenseStorage = {
     // Removed: setDailyRetryData() - not needed for server-centric licensing
 };
 
+const OfflineInterruptionManager = {
+    initialized: false,
+    isRenderable: false,
+    countdownTimer: null,
+    retryInFlight: false,
+    elements: {
+        modal: null,
+        graceText: null,
+        lastValidated: null,
+        countdown: null,
+        modeLabel: null,
+        retryButton: null,
+        dismiss: null,
+        helpButton: null,
+        statusStrip: null,
+        statusMessage: null,
+        stripCountdown: null,
+        stripRetry: null,
+        stripHelp: null
+    },
+    state: {
+        modalDismissed: false,
+        isOffline: false,
+        lastValidated: null,
+        graceExpiry: null,
+        gracePeriodDays: DEFAULT_GRACE_PERIOD_DAYS,
+        message: translate('ui.offlineStatusStrip.messageGrace', 'POSPal is running in grace mode until the connection returns.'),
+        summary: translate('ui.offlineModal.graceSummary', 'Orders continue locally while we retry the licensing service.'),
+        reason: null,
+        modeLabel: translate('ui.offlineModal.mode.trial', 'Grace mode (full features)')
+    },
+
+    init() {
+        if (this.initialized) return;
+        this.cacheElements();
+        this.initialized = true;
+        this.isRenderable = Boolean(this.elements.modal || this.elements.statusStrip);
+
+        if (!this.isRenderable) {
+            console.warn('OfflineInterruptionManager: offline UI markup not found on this page');
+            return;
+        }
+
+        this.bindEvents();
+    },
+
+    cacheElements() {
+        this.elements.modal = getElementByIds(['offlineInterruptionModal']);
+        this.elements.graceText = getElementByIds(['offlineModalGraceText']);
+        this.elements.lastValidated = getElementByIds(['offlineModalLastValidated']);
+        this.elements.countdown = getElementByIds(['offlineModalGraceCountdown', 'offlineModalCountdown']);
+        this.elements.modeLabel = getElementByIds(['offlineModalModeLabel']);
+        this.elements.retryButton = getElementByIds(['offlineModalRetryButton', 'offlineRetryButton']);
+        this.elements.dismiss = getElementByIds(['offlineModalDismiss', 'offlineContinueButton']);
+        this.elements.helpButton = getElementByIds(['offlineModalHelpButton', 'offlineOfflineHelpButton']);
+        this.elements.statusStrip = getElementByIds(['offlineStatusStrip']);
+        this.elements.statusMessage = getElementByIds(['offlineStatusMessage']);
+        this.elements.stripCountdown = getElementByIds(['offlineStripCountdown']);
+        this.elements.stripRetry = getElementByIds(['offlineStripRetryButton']);
+        this.elements.stripHelp = getElementByIds(['offlineStripHelpLink']);
+    },
+
+    bindEvents() {
+        if (this.elements.retryButton) {
+            this.elements.retryButton.addEventListener('click', () => this.handleRetryRequest());
+        }
+
+        if (this.elements.stripRetry) {
+            this.elements.stripRetry.addEventListener('click', () => this.handleRetryRequest());
+        }
+
+        if (this.elements.dismiss) {
+            this.elements.dismiss.addEventListener('click', () => this.dismissModal());
+            this.elements.dismiss.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    this.dismissModal();
+                }
+            });
+        }
+
+        if (this.elements.helpButton) {
+            this.elements.helpButton.addEventListener('click', () => {
+                if (typeof showConnectivityHelp === 'function') {
+                    showConnectivityHelp();
+                } else {
+                    this.openModalFromStatusStrip();
+                }
+            });
+        }
+
+        if (this.elements.stripHelp) {
+            const openModal = (event) => {
+                event.preventDefault();
+                this.openModalFromStatusStrip();
+            };
+
+            this.elements.stripHelp.addEventListener('click', openModal);
+            this.elements.stripHelp.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openModal(event);
+                }
+            });
+        }
+    },
+
+    handleOffline(details = {}) {
+        if (!this.initialized) this.init();
+        if (!this.isRenderable) return;
+
+        this.state.isOffline = true;
+
+        if (typeof details.gracePeriodDays === 'number' && !Number.isNaN(details.gracePeriodDays)) {
+            this.state.gracePeriodDays = Math.max(1, details.gracePeriodDays);
+        }
+
+        if (details.modeLabel) {
+            this.state.modeLabel = details.modeLabel;
+        } else {
+            this.state.modeLabel = translate('ui.offlineModal.mode.trial', this.state.modeLabel);
+        }
+
+        this.state.reason = details.reason || this.state.reason;
+        this.state.message = details.message || translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+        this.state.summary = details.summary || translate('ui.offlineModal.graceSummary', this.state.summary);
+
+        const inferredLastValidated = this.resolveLastValidated(details.lastValidated);
+        if (inferredLastValidated) {
+            this.state.lastValidated = inferredLastValidated;
+        }
+
+        this.state.graceExpiry = this.computeGraceExpiry(
+            this.state.lastValidated,
+            this.state.gracePeriodDays,
+            details.graceExpiry
+        );
+
+        const shouldShowModal = details.forceModal || (!this.state.modalDismissed && details.showModal !== false);
+
+        this.updateModalContent(details);
+        this.updateStatusStrip();
+        this.startCountdown();
+
+        if (shouldShowModal) {
+            this.showModal(true);
+        } else {
+            this.hideModal();
+        }
+    },
+
+    handleOnline() {
+        if (!this.initialized) this.init();
+        if (!this.isRenderable) return;
+
+        this.state.summary = translate('ui.offlineModal.graceSummary', this.state.summary);
+        this.state.modeLabel = translate('ui.offlineModal.mode.trial', 'Grace mode (full features)');
+        this.state.message = translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+        this.state.isOffline = false;
+        this.state.modalDismissed = false;
+        this.stopCountdown();
+        this.hideModal();
+        this.hideStatusStrip();
+        this.state.reason = null;
+    },
+
+    resolveLastValidated(sourceValue) {
+        const explicit = parseTimestamp(sourceValue);
+        if (explicit) return explicit;
+
+        if (this.state.lastValidated) return this.state.lastValidated;
+
+        const licenseData = LicenseStorage.getLicenseData();
+        const fromCache = parseTimestamp(licenseData.lastValidated);
+        if (fromCache) return fromCache;
+
+        const stored = localStorage.getItem('pospal_last_successful_validation');
+        const parsedStored = parseTimestamp(stored);
+        return parsedStored;
+    },
+
+    computeGraceExpiry(lastValidated, gracePeriodDays, override) {
+        const explicit = parseTimestamp(override);
+        if (explicit) return explicit;
+
+        const base = parseTimestamp(lastValidated);
+        if (!base) return null;
+
+        const days = typeof gracePeriodDays === 'number' && gracePeriodDays > 0
+            ? gracePeriodDays
+            : DEFAULT_GRACE_PERIOD_DAYS;
+
+        return base + days * 24 * 60 * 60 * 1000;
+    },
+
+    updateModalContent(details = {}) {
+        if (!this.isRenderable) return;
+
+        if (this.elements.graceText) {
+            this.elements.graceText.textContent = this.state.summary;
+        }
+
+        if (this.elements.lastValidated) {
+            this.elements.lastValidated.textContent = this.state.lastValidated
+                ? formatDateTime(this.state.lastValidated)
+                : '--';
+        }
+
+        if (this.elements.countdown) {
+            this.elements.countdown.textContent = '--';
+        }
+
+        if (this.elements.modeLabel) {
+            this.elements.modeLabel.textContent = this.state.modeLabel || translate('ui.offlineModal.mode.trial', 'Grace mode (full features)');
+        }
+    },
+
+    updateStatusStrip() {
+        if (!this.elements.statusStrip) return;
+
+        this.elements.statusStrip.style.display = 'inline-flex';
+        this.elements.statusStrip.classList.add('offline-visible');
+
+        if (this.elements.statusMessage) {
+            this.elements.statusMessage.textContent = this.state.message;
+        }
+
+        this.updateCountdownLabels();
+    },
+
+    hideStatusStrip() {
+        if (!this.elements.statusStrip) return;
+        this.elements.statusStrip.classList.remove('offline-visible');
+        this.elements.statusStrip.style.display = 'none';
+
+        if (this.elements.statusMessage) {
+            this.elements.statusMessage.textContent = '';
+        }
+
+        if (this.elements.stripCountdown) {
+            this.elements.stripCountdown.textContent = '';
+        }
+        this.state.message = translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+    },
+
+    startCountdown() {
+        this.stopCountdown();
+        this.updateCountdownLabels();
+
+        if (!this.state.graceExpiry) return;
+
+        this.countdownTimer = setInterval(() => {
+            this.updateCountdownLabels();
+        }, 60000);
+    },
+
+    stopCountdown() {
+        if (this.countdownTimer) {
+            clearInterval(this.countdownTimer);
+            this.countdownTimer = null;
+        }
+    },
+
+    updateCountdownLabels() {
+        if (!this.isRenderable) return;
+
+        if (!this.state.graceExpiry) {
+            if (this.elements.countdown) this.elements.countdown.textContent = '--';
+            if (this.elements.stripCountdown) this.elements.stripCountdown.textContent = '';
+            return;
+        }
+
+        const remaining = this.state.graceExpiry - Date.now();
+        const formatted = formatDuration(remaining);
+
+        if (this.elements.countdown) {
+            this.elements.countdown.textContent = formatted === 'expired'
+                ? translate('ui.offlineStatusStrip.graceExpired', 'Grace period expired')
+                : formatted;
+        }
+
+        if (this.elements.stripCountdown) {
+            if (formatted === 'expired') {
+                this.elements.stripCountdown.textContent = translate('ui.offlineStatusStrip.graceExpiredShort', 'Grace expired');
+            } else if (formatted === '--') {
+                this.elements.stripCountdown.textContent = '';
+            } else {
+                const template = translate('ui.offlineStatusStrip.countdown', 'Grace ends in {{time}}');
+                this.elements.stripCountdown.textContent = template.replace('{{time}}', formatted);
+            }
+        }
+    },
+
+    showModal(force = false) {
+        if (!this.elements.modal) return;
+        if (!force && this.state.modalDismissed) return;
+
+        this.state.modalDismissed = false;
+        this.elements.modal.style.display = 'flex';
+        this.elements.modal.setAttribute('aria-hidden', 'false');
+    },
+
+    hideModal() {
+        if (!this.elements.modal) return;
+        this.elements.modal.style.display = 'none';
+        this.elements.modal.setAttribute('aria-hidden', 'true');
+    },
+
+    dismissModal() {
+        this.state.modalDismissed = true;
+        this.hideModal();
+    },
+
+    openModalFromStatusStrip() {
+        if (!this.isRenderable) return;
+        this.state.modalDismissed = false;
+        this.showModal(true);
+    },
+
+    handleRetryRequest() {
+        if (this.retryInFlight) return;
+        if (!window.FrontendLicenseManager || typeof FrontendLicenseManager.performValidation !== 'function') {
+            return;
+        }
+
+        this.retryInFlight = true;
+        this.setRetryLoading(true);
+        const successMessage = translate(
+            'ui.offlineStatusStrip.retrySuccess',
+            'Connection restored. License sync resumed.'
+        );
+        const failureMessage = translate(
+            'ui.offlineStatusStrip.retryFailed',
+            'Still trying to reach the licensing service. We will keep retrying in the background.'
+        );
+
+        Promise.resolve(FrontendLicenseManager.performValidation(true))
+            .then((result) => {
+                const state =
+                    result ||
+                    (typeof FrontendLicenseManager.getCurrentStatus === 'function'
+                        ? FrontendLicenseManager.getCurrentStatus()
+                        : null);
+                const isOffline = state && state.status === 'offline';
+                if (typeof showToast === 'function') {
+                    showToast(isOffline ? failureMessage : successMessage, isOffline ? 'warning' : 'success', 6000);
+                } else {
+                    console.log(isOffline ? failureMessage : successMessage);
+                }
+            })
+            .catch((error) => {
+                console.warn('Offline retry failed', error);
+                if (typeof showToast === 'function') {
+                    showToast(failureMessage, 'warning', 6000);
+                } else {
+                    console.warn(failureMessage);
+                }
+            })
+            .finally(() => {
+                this.retryInFlight = false;
+                this.setRetryLoading(false);
+            });
+    },
+
+    setRetryLoading(isLoading) {
+        const buttons = [this.elements.retryButton, this.elements.stripRetry].filter(Boolean);
+
+        buttons.forEach((btn) => {
+            if (!btn) return;
+
+            if (isLoading) {
+                if (!btn.dataset.originalHtml) {
+                    btn.dataset.originalHtml = btn.innerHTML;
+                }
+                btn.disabled = true;
+                btn.classList.add('opacity-75', 'cursor-wait');
+                const retryingLabel = translate('ui.offlineStatusStrip.retrying', 'Retrying...');
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span style="margin-left:6px;">${retryingLabel}</span>`;
+            } else {
+                if (btn.dataset.originalHtml) {
+                    btn.innerHTML = btn.dataset.originalHtml;
+                }
+                btn.disabled = false;
+                btn.classList.remove('opacity-75', 'cursor-wait');
+            }
+        });
+    }
+};
+
 // --- PHASE 3B: Frontend License Manager - Unified Validation System ---
 const FrontendLicenseManager = {
     // State management
@@ -596,6 +1186,14 @@ const FrontendLicenseManager = {
         
         // Initialize sub-managers
         StatusDisplayManager.init();
+
+        // Subscribe to server license status push updates
+        this._unsubscribeFromServerStatus = ServerLicenseStatus.subscribe((status) => {
+            if (!this.isValidating) {
+                Promise.resolve(this.processServerLicenseStatus(status, { source: 'subscription' }))
+                    .catch((error) => console.error('License subscription processing error:', error));
+            }
+        });
         
         // Setup online/offline detection
         this.setupNetworkDetection();
@@ -612,12 +1210,21 @@ const FrontendLicenseManager = {
         window.addEventListener('online', () => {
             console.log('Network connection restored');
             this.cache.isOnline = true;
+            OfflineInterruptionManager.handleOnline();
             this.performValidation(true); // Force validation when back online
         });
         
         window.addEventListener('offline', () => {
             console.log('Network connection lost');
             this.cache.isOnline = false;
+            OfflineInterruptionManager.handleOffline({
+                reason: 'browser-offline',
+                message: translate('ui.offlineStatusStrip.messageOffline', 'Device offline. POSPal is using cached license data.'),
+                lastValidated: this.getLastValidationTimestamp(),
+                gracePeriodDays: this.gracePeriodDays,
+                forceModal: true,
+                summary: translate('ui.offlineModal.graceSummary', 'Orders continue locally. Restore internet connectivity to resume license syncing.')
+            });
             this.updateUIBasedOnCache();
         });
         
@@ -636,12 +1243,15 @@ const FrontendLicenseManager = {
             }
         }, ValidationTimers.SUBSCRIPTION_CHECK, 'interval');
     },
+
+    async performValidation(forceValidation = false) {
+        return this.validateLicense(forceValidation);
+    },
     
     // Main validation entry point - replaces scattered calls
     async validateLicense(forceValidation = false) {
         if (!this.isInitialized) this.init();
 
-        // Prevent multiple simultaneous validations
         if (this.isValidating && !forceValidation) {
             console.log('Validation already in progress, skipping duplicate call');
             return this.currentValidationState;
@@ -651,161 +1261,179 @@ const FrontendLicenseManager = {
 
         try {
             console.log('Starting unified license validation...');
-
-            // NEW: Check server license FIRST (multi-device support)
-            console.log('Step 1: Checking for server license...');
-            const serverLicense = await this.fetchServerLicenseStatus();
-
-            if (serverLicense && serverLicense.licensed && serverLicense.active) {
-                // Server has an active license - use it!
-                console.log('✅ Server license found and active - using server license');
-
-                this.currentValidationState = {
-                    status: 'active',
-                    customerName: serverLicense.customer_name,
-                    email: serverLicense.email,
-                    source: 'server',
-                    timestamp: Date.now()
-                };
-
-                this.throttledUIUpdate(() => {
-                    StatusDisplayManager.updateLicenseStatus('active', {
-                        customerName: serverLicense.customer_name,
-                        isOnline: true
-                    });
-                    this.showPortalButtons();
-                });
-
-                console.log('Server license validation complete');
-                this.isValidating = false;
-                return this.currentValidationState;
-            } else if (serverLicense && serverLicense.grace_period) {
-                // Server license in grace period
-                console.log(`⚠️  Server license in grace period - ${serverLicense.grace_days_left} days left`);
-
-                this.currentValidationState = {
-                    status: 'active',
-                    customerName: serverLicense.customer_name,
-                    email: serverLicense.email,
-                    grace_period: true,
-                    grace_days_left: serverLicense.grace_days_left,
-                    source: 'server_grace',
-                    timestamp: Date.now()
-                };
-
-                this.throttledUIUpdate(() => {
-                    StatusDisplayManager.updateLicenseStatus('active', {
-                        customerName: serverLicense.customer_name,
-                        isOnline: false,
-                        gracePeriod: true,
-                        graceDaysLeft: serverLicense.grace_days_left
-                    });
-                    this.showPortalButtons();
-                });
-
-                this.isValidating = false;
-                return this.currentValidationState;
-            } else {
-                // No server license found - show trial/unlicensed status
-                console.log('ℹ️  No server license found - showing trial status');
-
-                // Check for payment success (user just returned from Stripe)
-                const paymentData = LicenseStorage.getPaymentData();
-                if (paymentData.paymentSuccess) {
-                    console.log('Payment detected - redirecting to activation');
-                    // Show message to activate on server
-                    showToast('Payment successful! Please activate your license using the "Already paid?" button.', 'info', 10000);
-                    LicenseStorage.clearPaymentData();
-                }
-
-                // Show trial status
-                await this.checkTrialStatus();
-            }
-            
+            const serverLicense = await this.fetchServerLicenseStatus(forceValidation);
+            return await this.processServerLicenseStatus(serverLicense, { source: 'fetch', force: forceValidation });
         } catch (error) {
+            if (isLikelyNetworkError(error)) {
+                this.presentOfflineFallback(error);
+                return this.currentValidationState;
+            }
+
             console.error('License validation error:', error);
             this.handleValidationError(error);
+            return this.currentValidationState;
         } finally {
             this.isValidating = false;
         }
-        
+    },
+
+    async processServerLicenseStatus(serverLicense, context = {}) {
+        if (!serverLicense) {
+            console.warn('No server license payload available');
+            await this.checkTrialStatus();
+            return this.currentValidationState;
+        }
+
+        if (serverLicense.offline) {
+            console.warn('License validation operating in offline grace mode');
+            this.presentOfflineFallback(serverLicense.error);
+            return this.currentValidationState;
+        }
+
+        const sourceHint = serverLicense.source || '';
+        const graceSources = new Set([
+            'server_license_cached',
+            'server_license_cached_backoff',
+            'server_license_cached_direct',
+            'cached_grace_period',
+            'server_grace'
+        ]);
+        const isGraceResponse = Boolean(serverLicense.grace_period) || graceSources.has(sourceHint);
+
+        if (isGraceResponse) {
+            const graceDaysLeft = typeof serverLicense.grace_days_left === 'number'
+                ? serverLicense.grace_days_left
+                : null;
+            const daysOfflineFromServer = typeof serverLicense.days_offline === 'number'
+                ? serverLicense.days_offline
+                : null;
+
+            console.log(`Server license in grace period - days left: ${graceDaysLeft ?? 'unknown'}`);
+
+            const lastValidationIso = serverLicense.validated_at;
+            const graceValidationTimestamp = parseTimestamp(lastValidationIso) || Date.now();
+            this.cache.isOnline = false;
+            this.cache.lastValidation = graceValidationTimestamp;
+            localStorage.setItem('pospal_last_successful_validation', graceValidationTimestamp.toString());
+
+            const fallbackDaysOffline = (Date.now() - graceValidationTimestamp) / (1000 * 60 * 60 * 24);
+            const daysOffline = daysOfflineFromServer ?? fallbackDaysOffline;
+
+            LicenseStorage.setLicenseData({
+                customerEmail: serverLicense.email,
+                customerName: serverLicense.customer_name,
+                licenseStatus: serverLicense.subscription_status || 'active',
+                nextBillingDate: serverLicense.next_billing_date,
+                lastValidated: lastValidationIso || graceValidationTimestamp
+            });
+            LicenseStorage.updateValidationTimestamp();
+
+            this.currentValidationState = {
+                status: 'offline',
+                customerName: serverLicense.customer_name,
+                email: serverLicense.email,
+                grace_period: true,
+                grace_days_left: graceDaysLeft,
+                days_offline: daysOfflineFromServer,
+                source: sourceHint || 'server_grace',
+                timestamp: graceValidationTimestamp
+            };
+
+            const computedGracePeriod = (daysOfflineFromServer !== null && graceDaysLeft !== null)
+                ? daysOfflineFromServer + graceDaysLeft
+                : this.gracePeriodDays;
+
+            OfflineInterruptionManager.handleOffline({
+                reason: 'license-grace-mode',
+                message: translate('ui.offlineStatusStrip.messageGrace', 'POSPal is running in grace mode until the connection returns.'),
+                lastValidated: lastValidationIso || graceValidationTimestamp,
+                gracePeriodDays: computedGracePeriod,
+                summary: translate('ui.offlineModal.graceSummary', 'Orders continue locally while we retry the licensing service.')
+            });
+
+            this.throttledUIUpdate(() => {
+                StatusDisplayManager.updateLicenseStatus('offline', {
+                    customerName: serverLicense.customer_name,
+                    daysSince: daysOffline,
+                    gracePeriod: true,
+                    graceDaysLeft: graceDaysLeft
+                });
+                this.showPortalButtons();
+            });
+
+            return this.currentValidationState;
+        }
+
+        if (serverLicense.licensed && serverLicense.active) {
+            console.log('Server license found and active - using server license');
+
+            const validationTimestamp = Date.now();
+            this.cache.isOnline = true;
+            this.cache.lastValidation = validationTimestamp;
+            localStorage.setItem('pospal_last_successful_validation', validationTimestamp.toString());
+
+            LicenseStorage.setLicenseData({
+                customerEmail: serverLicense.email,
+                customerName: serverLicense.customer_name,
+                licenseStatus: serverLicense.subscription_status || 'active',
+                nextBillingDate: serverLicense.next_billing_date,
+                lastValidated: serverLicense.validated_at || validationTimestamp
+            });
+            LicenseStorage.updateValidationTimestamp();
+
+            this.currentValidationState = {
+                status: 'active',
+                customerName: serverLicense.customer_name,
+                email: serverLicense.email,
+                source: 'server',
+                timestamp: validationTimestamp
+            };
+
+            OfflineInterruptionManager.handleOnline();
+
+            this.throttledUIUpdate(() => {
+                StatusDisplayManager.updateLicenseStatus('active', {
+                    customerName: serverLicense.customer_name,
+                    isOnline: true
+                });
+                this.showPortalButtons();
+            });
+
+            console.log('Server license validation complete');
+            return this.currentValidationState;
+        }
+
+        console.log('ℹ️  No server license found - showing trial status');
+
+        const paymentData = LicenseStorage.getPaymentData();
+        if (paymentData.paymentSuccess) {
+            console.log('Payment detected - redirecting to activation');
+            showToast('Payment successful! Please activate your license using the "Already paid?" button.', 'info', 10000);
+            LicenseStorage.clearPaymentData();
+        }
+
+        await this.checkTrialStatus();
         return this.currentValidationState;
     },
     
     // NEW: Fetch server license status (Multi-device support)
-    async fetchServerLicenseStatus() {
+    async fetchServerLicenseStatus(forceRefresh = false) {
         try {
             console.log('Checking server license status...');
-
-            const response = await fetch('/api/license/status', {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (!response.ok) {
-                console.error('Server license status check failed:', response.status);
-                return null;
-            }
-
-            const data = await response.json();
+            const data = await ServerLicenseStatus.ensureFetch(forceRefresh);
             console.log('Server license status:', data);
 
-            if (data.licensed && data.active) {
-                // Server has an active license - use it
-                console.log(`Server license active for ${data.email}`);
-
-                // Update local cache for UI display (NOT credentials - those stay on server)
-                LicenseStorage.setLicenseData({
-                    customerEmail: data.email,
-                    customerName: data.customer_name,
-                    licenseStatus: data.subscription_status || 'active',
-                    nextBillingDate: data.next_billing_date,
-                    lastValidated: data.validated_at
-                });
-
-                LicenseStorage.updateValidationTimestamp();
-
-                return {
-                    licensed: true,
-                    active: true,
-                    email: data.email,
-                    customer_name: data.customer_name,
-                    subscription_status: data.subscription_status,
-                    next_billing_date: data.next_billing_date,
-                    source: 'server'
-                };
-            } else if (data.grace_period) {
-                // Server license in grace period
-                console.log(`Server license in grace period: ${data.grace_days_left} days left`);
-
-                LicenseStorage.setLicenseData({
-                    customerEmail: data.email,
-                    customerName: data.customer_name,
-                    licenseStatus: 'active',
-                    nextBillingDate: data.next_billing_date
-                });
-
-                return {
-                    licensed: true,
-                    active: true,
-                    grace_period: true,
-                    grace_days_left: data.grace_days_left,
-                    email: data.email,
-                    customer_name: data.customer_name,
-                    source: 'server_grace'
-                };
-            } else {
-                // No server license
-                console.log('No active server license found');
-                return {
-                    licensed: false,
-                    active: false,
-                    source: 'server_none'
-                };
-            }
+            return data;
         } catch (error) {
             console.error('Error fetching server license status:', error);
-            return null;
+            if (isLikelyNetworkError(error)) {
+                return {
+                    offline: true,
+                    error
+                };
+            }
+
+            throw error;
         }
     },
 
@@ -870,6 +1498,30 @@ const FrontendLicenseManager = {
         // Show loading state
         StatusDisplayManager.updateLicenseStatus('loading');
         this.currentValidationState = { status: 'loading', error: error.message };
+    },
+
+    presentOfflineFallback(error) {
+        this.cache.isOnline = false;
+
+        const errorMessage = error && (error.message || String(error));
+        const lastValidated = this.getLastValidationTimestamp();
+        OfflineInterruptionManager.handleOffline({
+            reason: 'license-validation-offline',
+            message: navigator.onLine
+                ? translate('ui.offlineModal.message.unreachable', 'Cannot reach the licensing service. POSPal is running in grace mode.')
+                : translate('ui.offlineStatusStrip.messageOffline', 'Device offline. POSPal is running in grace mode.'),
+            lastValidated,
+            gracePeriodDays: this.gracePeriodDays,
+            summary: translate('ui.offlineModal.graceSummary', 'Orders continue locally. Reconnect the internet to restore licensing sync.')
+        });
+
+        this.updateUIBasedOnCache();
+
+        this.currentValidationState = {
+            status: 'offline',
+            timestamp: Date.now(),
+            error: errorMessage || 'network-unavailable'
+        };
     },
     
     // Unified UI update methods
@@ -953,16 +1605,42 @@ const FrontendLicenseManager = {
             StatusDisplayManager.updateLicenseStatus('offline', { daysSince });
         });
     },
+
+    getLastValidationTimestamp() {
+        if (this.cache.lastValidation) return this.cache.lastValidation;
+
+        const licenseData = LicenseStorage.getLicenseData();
+        const cached = parseTimestamp(licenseData.lastValidated);
+        if (cached) {
+            this.cache.lastValidation = cached;
+            return cached;
+        }
+
+        const stored = parseTimestamp(localStorage.getItem('pospal_last_successful_validation'));
+        if (stored) {
+            this.cache.lastValidation = stored;
+            return stored;
+        }
+
+        return null;
+    },
     
     // Update UI based on cached data when offline
     updateUIBasedOnCache() {
-        const licenseData = LicenseStorage.getLicenseData();
-        
-        if (licenseData.unlockToken && licenseData.customerEmail && licenseData.licenseStatus === 'active') {
-            this.handleOfflineGracePeriod(licenseData);
-        } else {
-            this.updateUIForOfflineStatus(0);
-        }
+        const lastValidated = this.getLastValidationTimestamp();
+        const daysSince = lastValidated
+            ? (Date.now() - lastValidated) / (1000 * 60 * 60 * 24)
+            : 0;
+
+        this.updateUIForOfflineStatus(daysSince);
+
+        OfflineInterruptionManager.handleOffline({
+            showModal: false,
+            lastValidated,
+            gracePeriodDays: this.gracePeriodDays,
+            message: 'POSPal is running in grace mode until the connection returns.',
+            summary: translate('ui.offlineModal.graceSummary', 'Orders continue locally while we retry the licensing service.')
+        });
     },
     
     // Throttle UI updates to prevent flicker
@@ -1023,7 +1701,7 @@ const FrontendLicenseManager = {
         if (priceElement && licenseData.subscriptionPrice) {
             const currency = licenseData.subscriptionCurrency || 'EUR';
             const price = parseFloat(licenseData.subscriptionPrice);
-            const currencySymbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : currency;
+            const currencySymbol = currency === 'EUR' ? '\u20AC' : currency === 'USD' ? '$' : currency;
             priceElement.textContent = `${currencySymbol}${price.toFixed(2)} per month`;
         }
 
@@ -1349,6 +2027,8 @@ const elements = {};
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOM Content Loaded - Starting initialization...');
+
+    OfflineInterruptionManager.init();
 
     // Load centralized state first
     console.log('Loading centralized state...');
@@ -1921,7 +2601,7 @@ function createTableManagementModal() {
                 <div class="p-4 space-y-4">
                     <div id="tableManagementInfo" class="bg-gray-50 p-3 rounded-md">
                         <div class="text-sm text-gray-600">Status: <span id="tableStatusDisplay"></span></div>
-                        <div class="text-sm text-gray-600">Current Total: <span id="tableCurrentTotal">€0.00</span></div>
+                        <div class="text-sm text-gray-600">Current Total: <span id="tableCurrentTotal">\u20AC0.00</span></div>
                         <div class="text-sm text-gray-600">Active Orders: <span id="tableActiveOrders">0</span></div>
                     </div>
                     <div class="space-y-2">
@@ -1987,7 +2667,7 @@ function updateTableStatusSummary() {
     // Update header summary
     const summaryEl = document.getElementById('tableStatusSummary');
     if (summaryEl) {
-        summaryEl.innerHTML = `${occupiedCount}/${totalTables} occupied • €${totalRevenue.toFixed(2)} total`;
+        summaryEl.innerHTML = `${occupiedCount}/${totalTables} occupied • \u20AC${totalRevenue.toFixed(2)} total`;
     }
 
     // Update modal stats
@@ -2106,7 +2786,7 @@ function createTableCard(tableId, table, session, isSuggestion = false, matchQua
             ${table.name ? `<div class="text-xs text-gray-500 mb-1">${table.name}</div>` : ''}
 
             <div class="text-sm font-medium ${status === 'available' ? 'text-green-700' : 'text-red-700'} mb-1">
-                ${status === 'available' ? 'Available' : `€${total.toFixed(2)}`}
+                ${status === 'available' ? 'Available' : `\u20AC${total.toFixed(2)}`}
             </div>
 
             <!-- Capacity and Activity Info -->
@@ -2703,7 +3383,7 @@ function handleTableUpdate(data) {
         console.warn(`Table ${table_id} not found in allTablesData cache`);
     }
 
-        console.log(`Table ${table_id} updated: €${total.toFixed(2)}, ${orders.length} orders`);
+        console.log(`Table ${table_id} updated: \u20AC${total.toFixed(2)}, ${orders.length} orders`);
 
     } catch (error) {
         if (error instanceof ValidationError) {
@@ -2738,7 +3418,7 @@ function updateTableCardDisplay(tableId, total, orders) {
     const infoDisplay = tableCard.querySelector('.text-xs.text-gray-600');
 
     if (statusDisplay) {
-        statusDisplay.textContent = status === 'available' ? 'Available' : `€${total.toFixed(2)}`;
+        statusDisplay.textContent = status === 'available' ? 'Available' : `\u20AC${total.toFixed(2)}`;
         statusDisplay.className = `text-sm font-medium ${status === 'available' ? 'text-green-700' : 'text-red-700'} mb-1`;
     }
 
@@ -3060,7 +3740,7 @@ function showTableManagementModal(tableId) {
     // Update modal content
     document.getElementById('tableManagementNumber').textContent = tableId;
     document.getElementById('tableStatusDisplay').textContent = session.total > 0 ? 'Occupied' : 'Available';
-    document.getElementById('tableCurrentTotal').textContent = `€${(session.total || 0).toFixed(2)}`;
+    document.getElementById('tableCurrentTotal').textContent = `\u20AC${(session.total || 0).toFixed(2)}`;
     document.getElementById('tableActiveOrders').textContent = session.orders ? session.orders.length : 0;
 
     // Show modal
@@ -3237,13 +3917,13 @@ function showTableBillModal(billData) {
                                 ${order.items.map(item => `
                                     <div class="flex justify-between text-sm">
                                         <span>${item.quantity}x ${item.name}${item.options ? ` (${item.options})` : ''}</span>
-                                        <span>€${(item.quantity * item.price).toFixed(2)}</span>
+                                        <span>\u20AC${(item.quantity * item.price).toFixed(2)}</span>
                                     </div>
                                 `).join('')}
                             </div>
                             <div class="flex justify-between font-medium mt-2 pt-2 border-t">
                                 <span>Order Total:</span>
-                                <span>€${order.total.toFixed(2)}</span>
+                                <span>\u20AC${order.total.toFixed(2)}</span>
                             </div>
                         </div>
                     `).join('')}
@@ -3252,7 +3932,7 @@ function showTableBillModal(billData) {
                 <div class="border-t pt-4">
                     <div class="flex justify-between text-xl font-bold">
                         <span>Table Total:</span>
-                        <span>€${billData.total.toFixed(2)}</span>
+                        <span>\u20AC${billData.total.toFixed(2)}</span>
                     </div>
                 </div>
             </div>
@@ -3628,7 +4308,7 @@ function renderDesktopTableBar() {
                     T${table.table_number}
                 </div>
                 <div class="table-info" style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">
-                    ${seats} seats | €${total.toFixed(2)}
+                    ${seats} seats | \u20AC${total.toFixed(2)}
                 </div>
             </button>
         `;
@@ -3744,14 +4424,14 @@ function updateTableIndicatorBadge() {
             console.log('[BADGE-UPDATE] Full table object:', table);
 
             iconSpan.textContent = '📍';
-            textSpan.textContent = `T${table.table_number} | €${total.toFixed(2)}`;
-            indicator.setAttribute('aria-label', `Table ${table.table_number}, Total: €${total.toFixed(2)} - Click to change table`);
+            textSpan.textContent = `T${table.table_number} | \u20AC${total.toFixed(2)}`;
+            indicator.setAttribute('aria-label', `Table ${table.table_number}, Total: \u20AC${total.toFixed(2)} - Click to change table`);
 
             console.log('[BADGE-UPDATE] Badge updated to:', textSpan.textContent);
         } else {
             console.error('[BADGE-UPDATE] TABLE NOT FOUND in allTablesData!');
             iconSpan.textContent = '📍';
-            textSpan.textContent = `T${selectedTableId} | €0.00`;
+            textSpan.textContent = `T${selectedTableId} | \u20AC0.00`;
             indicator.setAttribute('aria-label', `Table ${selectedTableId} - Click to change table`);
         }
     }
@@ -3839,7 +4519,7 @@ function renderMobileTableBadge() {
                 <div class="flex items-center gap-2">
                     <span class="status-dot ${statusClass}"></span>
                     <span>Table ${table.table_number}</span>
-                    <span class="text-yellow-300">€${total.toFixed(2)}</span>
+                    <span class="text-yellow-300">\u20AC${total.toFixed(2)}</span>
                 </div>
             `;
         } else {
@@ -3911,7 +4591,7 @@ function renderMobileTablePickerGrid() {
             </div>
             <div class="font-bold text-lg">Takeaway</div>
             <div class="text-sm text-gray-600">No Table</div>
-            <div class="text-lg font-bold mt-1">€0.00</div>
+            <div class="text-lg font-bold mt-1">\u20AC0.00</div>
         </div>
     `;
 
@@ -3934,7 +4614,7 @@ function renderMobileTablePickerGrid() {
                 <div class="font-bold text-sm">Table ${table.table_number}</div>
                 <div class="text-xs text-gray-600">${seats} seats</div>
                 <div class="text-sm text-gray-700">${statusText}</div>
-                <div class="text-lg font-bold mt-1 text-yellow-600">€${total.toFixed(2)}</div>
+                <div class="text-lg font-bold mt-1 text-yellow-600">\u20AC${total.toFixed(2)}</div>
             </div>
         `;
     });
@@ -4400,7 +5080,7 @@ function renderProductsForSelectedCategory() {
                             <h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
                         </div>
                         <div class="mt-auto">
-                           <p class="text-lg font-bold text-black">€${(item.price || 0).toFixed(2)}</p>
+                           <p class="text-lg font-bold text-black">\u20AC${(item.price || 0).toFixed(2)}</p>
                         </div>
                     </div>
                     ${badgeIconsHTML}
@@ -4426,7 +5106,7 @@ function renderProductsForSelectedCategory() {
                             <h3 class="text-sm font-semibold text-gray-800 mb-1">${item.name}</h3>
                         </div>
                         <div class="mt-auto">
-                           <p class="text-lg font-bold text-black">€${(item.price || 0).toFixed(2)}</p>
+                           <p class="text-lg font-bold text-black">\u20AC${(item.price || 0).toFixed(2)}</p>
                         </div>
                     </div>
                     ${badgeIconsHTML}
@@ -4538,7 +5218,7 @@ function updateOrderDisplay() {
 
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                     item.generalSelectedOptions.forEach(opt => {
-                        const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
+                        const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}\u20AC${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
                         optionDisplayHTML += `<div style="font-size: 0.8em; color: #777; margin-left: 10px;">↳ ${opt.name}${priceChangeDisplay}</div>`;
                     });
                 }
@@ -4554,7 +5234,7 @@ function updateOrderDisplay() {
                             ${commentText}
                         </div>
                         <div class="flex flex-col items-end">
-                            <span class="font-bold text-gray-900 mb-1">€${itemTotal.toFixed(2)}</span>
+                            <span class="font-bold text-gray-900 mb-1">\u20AC${itemTotal.toFixed(2)}</span>
                             <div class="flex items-center space-x-1">
                                 <button onclick="event.stopPropagation(); decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600 transition-colors" title="Decrease Quantity">
                                     <i class="fas fa-minus-circle text-sm"></i>
@@ -4579,7 +5259,7 @@ function updateOrderDisplay() {
                 div.className = `order-item p-2 border-b border-gray-200 flex items-center justify-between text-sm ${item.orderId === itemForNumpad?.orderId ? 'selected-for-numpad' : ''}`;
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                     item.generalSelectedOptions.forEach(opt => {
-                        const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
+                        const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}\u20AC${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
                         optionDisplayHTML += `<span class="block text-xs text-gray-600 ml-4">↳ ${opt.name}${priceChangeDisplay}</span>`;
                     });
                 }
@@ -4587,12 +5267,12 @@ function updateOrderDisplay() {
                 div.innerHTML = `
                     <div class="flex-grow pr-2">
                         <span class="font-medium text-gray-800">${item.name}</span>
-                        <span class="text-xs text-gray-500 ml-1">(Base: €${parseFloat(item.price || 0).toFixed(2)})</span>
+                        <span class="text-xs text-gray-500 ml-1">(Base: \u20AC${parseFloat(item.price || 0).toFixed(2)})</span>
                         ${optionDisplayHTML}
                         ${commentText}
                     </div>
                     <div class="flex flex-col items-end space-y-1 flex-shrink-0">
-                         <span class="font-semibold text-gray-800">€${pricePerUnit.toFixed(2)} x ${item.quantity} = €${itemTotal.toFixed(2)}</span>
+                         <span class="font-semibold text-gray-800">\u20AC${pricePerUnit.toFixed(2)} x ${item.quantity} = \u20AC${itemTotal.toFixed(2)}</span>
                         <div class="flex items-center space-x-1">
                             <button onclick="decrementQuantity('${item.orderId}')" class="p-1 text-gray-500 hover:text-red-600"><i class="fas fa-minus-circle"></i></button>
                             <span class="font-semibold text-gray-800 w-6 text-center cursor-pointer" onclick="openNumpadForOrderItem('${item.orderId}', ${item.quantity}, '${item.name.replace(/'/g, "\\'")}')">${item.quantity}</span>
@@ -4607,7 +5287,7 @@ function updateOrderDisplay() {
         });
     }
 
-    if (elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = `€${total.toFixed(2)}`;
+    if (elements.orderTotalDisplay) elements.orderTotalDisplay.textContent = `\u20AC${total.toFixed(2)}`;
     
     // Save to centralized state
     updateCurrentOrder();
@@ -4651,7 +5331,7 @@ function promptForItemComment(orderId) {
     if (item) {
         let currentSelectionDisplay = "";
         if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
-            currentSelectionDisplay += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name + (parseFloat(opt.priceChange || 0) !== 0 ? ` ${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)}` : '')).join(', ')})`;
+            currentSelectionDisplay += ` (Opt: ${item.generalSelectedOptions.map(opt => opt.name + (parseFloat(opt.priceChange || 0) !== 0 ? ` ${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}\u20AC${parseFloat(opt.priceChange || 0).toFixed(2)}` : '')).join(', ')})`;
         }
         const newComment = prompt("Enter note for " + item.name + currentSelectionDisplay.trim() + ":", item.comment || "");
         if (newComment !== null) {
@@ -4762,7 +5442,7 @@ function showPrintConfirmModal(tableNumberForOrder) {
 
     if (tableEl) tableEl.textContent = tableNumberForOrder || 'Takeaway';
     if (itemsEl) itemsEl.textContent = `${totalItems} item${totalItems !== 1 ? 's' : ''}`;
-    if (totalEl) totalEl.textContent = `€${totalPrice.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `\u20AC${totalPrice.toFixed(2)}`;
 
     // Store table number for later
     pendingOrderData = { tableNumberForOrder };
@@ -5208,7 +5888,7 @@ function openItemOptionSelectModal(itemForModal, context) {
 
             let labelText = optionName;
             if (priceChange !== 0) {
-                labelText += ` (${priceChange > 0 ? '+' : ''}€${priceChange.toFixed(2)})`;
+                labelText += ` (${priceChange > 0 ? '+' : ''}\u20AC${priceChange.toFixed(2)})`;
             }
 
             const label = document.createElement('label');
@@ -6959,7 +7639,7 @@ function renderExistingItemsInModal() {
             div.className = `p-2 border border-gray-300 rounded-md flex justify-between items-center text-sm bg-white hover:bg-gray-50`;
 
             let itemDetails = `<span class="font-medium text-gray-800">${item.name}</span>
-                               <span class="text-xs text-gray-500 ml-1">- €${(item.price || 0).toFixed(2)}</span>`;
+                               <span class="text-xs text-gray-500 ml-1">- \u20AC${(item.price || 0).toFixed(2)}</span>`;
             if (item.hasGeneralOptions && item.generalOptions && item.generalOptions.length > 0) {
                 itemDetails += `<span class="text-xs text-blue-600 ml-2">(+ Options)</span>`;
             }
@@ -7564,7 +8244,7 @@ function renderTemporaryOptionsListModal() {
     tempItemOptionsModal.forEach(opt => {
         const pillSpan = document.createElement('span');
         pillSpan.className = 'option-pill';
-        const priceDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}€${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
+        const priceDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}\u20AC${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
         pillSpan.textContent = `${opt.name}${priceDisplay}`;
 
         const removeBtn = document.createElement('button');
@@ -7707,7 +8387,7 @@ function renderTodaysOrdersList(orders) {
                     <span class="font-semibold text-gray-800">${t('ui.orderHistory.orderNumber','Order #')}${order.order_number}</span>
                     <span class="text-xs text-gray-600 ml-2">Table: ${order.table_number || 'N/A'}</span>
                     <span class="text-xs text-gray-500 ml-2">${t('ui.orderHistory.time','Time:')} ${formattedTimestamp}</span>
-                    <span class="text-xs text-gray-500 ml-2">Total: €${order.order_total || '-'}</span>
+                    <span class="text-xs text-gray-500 ml-2">Total: \u20AC${order.order_total || '-'}</span>
                 </div>
                 <div class="flex items-center gap-1">
                     <button onclick=\"toggleOrderDetails('${order.order_number}')\" class=\"px-3 py-1.5 text-xs btn-secondary rounded hover:opacity-80 transition\">Details</button>
@@ -7757,16 +8437,16 @@ async function toggleOrderDetails(orderNumber) {
             throw new Error(data.message || `HTTP ${resp.status}`);
         }
         const itemsHtml = (data.items || []).map(it => {
-            const opts = (it.generalSelectedOptions || []).map(o => `${o.name}${(o.priceChange||0)?` (+€${Number(o.priceChange).toFixed(2)})`:''}`).join(', ');
+            const opts = (it.generalSelectedOptions || []).map(o => `${o.name}${(o.priceChange||0)?` (+\u20AC${Number(o.priceChange).toFixed(2)})`:''}`).join(', ');
             const comment = (it.comment||'').trim();
-            return `<li class="mb-1"><span class="font-medium">${it.quantity}x ${it.name}</span> - €${Number(it.itemPriceWithModifiers || it.basePrice || 0).toFixed(2)}${opts?`<div class='text-xs text-gray-600'>Options: ${opts}</div>`:''}${comment?`<div class='text-xs text-gray-600'>Note: ${comment}</div>`:''}</li>`;
+            return `<li class="mb-1"><span class="font-medium">${it.quantity}x ${it.name}</span> - \u20AC${Number(it.itemPriceWithModifiers || it.basePrice || 0).toFixed(2)}${opts?`<div class='text-xs text-gray-600'>Options: ${opts}</div>`:''}${comment?`<div class='text-xs text-gray-600'>Note: ${comment}</div>`:''}</li>`;
         }).join('');
         container.innerHTML = `
             <div class="text-xs text-gray-700">
                 <div class="flex flex-wrap gap-3 mb-2">
                     <span><span class="text-gray-500">Table:</span> ${data.table_number || 'N/A'}</span>
                     <span><span class="text-gray-500">Payment:</span> ${String(data.payment_method||'Cash').toUpperCase()}</span>
-                    <span><span class="text-gray-500">Total:</span> €${Number(data.order_total||0).toFixed(2)}</span>
+                    <span><span class="text-gray-500">Total:</span> \u20AC${Number(data.order_total||0).toFixed(2)}</span>
                 </div>
                 ${data.universal_comment ? `<div class="mb-2"><span class="text-gray-500">Order Notes:</span> ${data.universal_comment}</div>` : ''}
                 <ul class="list-disc ml-5">
@@ -7890,15 +8570,15 @@ function renderDaySummary(summary) {
             </div>
             <div class="flex justify-between items-center py-2 border-b">
                 <span class="font-medium text-gray-600">${t('ui.daySummary.totalCash','Total Cash Payments:')}</span>
-                <span class="font-semibold text-green-600">€${summary.cash_total.toFixed(2)}</span>
+                <span class="font-semibold text-green-600">\u20AC${summary.cash_total.toFixed(2)}</span>
             </div>
             <div class="flex justify-between items-center py-2 border-b">
                 <span class="font-medium text-gray-600">${t('ui.daySummary.totalCard','Total Card Payments:')}</span>
-                <span class="font-semibold text-blue-600">€${summary.card_total.toFixed(2)}</span>
+                <span class="font-semibold text-blue-600">\u20AC${summary.card_total.toFixed(2)}</span>
             </div>
             <div class="flex justify-between items-center pt-3 mt-2 border-t-2 border-black">
                 <span class="text-lg font-bold text-gray-900">${t('ui.daySummary.grandTotal','Grand Total:')}</span>
-                <span class="font-semibold text-gray-900">€${summary.grand_total.toFixed(2)}</span>
+                <span class="font-semibold text-gray-900">\u20AC${summary.grand_total.toFixed(2)}</span>
             </div>
         </div>
     `;
@@ -7984,9 +8664,9 @@ function fetchCustomDateRangeAnalytics() {
 function renderAnalytics(data) {
     const isDesktopUI = document.body.classList.contains('desktop-ui');
     
-    document.getElementById('kpi-gross-revenue').textContent = `€${(data.grossRevenue || 0).toFixed(2)}`;
+    document.getElementById('kpi-gross-revenue').textContent = `\u20AC${(data.grossRevenue || 0).toFixed(2)}`;
     document.getElementById('kpi-total-orders').textContent = data.totalOrders || 0;
-    document.getElementById('kpi-atv').textContent = `€${(data.atv || 0).toFixed(2)}`;
+    document.getElementById('kpi-atv').textContent = `\u20AC${(data.atv || 0).toFixed(2)}`;
 
     // No card/cash metrics or fees/net revenue required
 
@@ -8004,8 +8684,8 @@ function renderAnalytics(data) {
         const totalAmount = cashAmount + cardAmount;
 
         // Update amounts
-        document.getElementById('kpi-payment-cash').textContent = `€${cashAmount.toFixed(2)}`;
-        document.getElementById('kpi-payment-card').textContent = `€${cardAmount.toFixed(2)}`;
+        document.getElementById('kpi-payment-cash').textContent = `\u20AC${cashAmount.toFixed(2)}`;
+        document.getElementById('kpi-payment-card').textContent = `\u20AC${cardAmount.toFixed(2)}`;
 
         // Update transaction counts
         const cashCountEl = document.getElementById('kpi-payment-cash-count');
@@ -8036,13 +8716,13 @@ function renderAnalytics(data) {
         renderList('kpi-sales-by-category', data.salesByCategory, item => `
             <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
                 <span style="color: #4b5563; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-right: 0.5rem;">${item.category}</span>
-                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">€${(item.total || 0).toFixed(2)}</span>
+                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">\u20AC${(item.total || 0).toFixed(2)}</span>
             </div>`, "No category sales yet.");
 
         renderList('kpi-top-revenue-items', data.topRevenueItems, item => `
             <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
                 <span style="color: #4b5563; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; padding-right: 0.5rem;">${item.name}</span>
-                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">€${(item.revenue || 0).toFixed(2)}</span>
+                <span style="font-weight: 500; color: #1f2937; white-space: nowrap;">\u20AC${(item.revenue || 0).toFixed(2)}</span>
             </div>`, "No items sold yet.");
 
         renderList('kpi-best-sellers', data.bestSellers, item => `
@@ -8060,13 +8740,13 @@ function renderAnalytics(data) {
         renderList('kpi-sales-by-category', data.salesByCategory, item => `
             <div class="flex justify-between text-sm">
                 <span class="text-gray-600 truncate pr-2">${item.category}</span>
-                <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.total || 0).toFixed(2)}</span>
+                <span class="font-medium text-gray-800 whitespace-nowrap">\u20AC${(item.total || 0).toFixed(2)}</span>
             </div>`, "No category sales yet.");
 
         renderList('kpi-top-revenue-items', data.topRevenueItems, item => `
             <div class="flex justify-between text-sm">
                 <span class="text-gray-600 truncate pr-2">${item.name}</span>
-                <span class="font-medium text-gray-800 whitespace-nowrap">€${(item.revenue || 0).toFixed(2)}</span>
+                <span class="font-medium text-gray-800 whitespace-nowrap">\u20AC${(item.revenue || 0).toFixed(2)}</span>
             </div>`, "No items sold yet.");
 
         renderList('kpi-best-sellers', data.bestSellers, item => `
@@ -8094,7 +8774,7 @@ function renderAnalytics(data) {
             addonsContainer.innerHTML = items.map(a => `
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-600 truncate pr-2">${a.name}</span>
-                    <span class="font-medium text-gray-800 whitespace-nowrap">€${(a.revenue || 0).toFixed(2)} • ${a.attachRate ? Math.round(a.attachRate*100) : 0}%</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">\u20AC${(a.revenue || 0).toFixed(2)} • ${a.attachRate ? Math.round(a.attachRate*100) : 0}%</span>
                 </div>
             `).join('');
         }
@@ -8174,7 +8854,7 @@ function renderSalesByHourChart(salesByHour) {
     for (let i = ticks; i >= 0; i--) {
         const val = (maxRevenue / ticks) * i;
         const lbl = document.createElement('div');
-        lbl.textContent = `€${val.toFixed(0)}`;
+        lbl.textContent = `\u20AC${val.toFixed(0)}`;
         if (isDesktopUI) {
             lbl.style.cssText = 'height:1px; transform:translateY(6px)';
         }
@@ -8220,7 +8900,7 @@ function renderSalesByHourChart(salesByHour) {
         // Add event listeners
         bar.addEventListener('mouseenter', function(e) {
             // Update tooltip
-            tooltip.textContent = `€${hourData.total.toFixed(2)}`;
+            tooltip.textContent = `\u20AC${hourData.total.toFixed(2)}`;
             tooltip.style.opacity = '1';
             
             // Position tooltip inside the chart area - to the right of the bar
@@ -8312,7 +8992,7 @@ function renderDaypartChart(dayparts) {
     for (let i = ticks; i >= 0; i--) {
         const val = (max / ticks) * i;
         const lbl = document.createElement('div');
-        lbl.textContent = `€${val.toFixed(0)}`;
+        lbl.textContent = `\u20AC${val.toFixed(0)}`;
         if (isDesktopUI) {
             lbl.style.cssText = 'height:1px; transform:translateY(6px)';
         }
@@ -8335,7 +9015,7 @@ function renderDaypartChart(dayparts) {
             wrap.innerHTML = `
                 <div style=\"width:100%; height:100%; display:flex; align-items:flex-end; justify-content:center; position:relative;\">
                     <div style=\"background-color:#111827; width:70%; height:${h}%; border-radius:2px; transition:background-color 0.2s;\" onmouseover=\"this.nextElementSibling.style.opacity='1'; this.style.backgroundColor='#3b82f6'\" onmouseout=\"this.nextElementSibling.style.opacity='0'; this.style.backgroundColor='#111827'\"></div>
-                    <div style=\"position:absolute; bottom: 100%; margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;\">€${(d.total || 0).toFixed(2)}</div>
+                    <div style=\"position:absolute; bottom: 100%; margin-bottom: 0.25rem; width: max-content; padding: 0.25rem 0.5rem; background-color: #1f2937; color: white; font-size: 0.75rem; border-radius: 0.25rem; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 10;\">\u20AC${(d.total || 0).toFixed(2)}</div>
                 </div>
                 <span style=\"font-size:12px; color:#6b7280; margin-top:4px;\">${d.label}</span>
             `;
@@ -8344,7 +9024,7 @@ function renderDaypartChart(dayparts) {
             wrap.innerHTML = `
                 <div class=\"w-full h-full flex items-end justify-center relative\">
                     <div class=\"bg-gray-900 w-3/4\" style=\"height:${h}%; border-radius:2px\" onmouseover=\"this.nextElementSibling.classList.remove('opacity-0'); this.classList.add('bg-indigo-600')\" onmouseout=\"this.nextElementSibling.classList.add('opacity-0'); this.classList.remove('bg-indigo-600')\"></div>
-                    <div class=\"absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 transition-opacity pointer-events-none z-10\">€${(d.total || 0).toFixed(2)}</div>
+                    <div class=\"absolute bottom-full mb-1 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 transition-opacity pointer-events-none z-10\">\u20AC${(d.total || 0).toFixed(2)}</div>
                 </div>
                 <span class=\"text-xs text-gray-500 mt-1\">${d.label}</span>
             `;
@@ -8518,17 +9198,45 @@ async function loadLicenseInfo() {
 
                 // If server has active license, populate licenseData from it
                 if (serverLicense.licensed && serverLicense.active) {
+                    const graceMode = Boolean(
+                        serverLicense.grace_period ||
+                        serverLicense.source === 'server_license_cached' ||
+                        serverLicense.source === 'cached_grace_period'
+                    );
+
                     licenseData = {
                         unlockToken: true,  // Set to truthy value so existing checks work
                         customerEmail: serverLicense.email,
                         customerName: serverLicense.customer_name,
-                        licenseStatus: serverLicense.subscription_status || 'active',
+                        licenseStatus: graceMode ? 'offline_grace' : (serverLicense.subscription_status || 'active'),
                         nextBillingDate: serverLicense.next_billing_date,
                         subscriptionPrice: serverLicense.subscription_price,
                         subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
-                        lastValidated: serverLicense.validated_at
+                        lastValidated: serverLicense.validated_at,
+                        graceDaysLeft: serverLicense.grace_days_left,
+                        daysOffline: serverLicense.days_offline,
+                        isGraceMode: graceMode,
+                        isOnline: !graceMode
                     };
-                    console.log('Active server license found, license data populated');
+                    console.log(graceMode
+                        ? 'Server license cached in grace mode, license data populated'
+                        : 'Active server license found, license data populated');
+                } else if (serverLicense.grace_period) {
+                    licenseData = {
+                        unlockToken: true,
+                        customerEmail: serverLicense.email,
+                        customerName: serverLicense.customer_name,
+                        licenseStatus: 'offline_grace',
+                        nextBillingDate: serverLicense.next_billing_date,
+                        subscriptionPrice: serverLicense.subscription_price,
+                        subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+                        lastValidated: serverLicense.validated_at,
+                        graceDaysLeft: serverLicense.grace_days_left,
+                        daysOffline: serverLicense.days_offline,
+                        isGraceMode: true,
+                        isOnline: false
+                    };
+                    console.log('Server license running in grace mode - offline status reflected in UI data');
                 }
             } else {
                 console.warn('Server license status check failed:', response.status);
@@ -8543,14 +9251,52 @@ async function loadLicenseInfo() {
             licenseData = LicenseStorage.getLicenseData();
         }
 
+        if (licenseData && licenseData.unlockToken) {
+            if (licenseData.graceDaysLeft === undefined && licenseData.grace_days_left !== undefined) {
+                licenseData.graceDaysLeft = licenseData.grace_days_left;
+            }
+            if (licenseData.daysOffline === undefined && licenseData.days_offline !== undefined) {
+                licenseData.daysOffline = licenseData.days_offline;
+            }
+
+            const derivedGraceMode = Boolean(
+                licenseData.isGraceMode ||
+                licenseData.licenseStatus === 'offline_grace' ||
+                licenseData.grace_period ||
+                typeof licenseData.graceDaysLeft === 'number'
+            );
+
+            if (derivedGraceMode) {
+                licenseData.isGraceMode = true;
+                licenseData.isOnline = false;
+                if (licenseData.licenseStatus !== 'offline_grace') {
+                    licenseData.licenseStatus = 'offline_grace';
+                }
+                if (typeof licenseData.daysOffline !== 'number' && licenseData.lastValidated) {
+                    const lastValidationTs = parseTimestamp(licenseData.lastValidated);
+                    if (lastValidationTs) {
+                        licenseData.daysOffline = (Date.now() - lastValidationTs) / (1000 * 60 * 60 * 24);
+                    }
+                }
+            } else if (licenseData.isOnline === undefined) {
+                licenseData.isOnline = true;
+            }
+        }
+
         console.log('License data for display:', licenseData);
 
         // Update license status badge
         const statusBadge = document.getElementById('license-status-badge');
         if (statusBadge) {
-            if (licenseData.unlockToken) {
+            if (licenseData && licenseData.unlockToken) {
                 // Has a license - show actual status
-                if (licenseData.licenseStatus === 'active') {
+                if (licenseData.licenseStatus === 'offline_grace') {
+                    const daysLeftText = typeof licenseData.graceDaysLeft === 'number'
+                        ? ` (${licenseData.graceDaysLeft} days left)`
+                        : '';
+                    statusBadge.textContent = `Grace Mode - Offline${daysLeftText}`;
+                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+                } else if (licenseData.licenseStatus === 'active') {
                     statusBadge.textContent = 'Active License';
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
                 } else if (licenseData.licenseStatus === 'inactive') {
@@ -8586,14 +9332,27 @@ async function loadLicenseInfo() {
         }
 
         // If we have ANY license data (active or inactive), populate the billing information
-        if (licenseData.unlockToken) {
+        if (licenseData && licenseData.unlockToken) {
             console.log(`License found (status: ${licenseData.licenseStatus}), updating billing display...`);
 
             // Update the status display based on license status
-            StatusDisplayManager.updateLicenseStatus(licenseData.licenseStatus || 'inactive', {
+            const statusPayload = {
                 customerName: licenseData.customerName,
-                isOnline: true
-            });
+                isOnline: licenseData.isOnline !== false
+            };
+
+            if (licenseData.isGraceMode) {
+                statusPayload.gracePeriod = true;
+                if (typeof licenseData.graceDaysLeft === 'number') {
+                    statusPayload.graceDaysLeft = licenseData.graceDaysLeft;
+                }
+                if (typeof licenseData.daysOffline === 'number') {
+                    statusPayload.daysSince = licenseData.daysOffline;
+                }
+            }
+
+            const statusKey = licenseData.isGraceMode ? 'offline' : (licenseData.licenseStatus || 'inactive');
+            StatusDisplayManager.updateLicenseStatus(statusKey, statusPayload);
 
             // Use the enhanced updateBillingDateDisplay function
             FrontendLicenseManager.updateBillingDateDisplay(licenseData);
@@ -8769,7 +9528,7 @@ function updateLockScreenData(analytics) {
     const revenueElement = document.getElementById('lockscreen-revenue-amount');
     if (revenueElement) {
         const revenue = analytics.total_revenue || 0;
-        revenueElement.textContent = `€${revenue.toFixed(2)}`;
+        revenueElement.textContent = `\u20AC${revenue.toFixed(2)}`;
     }
     
     // Update days used
@@ -9680,7 +10439,7 @@ function updateUsageStatsDisplay(analytics) {
     const revenueElement = document.getElementById('stats-total-revenue');
     if (revenueElement) {
         const revenue = analytics.total_revenue || 0;
-        revenueElement.textContent = `€${revenue.toFixed(2)}`;
+        revenueElement.textContent = `\u20AC${revenue.toFixed(2)}`;
     }
     
     // Update days used
@@ -11334,6 +12093,7 @@ function hideConnectivityStatus() {
 // All status updates consolidated into unified system to prevent UI conflicts
 
 // Expose new global functions
+window.OfflineInterruptionManager = OfflineInterruptionManager;
 window.dismissWarningTemporarily = dismissWarningTemporarily;
 window.closeTrialModeModal = closeTrialModeModal;
 window.showConnectivityHelp = showConnectivityHelp;
@@ -13431,7 +14191,7 @@ let currentTableFilter = 'all';
 
 // Helper functions for table management
 function formatCurrency(amount) {
-    return `€${(amount || 0).toFixed(2)}`;
+    return `\u20AC${(amount || 0).toFixed(2)}`;
 }
 
 function formatOrderTime(timestamp) {
@@ -13580,7 +14340,7 @@ function renderTablesGrid() {
                     <i class="fas ${statusIcon}"></i>
                     <span>${statusText}</span>
                 </div>
-                ${totalAmount > 0 ? `<div class="text-lg font-semibold">€${totalAmount.toFixed(2)}</div>` : ''}
+                ${totalAmount > 0 ? `<div class="text-lg font-semibold">\u20AC${totalAmount.toFixed(2)}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -13679,7 +14439,7 @@ function renderTableDetail() {
     const totalElement = document.getElementById('detailTableTotal');
     if (totalElement) {
         const total = currentTableData.session?.total_amount || 0;
-        totalElement.textContent = `€${total.toFixed(2)}`;
+        totalElement.textContent = `\u20AC${total.toFixed(2)}`;
     }
 
     // Render orders list
@@ -13718,7 +14478,7 @@ function renderTableDetail() {
                                         <div class="ml-4 text-xs space-y-0.5 mt-1">
                                             <div class="flex justify-between text-gray-600">
                                                 <span>Base price:</span>
-                                                <span>€${basePrice.toFixed(2)}</span>
+                                                <span>\u20AC${basePrice.toFixed(2)}</span>
                                             </div>
                                             ${item.generalSelectedOptions.map(opt => {
                                                 const optName = opt.name || opt.value || opt;
@@ -13726,13 +14486,13 @@ function renderTableDetail() {
                                                 return `
                                                     <div class="flex justify-between text-gray-600">
                                                         <span>+ ${optName}:</span>
-                                                        <span>+€${optPrice.toFixed(2)}</span>
+                                                        <span>+\u20AC${optPrice.toFixed(2)}</span>
                                                     </div>
                                                 `;
                                             }).join('')}
                                             <div class="flex justify-between text-gray-700 font-medium pt-0.5 border-t border-gray-200">
                                                 <span>Item total:</span>
-                                                <span>€${finalPrice.toFixed(2)}</span>
+                                                <span>\u20AC${finalPrice.toFixed(2)}</span>
                                             </div>
                                         </div>
                                     ` : ''}
@@ -13777,7 +14537,7 @@ function renderTableDetail() {
 
         // Add tooltip to explain status
         if (isPartiallyPaid) {
-            markPaidBtn.title = `Pay remaining €${remaining.toFixed(2)}`;
+            markPaidBtn.title = `Pay remaining \u20AC${remaining.toFixed(2)}`;
         } else if (isPaid) {
             markPaidBtn.title = 'Table already fully paid';
         } else {
@@ -13807,8 +14567,8 @@ function renderTableDetail() {
         const paymentInfo = document.createElement('div');
         paymentInfo.className = 'payment-status-info text-sm text-gray-600 mt-2';
         paymentInfo.innerHTML = `
-            <div>Paid: €${amountPaid.toFixed(2)}</div>
-            ${isPartiallyPaid ? `<div class="text-orange-600 font-semibold">Remaining: €${remaining.toFixed(2)}</div>` : ''}
+            <div>Paid: \u20AC${amountPaid.toFixed(2)}</div>
+            ${isPartiallyPaid ? `<div class="text-orange-600 font-semibold">Remaining: \u20AC${remaining.toFixed(2)}</div>` : ''}
         `;
         totalElement.parentNode.appendChild(paymentInfo);
     }
@@ -13961,7 +14721,7 @@ function formatBillHTML(billData) {
                     html += `
         <div class="item">
             <span class="item-name">${quantity}x ${item.name}</span>
-            <span class="item-price">€${itemTotal.toFixed(2)}</span>
+            <span class="item-price">\u20AC${itemTotal.toFixed(2)}</span>
         </div>
 `;
 
@@ -13971,7 +14731,7 @@ function formatBillHTML(billData) {
         <div style="margin-left: 20px; font-size: 11px; color: #666;">
             <div style="display: flex; justify-content: space-between; padding: 2px 0;">
                 <span>Base price:</span>
-                <span>€${basePrice.toFixed(2)}</span>
+                <span>\u20AC${basePrice.toFixed(2)}</span>
             </div>
 `;
                         item.generalSelectedOptions.forEach(opt => {
@@ -13980,14 +14740,14 @@ function formatBillHTML(billData) {
                             html += `
             <div style="display: flex; justify-content: space-between; padding: 2px 0;">
                 <span>+ ${optName}:</span>
-                <span>+€${optPrice.toFixed(2)}</span>
+                <span>+\u20AC${optPrice.toFixed(2)}</span>
             </div>
 `;
                         });
                         html += `
             <div style="display: flex; justify-content: space-between; padding: 2px 0; border-top: 1px solid #ccc; margin-top: 2px; font-weight: bold;">
                 <span>Item total:</span>
-                <span>€${finalPrice.toFixed(2)}</span>
+                <span>\u20AC${finalPrice.toFixed(2)}</span>
             </div>
         </div>
 `;
@@ -14005,7 +14765,7 @@ function formatBillHTML(billData) {
             }
 
             html += `
-        <div class="order-total">Order Total: €${orderTotal.toFixed(2)}</div>
+        <div class="order-total">Order Total: \u20AC${orderTotal.toFixed(2)}</div>
     </div>
 `;
         });
@@ -14018,7 +14778,7 @@ function formatBillHTML(billData) {
     <div class="totals">
         <div class="total-line grand">
             <span>TOTAL:</span>
-            <span>€${(billData.grand_total || 0).toFixed(2)}</span>
+            <span>\u20AC${(billData.grand_total || 0).toFixed(2)}</span>
         </div>
 `;
 
@@ -14026,11 +14786,11 @@ function formatBillHTML(billData) {
         html += `
         <div class="total-line">
             <span>Paid:</span>
-            <span>€${billData.amount_paid.toFixed(2)}</span>
+            <span>\u20AC${billData.amount_paid.toFixed(2)}</span>
         </div>
         <div class="total-line" style="font-weight: bold;">
             <span>Remaining:</span>
-            <span>€${billData.amount_remaining.toFixed(2)}</span>
+            <span>\u20AC${billData.amount_remaining.toFixed(2)}</span>
         </div>
 `;
     }
@@ -14062,7 +14822,7 @@ function formatBillHTML(billData) {
             html += `
         <div class="item">
             <span>${paymentTime} - ${payment.method}</span>
-            <span>€${payment.amount.toFixed(2)}</span>
+            <span>\u20AC${payment.amount.toFixed(2)}</span>
         </div>
 `;
         });
@@ -14130,7 +14890,7 @@ function showPaymentMethodModal(amount, tableId) {
     }
 
     if (totalDisplay) {
-        totalDisplay.textContent = `€${amount.toFixed(2)}`;
+        totalDisplay.textContent = `\u20AC${amount.toFixed(2)}`;
     }
 
     // Reset to cash (default)
@@ -14450,7 +15210,7 @@ async function recordEqualSplitPayment(personNumber, amount) {
         await reloadTableDataOnly();
 
         const methodLabel = method === 'cash' ? '💵 Cash' : '💳 Card';
-        showToast(`Payment recorded: €${amount.toFixed(2)} (${methodLabel})`, 'success');
+        showToast(`Payment recorded: \u20AC${amount.toFixed(2)} (${methodLabel})`, 'success');
 
     } catch (error) {
         console.error('[SPLIT_PAYMENT] Error recording split payment:', error);
@@ -14537,7 +15297,7 @@ function generateItemAssignmentUI() {
                                     ${item.generalSelectedOptions.map(opt => {
                                         const optName = opt.name || opt.value || opt;
                                         const optPrice = opt.priceChange || 0;
-                                        return `+ ${optName} (+€${optPrice.toFixed(2)})`;
+                                        return `+ ${optName} (+\u20AC${optPrice.toFixed(2)})`;
                                     }).join(', ')}
                                 </div>
                             ` : ''}
@@ -14764,7 +15524,7 @@ async function recordByItemsPayment(personNumber, amount) {
         await reloadTableDataOnly();
 
         const methodLabel = method === 'cash' ? '💵 Cash' : '💳 Card';
-        showToast(`Payment recorded: €${amount.toFixed(2)} (${methodLabel})`, 'success');
+        showToast(`Payment recorded: \u20AC${amount.toFixed(2)} (${methodLabel})`, 'success');
 
     } catch (error) {
         console.error('[BY_ITEMS_PAYMENT] Error recording by-items payment:', error);
@@ -14857,7 +15617,7 @@ async function activateServerLicense() {
             passwordInput.value = '';
 
             // Update UI to show activated status
-            await updateServerLicenseStatusDisplay();
+            await updateServerLicenseStatusDisplay(true);
 
             // Refresh main license display
             await FrontendLicenseManager.validateLicense(true);
@@ -14907,7 +15667,7 @@ async function deactivateServerLicense() {
         if (response.ok && data.success) {
             showToast('✅ Server license deactivated', 'success');
             passwordInput.value = '';
-            await updateServerLicenseStatusDisplay();
+            await updateServerLicenseStatusDisplay(true);
             await FrontendLicenseManager.validateLicense(true);
         } else {
             showToast(`❌ ${data.error || 'Deactivation failed'}`, 'error');
@@ -14922,71 +15682,77 @@ async function deactivateServerLicense() {
 /**
  * Update server license status display in management panel
  */
-async function updateServerLicenseStatusDisplay() {
+async function updateServerLicenseStatusDisplay(forceRefresh = false) {
     try {
-        const response = await fetch('/api/license/status');
-        const data = await response.json();
-
         const statusDisplay = document.getElementById('server-license-status-display');
         const activateBtn = document.getElementById('activate-server-license-btn');
         const deactivateBtn = document.getElementById('deactivate-server-license-btn');
 
-        if (!statusDisplay) return;
-
-        if (data.licensed && data.active) {
-            // Server license is active
-            statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
-            statusDisplay.classList.add('border-green-300', 'bg-green-50');
-            statusDisplay.innerHTML = `
-                <div class="flex items-start gap-3">
-                    <i class="fas fa-check-circle text-green-600 text-lg mt-0.5"></i>
-                    <div class="flex-1">
-                        <h6 class="text-sm font-semibold text-green-900">Server License Active</h6>
-                        <p class="text-xs text-green-700 mt-1">
-                            <strong>Email:</strong> ${data.email || 'N/A'}<br>
-                            <strong>Customer:</strong> ${data.customer_name || 'N/A'}<br>
-                            <strong>Status:</strong> ${data.subscription_status || 'active'}<br>
-                            ${data.next_billing_date ? `<strong>Next Billing:</strong> ${data.next_billing_date}` : ''}
-                        </p>
-                        <p class="text-xs text-gray-600 mt-2">
-                            <i class="fas fa-info-circle mr-1"></i>All connected devices are using this license.
-                        </p>
-                    </div>
-                </div>
-            `;
-
-            // Show deactivate button, hide activate button
-            if (activateBtn) activateBtn.classList.add('hidden');
-            if (deactivateBtn) deactivateBtn.classList.remove('hidden');
-
-        } else if (data.grace_period) {
-            // Grace period
-            statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
-            statusDisplay.classList.add('border-yellow-300', 'bg-yellow-50');
-            statusDisplay.innerHTML = `
-                <div class="flex items-start gap-3">
-                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
-                    <div class="flex-1">
-                        <h6 class="text-sm font-semibold text-yellow-900">Server License - Grace Period</h6>
-                        <p class="text-xs text-yellow-700 mt-1">
-                            Server offline for ${data.days_offline || 0} days.
-                            ${data.grace_days_left || 0} days remaining.
-                        </p>
-                    </div>
-                </div>
-            `;
-
-            if (activateBtn) activateBtn.classList.add('hidden');
-            if (deactivateBtn) deactivateBtn.classList.remove('hidden');
-
-        } else {
-            // No server license
-            statusDisplay.classList.add('hidden');
-
-            if (activateBtn) activateBtn.classList.remove('hidden');
-            if (deactivateBtn) deactivateBtn.classList.add('hidden');
+        if (serverLicenseDisplayUnsubscribe) {
+            serverLicenseDisplayUnsubscribe();
+            serverLicenseDisplayUnsubscribe = null;
         }
 
+        const applyStatus = (data) => {
+            if (!statusDisplay) return;
+
+            if (data && data.licensed && data.active) {
+                statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
+                statusDisplay.classList.add('border-green-300', 'bg-green-50');
+                statusDisplay.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <i class="fas fa-check-circle text-green-600 text-lg mt-0.5"></i>
+                        <div class="flex-1">
+                            <h6 class="text-sm font-semibold text-green-900">Server License Active</h6>
+                            <p class="text-xs text-green-700 mt-1">
+                                <strong>Email:</strong> ${data.email || 'N/A'}<br>
+                                <strong>Customer:</strong> ${data.customer_name || 'N/A'}<br>
+                                <strong>Status:</strong> ${data.subscription_status || 'active'}<br>
+                                ${data.next_billing_date ? `<strong>Next Billing:</strong> ${data.next_billing_date}` : ''}
+                            </p>
+                            <p class="text-xs text-gray-600 mt-2">
+                                <i class="fas fa-info-circle mr-1"></i>All connected devices are using this license.
+                            </p>
+                        </div>
+                    </div>
+                `;
+
+                if (activateBtn) activateBtn.classList.add('hidden');
+                if (deactivateBtn) deactivateBtn.classList.remove('hidden');
+                return;
+            }
+
+            if (data && data.grace_period) {
+                statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
+                statusDisplay.classList.add('border-yellow-300', 'bg-yellow-50');
+                statusDisplay.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
+                        <div class="flex-1">
+                            <h6 class="text-sm font-semibold text-yellow-900">Server License - Grace Period</h6>
+                            <p class="text-xs text-yellow-700 mt-1">
+                                Server offline for ${data.days_offline || 0} days.
+                                ${data.grace_days_left || 0} days remaining.
+                            </p>
+                        </div>
+                    </div>
+                `;
+
+                if (activateBtn) activateBtn.classList.add('hidden');
+                if (deactivateBtn) deactivateBtn.classList.remove('hidden');
+                return;
+            }
+
+            statusDisplay.classList.add('hidden');
+            if (activateBtn) activateBtn.classList.remove('hidden');
+            if (deactivateBtn) deactivateBtn.classList.add('hidden');
+        };
+
+        if (statusDisplay) {
+            serverLicenseDisplayUnsubscribe = ServerLicenseStatus.subscribe(applyStatus);
+        }
+
+        await ServerLicenseStatus.ensureFetch(forceRefresh);
     } catch (error) {
         console.error('Error updating server license status:', error);
     }
@@ -15006,3 +15772,4 @@ if (typeof document !== 'undefined') {
 // END SERVER LICENSE MANAGEMENT
 // =============================================================================
 // =============================================================================
+
