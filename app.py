@@ -1,4 +1,4 @@
-CURRENT_VERSION = "1.2.2"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
+CURRENT_VERSION = "1.2.1"  # Update this with each release - Fixed customer issues: license validation, menu structure, analytics, mobile connection
 
 from flask import Flask, request, jsonify, send_from_directory, Response
 from werkzeug.http import http_date

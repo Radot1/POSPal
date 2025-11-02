@@ -184,7 +184,8 @@
       "countdown": "Grace ends in {{time}}",
       "graceExpired": "Grace period expired",
       "graceExpiredShort": "Grace expired",
-      "retrying": "Retrying..."
+      "retrying": "Retrying...",
+      "retryingStrip": "Retrying connection..."
     },
     "offlineModal": {
       "title": "Internet connection lost - POS running in grace mode",

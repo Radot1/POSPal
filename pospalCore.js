@@ -778,6 +778,7 @@ const OfflineInterruptionManager = {
     isRenderable: false,
     countdownTimer: null,
     retryInFlight: false,
+    activeRetryNotificationId: null,
     elements: {
         modal: null,
         graceText: null,
@@ -799,6 +800,7 @@ const OfflineInterruptionManager = {
         lastValidated: null,
         graceExpiry: null,
         gracePeriodDays: DEFAULT_GRACE_PERIOD_DAYS,
+        manualMessageExpiry: 0,
         message: translate('ui.offlineStatusStrip.messageGrace', 'POSPal is running in grace mode until the connection returns.'),
         summary: translate('ui.offlineModal.graceSummary', 'Orders continue locally while we retry the licensing service.'),
         reason: null,
@@ -897,7 +899,14 @@ const OfflineInterruptionManager = {
         }
 
         this.state.reason = details.reason || this.state.reason;
-        this.state.message = details.message || translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+
+        if (details.message) {
+            this.setStatusMessage(details.message, 0);
+        } else if (!this.isStatusMessageLocked()) {
+            const fallbackMessage = translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+            this.setStatusMessage(fallbackMessage, 0);
+        }
+
         this.state.summary = details.summary || translate('ui.offlineModal.graceSummary', this.state.summary);
 
         const inferredLastValidated = this.resolveLastValidated(details.lastValidated);
@@ -930,7 +939,7 @@ const OfflineInterruptionManager = {
 
         this.state.summary = translate('ui.offlineModal.graceSummary', this.state.summary);
         this.state.modeLabel = translate('ui.offlineModal.mode.trial', 'Grace mode (full features)');
-        this.state.message = translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+        this.setStatusMessage(translate('ui.offlineStatusStrip.messageGrace', this.state.message), 0);
         this.state.isOffline = false;
         this.state.modalDismissed = false;
         this.stopCountdown();
@@ -1003,6 +1012,23 @@ const OfflineInterruptionManager = {
         this.updateCountdownLabels();
     },
 
+    setStatusMessage(message, lockDurationMs = 0) {
+        this.state.message = message;
+        if (lockDurationMs > 0) {
+            this.state.manualMessageExpiry = Date.now() + lockDurationMs;
+        } else {
+            this.state.manualMessageExpiry = 0;
+        }
+
+        if (this.elements.statusMessage) {
+            this.elements.statusMessage.textContent = message;
+        }
+    },
+
+    isStatusMessageLocked() {
+        return typeof this.state.manualMessageExpiry === 'number' && this.state.manualMessageExpiry > Date.now();
+    },
+
     hideStatusStrip() {
         if (!this.elements.statusStrip) return;
         this.elements.statusStrip.classList.remove('offline-visible');
@@ -1015,6 +1041,7 @@ const OfflineInterruptionManager = {
         if (this.elements.stripCountdown) {
             this.elements.stripCountdown.textContent = '';
         }
+        this.state.manualMessageExpiry = 0;
         this.state.message = translate('ui.offlineStatusStrip.messageGrace', this.state.message);
     },
 
@@ -1094,7 +1121,8 @@ const OfflineInterruptionManager = {
 
     handleRetryRequest() {
         if (this.retryInFlight) return;
-        if (!window.FrontendLicenseManager || typeof FrontendLicenseManager.performValidation !== 'function') {
+        if (typeof FrontendLicenseManager === 'undefined' || typeof FrontendLicenseManager.performValidation !== 'function') {
+            console.warn('FrontendLicenseManager not ready for retry');
             return;
         }
 
@@ -1109,6 +1137,31 @@ const OfflineInterruptionManager = {
             'Still trying to reach the licensing service. We will keep retrying in the background.'
         );
 
+        const toastOptions = { force: true, source: 'offline-retry' };
+        const retryingStripMessage = translate(
+            'ui.offlineStatusStrip.retryingStrip',
+            'Retrying connection...'
+        );
+        this.setStatusMessage(retryingStripMessage, 6000);
+
+        if (window.NotificationManager) {
+            if (this.activeRetryNotificationId) {
+                window.NotificationManager.hide(this.activeRetryNotificationId);
+            }
+
+            this.activeRetryNotificationId = window.NotificationManager.show({
+                type: 'toast',
+                message: retryingStripMessage,
+                icon: 'fa-spinner fa-spin',
+                autoHide: false,
+                dismissible: false,
+                duration: 0,
+                className: 'flex items-center gap-2 text-sm bg-slate-700 text-white px-4 py-2 rounded-md shadow-lg'
+            });
+        } else {
+            console.log(retryingStripMessage);
+        }
+
         Promise.resolve(FrontendLicenseManager.performValidation(true))
             .then((result) => {
                 const state =
@@ -1117,23 +1170,38 @@ const OfflineInterruptionManager = {
                         ? FrontendLicenseManager.getCurrentStatus()
                         : null);
                 const isOffline = state && state.status === 'offline';
+                const finalMessage = isOffline ? failureMessage : successMessage;
                 if (typeof showToast === 'function') {
-                    showToast(isOffline ? failureMessage : successMessage, isOffline ? 'warning' : 'success', 6000);
+                    showToast(
+                        finalMessage,
+                        isOffline ? 'warning' : 'success',
+                        6000,
+                        toastOptions
+                    );
                 } else {
-                    console.log(isOffline ? failureMessage : successMessage);
+                    console.log(finalMessage);
                 }
+
+                this.setStatusMessage(finalMessage, 8000);
             })
             .catch((error) => {
                 console.warn('Offline retry failed', error);
                 if (typeof showToast === 'function') {
-                    showToast(failureMessage, 'warning', 6000);
+                    showToast(failureMessage, 'warning', 6000, toastOptions);
                 } else {
                     console.warn(failureMessage);
                 }
+
+                this.setStatusMessage(failureMessage, 8000);
             })
             .finally(() => {
                 this.retryInFlight = false;
                 this.setRetryLoading(false);
+
+                if (this.activeRetryNotificationId && window.NotificationManager) {
+                    window.NotificationManager.hide(this.activeRetryNotificationId);
+                    this.activeRetryNotificationId = null;
+                }
             });
     },
 
@@ -8265,16 +8333,22 @@ function removeTemporaryOptionModal(optionNameToRemove) {
 
 // Toast timeout now handled by TimerManager
 
-function showToast(message, type = 'info', duration = 3000) {
-    // Suppress licensing-related toasts during active order operations
-    if (isActivelyTakingOrders() && isLicensingRelatedMessage(message)) {
+function showToast(message, type = 'info', duration = 3000, options = {}) {
+    const normalizedOptions =
+        typeof options === 'boolean'
+            ? { force: options }
+            : (options && typeof options === 'object' ? options : {});
+    const forceDisplay = Boolean(normalizedOptions.force);
+
+    // Suppress licensing-related toasts during active order operations unless explicitly forced
+    if (!forceDisplay && isActivelyTakingOrders() && isLicensingRelatedMessage(message)) {
         console.log('Licensing toast suppressed during operations:', message);
         return null;
     }
 
     // Use unified notification manager for better consistency and performance
     if (window.NotificationManager) {
-        return window.NotificationManager.showToast(message, type, duration);
+        return window.NotificationManager.showToast(message, type, duration, normalizedOptions);
     }
 
     // Fallback to legacy toast system if NotificationManager not available
@@ -12093,6 +12167,7 @@ function hideConnectivityStatus() {
 // All status updates consolidated into unified system to prevent UI conflicts
 
 // Expose new global functions
+window.FrontendLicenseManager = FrontendLicenseManager;
 window.OfflineInterruptionManager = OfflineInterruptionManager;
 window.dismissWarningTemporarily = dismissWarningTemporarily;
 window.closeTrialModeModal = closeTrialModeModal;
