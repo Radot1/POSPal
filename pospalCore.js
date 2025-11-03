@@ -1,4 +1,4 @@
-// --- Global State & Configuration ---
+﻿// --- Global State & Configuration ---
 let menu = {};
 let selectedCategory = null;
 let editingItem = null;
@@ -160,6 +160,19 @@ const ServerLicenseStatus = {
 
         const now = Date.now();
         if (!forceRefresh && this._status && (now - this._lastFetchedAt) < LICENSE_STATUS_TTL_MS) {
+            const cachedIndicatesOffline = Boolean(
+                this._status.offline ||
+                this._status.grace_period ||
+                this._status.status === 'offline'
+            );
+
+            if (!navigator.onLine && !cachedIndicatesOffline) {
+                // Avoid reporting stale "online" data when the browser knows it is offline.
+                const offlineError = new Error('Network offline while using cached license status');
+                offlineError.name = 'OfflineCachedLicenseError';
+                return Promise.reject(offlineError);
+            }
+
             return Promise.resolve(this._status);
         }
 
@@ -437,7 +450,11 @@ const StatusDisplayManager = {
             footerStatus: document.getElementById('footer-trial-status'),
             subscriptionDetails: document.getElementById('subscription-details'),
             trialActions: document.getElementById('trial-actions'),
-            nextBillingDate: document.getElementById('next-billing-date')
+            nextBillingDate: document.getElementById('next-billing-date'),
+            daysUntilRenewal: document.getElementById('days-until-renewal'),
+            subscriptionStatusLabel: document.getElementById('subscription-status-display'),
+            portalButton: document.getElementById('quick-portal-btn'),
+            manageSubscriptionButton: document.getElementById('manage-subscription-btn')
         };
     },
     
@@ -445,7 +462,7 @@ const StatusDisplayManager = {
         if (!this.elements) this.init();
         
         const { 
-            isOnline = true, 
+            isOnline = false, 
             customerName = '', 
             validUntil = '', 
             daysLeft = 0,
@@ -459,6 +476,8 @@ const StatusDisplayManager = {
         this.updateStatusBadge(statusConfig.badge, statusConfig.badgeClass);
         this.updateFooterStatus(statusConfig.footer);
         this.toggleUIElements(statusConfig.showSubscription, statusConfig.showTrialActions);
+        this.setPortalAccessEnabled(Boolean(isOnline));
+        this.updateSupplementalFields(statusType);
         
         // Add visual feedback for important changes
         if (statusConfig.animate) {
@@ -593,33 +612,39 @@ const StatusDisplayManager = {
                     animate: false
                 };
 
-            case 'offline':
-                const lastSuccessful = localStorage.getItem('pospal_last_successful_validation');
-                const daysSince = lastSuccessful ?
-                    ((Date.now() - parseInt(lastSuccessful)) / (1000 * 60 * 60 * 24)).toFixed(1) : 'unknown';
+            case 'offline': {
+                const lastSuccessfulRaw = localStorage.getItem('pospal_last_successful_validation');
+                const parsedLastSuccessful = parseTimestamp(lastSuccessfulRaw);
+                const lastValidatedTimestamp = Number.isFinite(parsedLastSuccessful) ? parsedLastSuccessful : null;
+                const lastValidatedText = lastValidatedTimestamp ? formatDateTime(lastValidatedTimestamp) : 'Not yet verified';
+                const offlineDurationMs = lastValidatedTimestamp ? Date.now() - lastValidatedTimestamp : null;
+                const offlineDurationText = offlineDurationMs !== null ? formatDuration(offlineDurationMs) : null;
+                const offlineHint = offlineDurationText ? ' · Offline for ' + offlineDurationText : '';
 
                 return {
                     html: `
-                        <div class="flex items-center space-x-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div class="flex items-start space-x-3 p-4 bg-slate-100 border border-slate-300 rounded-lg">
                             <div class="flex-shrink-0">
-                                <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"></path>
+                                <svg class="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7l9-4 9 4m-9 13l-9-4V7m9 13l9-4V7m-9 6l9-4m-9 4l-9-4"></path>
                                 </svg>
                             </div>
                             <div class="flex-1">
-                                <h3 class="text-lg font-semibold text-orange-800">Grace Period</h3>
-                                <p class="text-orange-700">Running in offline grace period.</p>
-                                <p class="text-sm text-orange-600">${daysSince} days since last verification</p>
+                                <h3 class="text-lg font-semibold text-slate-800">Offline Mode (Grace Period)</h3>
+                                <p class="text-slate-700">POSPal is using cached license data while the connection is unavailable.</p>
+                                <p class="text-sm text-slate-600 mt-1"><strong>Last verified:</strong> ${lastValidatedText}${offlineHint}</p>
+                                <p class="text-xs text-slate-500 mt-2">Reconnect to refresh billing and subscription information.</p>
                             </div>
                         </div>
                     `,
-                    badge: 'Grace Period',
-                    badgeClass: 'bg-orange-100 text-orange-800',
-                    footer: `<i class="fas fa-wifi-slash text-orange-500 mr-1"></i>Offline mode`,
+                    badge: 'Offline Mode',
+                    badgeClass: 'bg-slate-200 text-slate-800',
+                    footer: `<i class="fas fa-wifi-slash text-slate-500 mr-1"></i>Offline - using cached license data`,
                     showSubscription: false,
-                    showTrialActions: true,
+                    showTrialActions: false,
                     animate: false
                 };
+            }
                 
             default:
                 return {
@@ -655,11 +680,90 @@ const StatusDisplayManager = {
     
     toggleUIElements(showSubscription, showTrialActions) {
         if (this.elements.subscriptionDetails) {
-            this.elements.subscriptionDetails.classList.toggle('hidden', !showSubscription);
+            const shouldShowSubscription = Boolean(showSubscription);
+            this.elements.subscriptionDetails.classList.toggle('hidden', !shouldShowSubscription);
+            this.elements.subscriptionDetails.style.display = shouldShowSubscription ? '' : 'none';
         }
         if (this.elements.trialActions) {
-            this.elements.trialActions.classList.toggle('hidden', !showTrialActions);
+            const shouldShowTrial = Boolean(showTrialActions);
+            this.elements.trialActions.classList.toggle('hidden', !shouldShowTrial);
+            this.elements.trialActions.style.display = shouldShowTrial ? '' : 'none';
         }
+    },
+
+    updateSupplementalFields(statusType) {
+        if (!this.elements) this.init();
+
+        const rememberText = (element) => {
+            if (!element) return;
+            if (element.dataset.originalText === undefined) {
+                element.dataset.originalText = element.textContent || '';
+            }
+        };
+
+        const restoreText = (element) => {
+            if (!element) return;
+            if (element.dataset.originalText !== undefined) {
+                element.textContent = element.dataset.originalText;
+                delete element.dataset.originalText;
+            }
+        };
+
+        const { nextBillingDate, daysUntilRenewal, subscriptionStatusLabel } = this.elements;
+
+        if (statusType === 'offline') {
+            const offlineBilling = translate('ui.license.offline.billingUnavailable', 'Unavailable while offline');
+            const offlineRenewal = translate('ui.license.offline.renewalUnknown', 'Reconnect to refresh');
+            const offlineStatus = translate('ui.license.offline.subscriptionStatus', 'Offline (cached)');
+
+            if (nextBillingDate) {
+                rememberText(nextBillingDate);
+                nextBillingDate.textContent = offlineBilling;
+            }
+
+            if (daysUntilRenewal) {
+                rememberText(daysUntilRenewal);
+                daysUntilRenewal.textContent = offlineRenewal;
+            }
+
+            if (subscriptionStatusLabel) {
+                rememberText(subscriptionStatusLabel);
+                subscriptionStatusLabel.textContent = offlineStatus;
+            }
+        } else {
+            restoreText(nextBillingDate);
+            restoreText(daysUntilRenewal);
+            restoreText(subscriptionStatusLabel);
+        }
+    },
+
+    setPortalAccessEnabled(isEnabled) {
+        const buttons = [
+            this.elements && this.elements.portalButton ? this.elements.portalButton : document.getElementById('quick-portal-btn'),
+            this.elements && this.elements.manageSubscriptionButton ? this.elements.manageSubscriptionButton : document.getElementById('manage-subscription-btn')
+        ].filter(Boolean);
+
+        const disabledTitle = translate('ui.license.offlineManageHint', 'Reconnect to manage your subscription');
+
+        buttons.forEach((btn) => {
+            if (!btn.dataset.originalTitle) {
+                btn.dataset.originalTitle = btn.getAttribute('title') || '';
+            }
+
+            if (isEnabled) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'pointer-events-none');
+                btn.removeAttribute('aria-disabled');
+                if (btn.dataset.originalTitle !== undefined) {
+                    btn.setAttribute('title', btn.dataset.originalTitle);
+                }
+            } else {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'pointer-events-none');
+                btn.setAttribute('aria-disabled', 'true');
+                btn.setAttribute('title', disabledTitle);
+            }
+        });
     },
     
     animateStatusChange() {
@@ -779,6 +883,7 @@ const OfflineInterruptionManager = {
     countdownTimer: null,
     retryInFlight: false,
     activeRetryNotificationId: null,
+    stripSuppressed: false,
     elements: {
         modal: null,
         graceText: null,
@@ -1001,6 +1106,11 @@ const OfflineInterruptionManager = {
 
     updateStatusStrip() {
         if (!this.elements.statusStrip) return;
+        if (this.stripSuppressed) {
+            this.elements.statusStrip.classList.remove('offline-visible');
+            this.elements.statusStrip.style.display = 'none';
+            return;
+        }
 
         this.elements.statusStrip.style.display = 'inline-flex';
         this.elements.statusStrip.classList.add('offline-visible');
@@ -1043,6 +1153,18 @@ const OfflineInterruptionManager = {
         }
         this.state.manualMessageExpiry = 0;
         this.state.message = translate('ui.offlineStatusStrip.messageGrace', this.state.message);
+    },
+
+    suppressStatusStrip() {
+        this.stripSuppressed = true;
+        this.hideStatusStrip();
+    },
+
+    restoreStatusStrip() {
+        this.stripSuppressed = false;
+        if (this.state.isOffline) {
+            this.updateStatusStrip();
+        }
     },
 
     startCountdown() {
@@ -1126,8 +1248,6 @@ const OfflineInterruptionManager = {
             return;
         }
 
-        this.retryInFlight = true;
-        this.setRetryLoading(true);
         const successMessage = translate(
             'ui.offlineStatusStrip.retrySuccess',
             'Connection restored. License sync resumed.'
@@ -1136,6 +1256,26 @@ const OfflineInterruptionManager = {
             'ui.offlineStatusStrip.retryFailed',
             'Still trying to reach the licensing service. We will keep retrying in the background.'
         );
+        const offlineBlockedMessage = translate(
+            'ui.offlineStatusStrip.retryOfflineRequired',
+            'Device still offline. Restore internet connectivity and try again.'
+        );
+
+        const isBrowserOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
+        if (isBrowserOffline()) {
+            const toastOptions = { force: true, source: 'offline-retry' };
+            if (typeof showToast === 'function') {
+                showToast(offlineBlockedMessage, 'warning', 6000, toastOptions);
+            } else {
+                console.warn(offlineBlockedMessage);
+            }
+            this.setStatusMessage(offlineBlockedMessage, 10000);
+            return;
+        }
+
+        this.retryInFlight = true;
+        this.setRetryLoading(true);
 
         const toastOptions = { force: true, source: 'offline-retry' };
         const retryingStripMessage = translate(
@@ -1169,12 +1309,14 @@ const OfflineInterruptionManager = {
                     (typeof FrontendLicenseManager.getCurrentStatus === 'function'
                         ? FrontendLicenseManager.getCurrentStatus()
                         : null);
-                const isOffline = state && state.status === 'offline';
-                const finalMessage = isOffline ? failureMessage : successMessage;
+                const status = state && state.status;
+                const isActive = status === 'active' && !isBrowserOffline();
+                const isOffline = isBrowserOffline() || status === 'offline';
+                const finalMessage = isActive ? successMessage : (isOffline ? offlineBlockedMessage : failureMessage);
                 if (typeof showToast === 'function') {
                     showToast(
                         finalMessage,
-                        isOffline ? 'warning' : 'success',
+                        isActive ? 'success' : 'warning',
                         6000,
                         toastOptions
                     );
@@ -1186,13 +1328,15 @@ const OfflineInterruptionManager = {
             })
             .catch((error) => {
                 console.warn('Offline retry failed', error);
+                const isOffline = isBrowserOffline();
+                const message = isOffline ? offlineBlockedMessage : failureMessage;
                 if (typeof showToast === 'function') {
-                    showToast(failureMessage, 'warning', 6000, toastOptions);
+                    showToast(message, isOffline ? 'warning' : 'error', 6000, toastOptions);
                 } else {
-                    console.warn(failureMessage);
+                    console.warn(message);
                 }
 
-                this.setStatusMessage(failureMessage, 8000);
+                this.setStatusMessage(message, 8000);
             })
             .finally(() => {
                 this.retryInFlight = false;
@@ -1424,9 +1568,9 @@ const FrontendLicenseManager = {
                     customerName: serverLicense.customer_name,
                     daysSince: daysOffline,
                     gracePeriod: true,
-                    graceDaysLeft: graceDaysLeft
+                    graceDaysLeft: graceDaysLeft,
+                    isOnline: false
                 });
-                this.showPortalButtons();
             });
 
             return this.currentValidationState;
@@ -1436,7 +1580,8 @@ const FrontendLicenseManager = {
             console.log('Server license found and active - using server license');
 
             const validationTimestamp = Date.now();
-            this.cache.isOnline = true;
+            const browserOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+
             this.cache.lastValidation = validationTimestamp;
             localStorage.setItem('pospal_last_successful_validation', validationTimestamp.toString());
 
@@ -1448,6 +1593,15 @@ const FrontendLicenseManager = {
                 lastValidated: serverLicense.validated_at || validationTimestamp
             });
             LicenseStorage.updateValidationTimestamp();
+
+            if (browserOffline) {
+                console.warn('Browser reports offline while receiving active license data - keeping offline mode');
+                this.cache.isOnline = false;
+                this.presentOfflineFallback(new Error('browser-offline-active-license'));
+                return this.currentValidationState;
+            }
+
+            this.cache.isOnline = true;
 
             this.currentValidationState = {
                 status: 'active',
@@ -1471,7 +1625,7 @@ const FrontendLicenseManager = {
             return this.currentValidationState;
         }
 
-        console.log('ℹ️  No server license found - showing trial status');
+        console.log('â„¹ï¸  No server license found - showing trial status');
 
         const paymentData = LicenseStorage.getPaymentData();
         if (paymentData.paymentSuccess) {
@@ -1670,7 +1824,7 @@ const FrontendLicenseManager = {
         };
         
         this.throttledUIUpdate(() => {
-            StatusDisplayManager.updateLicenseStatus('offline', { daysSince });
+            StatusDisplayManager.updateLicenseStatus('offline', { daysSince, isOnline: false });
         });
     },
 
@@ -1857,8 +2011,13 @@ const FrontendLicenseManager = {
         const quickPortalBtn = document.getElementById('quick-portal-btn');
         const manageSubBtn = document.getElementById('manage-subscription-btn');
         // Note: footer-portal-btn removed - only using quick access button in license modal
+        if (this.elements) {
+            this.elements.portalButton = quickPortalBtn;
+            this.elements.manageSubscriptionButton = manageSubBtn;
+        }
 
         if (quickPortalBtn) quickPortalBtn.classList.remove('hidden');
+        if (manageSubBtn) manageSubBtn.classList.remove('hidden');
 
         // Update button text based on license status
         const licenseData = LicenseStorage.getLicenseData();
@@ -1910,9 +2069,11 @@ const FrontendLicenseManager = {
     
     hidePortalButtons() {
         const quickPortalBtn = document.getElementById('quick-portal-btn');
+        const manageSubBtn = document.getElementById('manage-subscription-btn');
         // Note: footer-portal-btn removed - only using quick access button in license modal
 
         if (quickPortalBtn) quickPortalBtn.classList.add('hidden');
+        if (manageSubBtn) manageSubBtn.classList.add('hidden');
     },
     
     // Force validation (for manual refresh)
@@ -2735,7 +2896,7 @@ function updateTableStatusSummary() {
     // Update header summary
     const summaryEl = document.getElementById('tableStatusSummary');
     if (summaryEl) {
-        summaryEl.innerHTML = `${occupiedCount}/${totalTables} occupied • \u20AC${totalRevenue.toFixed(2)} total`;
+        summaryEl.innerHTML = `${occupiedCount}/${totalTables} occupied â€¢ \u20AC${totalRevenue.toFixed(2)} total`;
     }
 
     // Update modal stats
@@ -2845,7 +3006,7 @@ function createTableCard(tableId, table, session, isSuggestion = false, matchQua
                     matchQuality === 'perfect' ? 'bg-green-500' :
                     matchQuality === 'good' ? 'bg-yellow-500' : 'bg-orange-500'
                 }">
-                    ${matchQuality === 'perfect' ? '🎯' : matchQuality === 'good' ? '👍' : '✓'}
+                    ${matchQuality === 'perfect' ? 'ðŸŽ¯' : matchQuality === 'good' ? 'ðŸ‘' : 'âœ“'}
                 </div>
             ` : ''}
 
@@ -2862,7 +3023,7 @@ function createTableCard(tableId, table, session, isSuggestion = false, matchQua
                 <div class="flex items-center justify-center space-x-1">
                     <i class="fas fa-users text-gray-400"></i>
                     <span>${capacity} seats</span>
-                    ${status === 'occupied' ? `<span class="text-gray-400">•</span><span>${orderCount} order${orderCount !== 1 ? 's' : ''}</span>` : ''}
+                    ${status === 'occupied' ? `<span class="text-gray-400">â€¢</span><span>${orderCount} order${orderCount !== 1 ? 's' : ''}</span>` : ''}
                 </div>
 
                 ${status === 'occupied' && capacity > 0 ? `
@@ -3303,17 +3464,17 @@ function updateConnectionStatusUI(status) {
     if (previousStatus && previousStatus !== status && previousStatus !== 'checking') {
         const toastMessages = {
             offline: {
-                message: '⚠️ Server Offline - Changes may not sync in real-time',
+                message: 'âš ï¸ Server Offline - Changes may not sync in real-time',
                 type: 'warning',
                 duration: 8000
             },
             live: {
-                message: '✅ Back Online - Real-time sync restored',
+                message: 'âœ… Back Online - Real-time sync restored',
                 type: 'success',
                 duration: 4000
             },
             polling: {
-                message: 'ℹ️ Connection unstable - Switched to polling mode',
+                message: 'â„¹ï¸ Connection unstable - Switched to polling mode',
                 type: 'info',
                 duration: 6000
             }
@@ -4154,25 +4315,25 @@ const ErrorMessages = {
         message: 'Cannot connect to server. Check your network connection.',
         suggestions: ['Check WiFi/ethernet connection', 'Try refreshing the page'],
         type: 'error',
-        icon: '🌐'
+        icon: 'ðŸŒ'
     },
     NETWORK_TIMEOUT: {
         message: 'Request timed out. Server may be slow.',
         suggestions: ['Try again in a moment', 'Contact support if this persists'],
         type: 'warning',
-        icon: '⏱️'
+        icon: 'â±ï¸'
     },
     SERVER_ERROR: {
         message: 'Server error occurred.',
         suggestions: ['Try again', 'Contact support if error persists'],
         type: 'error',
-        icon: '🔧'
+        icon: 'ðŸ”§'
     },
     DATA_VALIDATION: {
         message: 'Invalid data format received from server.',
         suggestions: ['Refresh the page', 'Clear browser cache', 'Contact support'],
         type: 'error',
-        icon: '⚠️'
+        icon: 'âš ï¸'
     }
 };
 
@@ -4307,7 +4468,7 @@ async function loadTablesForSelection() {
 
         if (failedTables.length > 0) {
             showToast(
-                `⚠️ ${failedTables.length} table(s) have invalid data. Using fallback information.`,
+                `âš ï¸ ${failedTables.length} table(s) have invalid data. Using fallback information.`,
                 'warning',
                 5000
             );
@@ -4476,7 +4637,7 @@ function updateTableIndicatorBadge() {
 
     if (selectedTableId === null) {
         console.log('[BADGE-UPDATE] Takeaway mode selected');
-        iconSpan.textContent = '🥡';
+        iconSpan.textContent = 'ðŸ¥¡';
         textSpan.textContent = 'Takeaway';
         indicator.setAttribute('aria-label', 'Takeaway mode - Click to select table');
     } else {
@@ -4491,14 +4652,14 @@ function updateTableIndicatorBadge() {
             console.log('[BADGE-UPDATE] table.total:', table.total, 'using value:', total);
             console.log('[BADGE-UPDATE] Full table object:', table);
 
-            iconSpan.textContent = '📍';
+            iconSpan.textContent = 'ðŸ“';
             textSpan.textContent = `T${table.table_number} | \u20AC${total.toFixed(2)}`;
             indicator.setAttribute('aria-label', `Table ${table.table_number}, Total: \u20AC${total.toFixed(2)} - Click to change table`);
 
             console.log('[BADGE-UPDATE] Badge updated to:', textSpan.textContent);
         } else {
             console.error('[BADGE-UPDATE] TABLE NOT FOUND in allTablesData!');
-            iconSpan.textContent = '📍';
+            iconSpan.textContent = 'ðŸ“';
             textSpan.textContent = `T${selectedTableId} | \u20AC0.00`;
             indicator.setAttribute('aria-label', `Table ${selectedTableId} - Click to change table`);
         }
@@ -5004,7 +5165,7 @@ async function loadMenu() {
             renderProductsForSelectedCategory();
         }
     } catch (error) {
-        console.warn('API unavailable – menu data not loaded');
+        console.warn('API unavailable â€“ menu data not loaded');
         console.log('Error details:', error);
         menu = {};
         selectedCategory = null;
@@ -5287,7 +5448,7 @@ function updateOrderDisplay() {
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                     item.generalSelectedOptions.forEach(opt => {
                         const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}\u20AC${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
-                        optionDisplayHTML += `<div style="font-size: 0.8em; color: #777; margin-left: 10px;">↳ ${opt.name}${priceChangeDisplay}</div>`;
+                        optionDisplayHTML += `<div style="font-size: 0.8em; color: #777; margin-left: 10px;">â†³ ${opt.name}${priceChangeDisplay}</div>`;
                     });
                 }
                  commentText = item.comment ? `<div style="font-size: 0.8em; color: #555; margin-left: 10px;"><em>Note: ${item.comment}</em></div>` : '';
@@ -5328,7 +5489,7 @@ function updateOrderDisplay() {
                 if (item.generalSelectedOptions && item.generalSelectedOptions.length > 0) {
                     item.generalSelectedOptions.forEach(opt => {
                         const priceChangeDisplay = parseFloat(opt.priceChange || 0) !== 0 ? ` (${parseFloat(opt.priceChange || 0) > 0 ? '+' : ''}\u20AC${parseFloat(opt.priceChange || 0).toFixed(2)})` : '';
-                        optionDisplayHTML += `<span class="block text-xs text-gray-600 ml-4">↳ ${opt.name}${priceChangeDisplay}</span>`;
+                        optionDisplayHTML += `<span class="block text-xs text-gray-600 ml-4">â†³ ${opt.name}${priceChangeDisplay}</span>`;
                     });
                 }
 
@@ -5593,7 +5754,7 @@ async function submitOrderToServer(tableNumberForOrder, printBehavior) {
                 showToast(result.message || `Order #${result.order_number}${tableMessage} sent, all copies printed, and logged!`, 'success');
             } else if (result.status === "success_order_saved_print_failed") {
                 // Phase 7: Enhanced print failure alert
-                const alertMessage = `⚠️ ORDER #${result.order_number} SAVED BUT NOT PRINTED! Kitchen won't see it. Reprint now from Management → Orders.`;
+                const alertMessage = `âš ï¸ ORDER #${result.order_number} SAVED BUT NOT PRINTED! Kitchen won't see it. Reprint now from Management â†’ Orders.`;
                 showToast(alertMessage, 'error', 15000);
 
                 // Play alert sound (Phase 7)
@@ -5829,7 +5990,7 @@ function selectItemByOrderId_desktop(orderId) {
 }
 
 function handleNumpad_desktop(digit) {
-    // Case 1: An order line item is currently selected – adjust its quantity
+    // Case 1: An order line item is currently selected â€“ adjust its quantity
     if (selectedItemId_desktop) {
         const item = currentOrder.find(i => String(i.orderId) === selectedItemId_desktop);
         if (!item) {
@@ -5849,7 +6010,7 @@ function handleNumpad_desktop(digit) {
         }
         updateOrderDisplay();
     } else {
-        // Case 2: No line item selected – treat the numpad input as the TABLE number
+        // Case 2: No line item selected â€“ treat the numpad input as the TABLE number
         numpadInput_desktop += String(digit);
         selectedTableNumber = numpadInput_desktop;
         if (elements.headerTableInput) elements.headerTableInput.value = selectedTableNumber;
@@ -6305,6 +6466,17 @@ function openManagementModal() {
 
     document.body.style.overflow = 'hidden';
 
+    // Temporarily hide offline status strip while modal is open
+    if (typeof OfflineInterruptionManager !== 'undefined' && OfflineInterruptionManager.suppressStatusStrip) {
+        OfflineInterruptionManager.suppressStatusStrip();
+    } else {
+        const offlineStrip = document.getElementById('offlineStatusStrip');
+        if (offlineStrip) {
+            offlineStrip.classList.add('hidden');
+            offlineStrip.style.display = 'none';
+        }
+    }
+
     // Phase 7: Clear print failure indicator when management panel is opened
     clearPrintFailureSessionIndicator();
 
@@ -6344,6 +6516,16 @@ function closeManagementModal() {
         elements.managementModal.classList.remove('flex');
     }
     document.body.style.overflow = '';
+
+    // Restore offline status strip if it was suppressed
+    if (typeof OfflineInterruptionManager !== 'undefined' && OfflineInterruptionManager.restoreStatusStrip) {
+        OfflineInterruptionManager.restoreStatusStrip();
+    } else {
+        const offlineStrip = document.getElementById('offlineStatusStrip');
+        if (offlineStrip) {
+            offlineStrip.classList.remove('hidden');
+        }
+    }
 
     // Show floating action buttons again
     const settingsGear = document.getElementById('settings-gear-container');
@@ -6823,7 +7005,7 @@ async function refreshPrinters() {
             if (!hasRecommended && printers.length > 0) {
                 const helpOption = document.createElement('option');
                 helpOption.disabled = true;
-                helpOption.textContent = '──── No thermal printer detected ────';
+                helpOption.textContent = 'â”€â”€â”€â”€ No thermal printer detected â”€â”€â”€â”€';
                 sel.insertBefore(helpOption, sel.firstChild);
             }
         }
@@ -7444,8 +7626,8 @@ function updateManagementButtonIndicator() {
     if (hasPrintFailure) {
         const indicator = document.createElement('span');
         indicator.className = 'print-failure-indicator';
-        indicator.innerHTML = ' <span style="color: #ef4444; font-size: 1.2em;">⚠️</span>';
-        indicator.title = 'Print failure occurred - check Management → Orders';
+        indicator.innerHTML = ' <span style="color: #ef4444; font-size: 1.2em;">âš ï¸</span>';
+        indicator.title = 'Print failure occurred - check Management â†’ Orders';
         managementBtn.appendChild(indicator);
     }
 }
@@ -7604,11 +7786,11 @@ async function changePort() {
         document.getElementById('currentPortDisplay').textContent = newPort;
         
         if (firewallResult.success) {
-            resultSpan.textContent = `✅ Port changed to ${newPort} and firewall configured! Restart POSPal to use new port.`;
+            resultSpan.textContent = `âœ… Port changed to ${newPort} and firewall configured! Restart POSPal to use new port.`;
             resultSpan.className = 'text-sm text-green-600';
             showToast(`Port changed to ${newPort}! Please restart POSPal.`, 'success');
         } else {
-            resultSpan.textContent = `⚠️ Port changed to ${newPort} but firewall setup failed. You may need to manually allow port ${newPort}.`;
+            resultSpan.textContent = `âš ï¸ Port changed to ${newPort} but firewall setup failed. You may need to manually allow port ${newPort}.`;
             resultSpan.className = 'text-sm text-orange-600';
             showToast(`Port changed but firewall setup failed: ${firewallResult.message}`, 'warning');
         }
@@ -7618,7 +7800,7 @@ async function changePort() {
         
     } catch (error) {
         console.error('Error changing port:', error);
-        resultSpan.textContent = `❌ Failed to change port: ${error.message}`;
+        resultSpan.textContent = `âŒ Failed to change port: ${error.message}`;
         resultSpan.className = 'text-sm text-red-600';
         showToast('Error changing port.', 'error');
     } finally {
@@ -7885,7 +8067,7 @@ function openItemFormModal(itemIdToEdit = null) {
         populateItemFormForEdit(itemIdToEdit);
     } else {
         elements.itemFormModalTitle.textContent = t('ui.items.editItem', 'Add New Item');
-        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '💾 ' + t('ui.items.saveNewItem', 'Save New Item');
+        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = 'ðŸ’¾ ' + t('ui.items.saveNewItem', 'Save New Item');
     }
     // Handle different UI variants
     const isDesktopUI = document.body.classList.contains('desktop-ui');
@@ -7940,7 +8122,7 @@ function populateItemFormForEdit(itemIdToEdit) {
         // Populate enhanced menu data
         populateEnhancedMenuData(foundItem);
 
-        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '🔄 Update Item';
+        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = 'ðŸ”„ Update Item';
     }
 }
 
@@ -8843,12 +9025,12 @@ function renderAnalytics(data) {
     if (addonsContainer) {
         const items = data.topAddons || [];
         if (items.length === 0) {
-            addonsContainer.innerHTML = isDesktopUI ? '<p style="font-size: 0.75rem; color: #6b7280; font-style: italic; padding: 0.5rem;">No add‑on data.</p>' : '<p class="text-xs text-gray-500 italic p-2">No add‑on data.</p>';
+            addonsContainer.innerHTML = isDesktopUI ? '<p style="font-size: 0.75rem; color: #6b7280; font-style: italic; padding: 0.5rem;">No addâ€‘on data.</p>' : '<p class="text-xs text-gray-500 italic p-2">No addâ€‘on data.</p>';
         } else {
             addonsContainer.innerHTML = items.map(a => `
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-600 truncate pr-2">${a.name}</span>
-                    <span class="font-medium text-gray-800 whitespace-nowrap">\u20AC${(a.revenue || 0).toFixed(2)} • ${a.attachRate ? Math.round(a.attachRate*100) : 0}%</span>
+                    <span class="font-medium text-gray-800 whitespace-nowrap">\u20AC${(a.revenue || 0).toFixed(2)} â€¢ ${a.attachRate ? Math.round(a.attachRate*100) : 0}%</span>
                 </div>
             `).join('');
         }
@@ -9175,7 +9357,7 @@ async function checkAutomaticActivation() {
         const oldName = localStorage.getItem('pospal_customer_name');
 
         if (oldToken && oldEmail) {
-            console.log('⚠️  OLD browser-based license detected - migration needed');
+            console.log('âš ï¸  OLD browser-based license detected - migration needed');
 
             // Check if server already has a license
             const serverStatus = await fetch('/api/license/status');
@@ -9185,7 +9367,7 @@ async function checkAutomaticActivation() {
                 // Server doesn't have license yet - show migration message
                 console.log('Server has no license - prompting user to migrate');
                 showToast(
-                    `⚠️ Browser license detected for ${oldEmail}. Please re-activate using "Already paid? Enter unlock code" button to enable multi-device support.`,
+                    `âš ï¸ Browser license detected for ${oldEmail}. Please re-activate using "Already paid? Enter unlock code" button to enable multi-device support.`,
                     'warning',
                     15000
                 );
@@ -9205,7 +9387,7 @@ async function checkAutomaticActivation() {
             localStorage.removeItem('pospal_cached_status');
             localStorage.removeItem('pospal_daily_retry_count');
             localStorage.removeItem('pospal_last_daily_check');
-            console.log('✅ Old browser license data cleared');
+            console.log('âœ… Old browser license data cleared');
         }
 
         // Check for payment success (Stripe return)
@@ -9415,24 +9597,52 @@ async function loadLicenseInfo() {
                 isOnline: licenseData.isOnline !== false
             };
 
-            if (licenseData.isGraceMode) {
+            const managerOffline = typeof FrontendLicenseManager !== 'undefined'
+                && FrontendLicenseManager.cache
+                && FrontendLicenseManager.cache.isOnline === false;
+            const browserOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+            const forcedOffline = browserOffline || managerOffline;
+
+            if (licenseData.isGraceMode || forcedOffline) {
                 statusPayload.gracePeriod = true;
+
+                // Prefer server-provided offline counters, otherwise derive from last validation.
                 if (typeof licenseData.graceDaysLeft === 'number') {
                     statusPayload.graceDaysLeft = licenseData.graceDaysLeft;
                 }
                 if (typeof licenseData.daysOffline === 'number') {
                     statusPayload.daysSince = licenseData.daysOffline;
+                } else if (typeof FrontendLicenseManager !== 'undefined'
+                    && typeof FrontendLicenseManager.getLastValidationTimestamp === 'function') {
+                    const lastValidation = FrontendLicenseManager.getLastValidationTimestamp();
+                    if (lastValidation) {
+                        statusPayload.daysSince = (Date.now() - lastValidation) / (1000 * 60 * 60 * 24);
+                    }
                 }
+
+                statusPayload.isOnline = false;
             }
 
-            const statusKey = licenseData.isGraceMode ? 'offline' : (licenseData.licenseStatus || 'inactive');
+            const statusKey = (licenseData.isGraceMode || forcedOffline)
+                ? 'offline'
+                : (licenseData.licenseStatus || 'inactive');
             StatusDisplayManager.updateLicenseStatus(statusKey, statusPayload);
 
-            // Use the enhanced updateBillingDateDisplay function
-            FrontendLicenseManager.updateBillingDateDisplay(licenseData);
+            if (statusKey === 'offline') {
+                // When offline, hide live subscription widgets and rely on cached banner messaging.
+                const detailsElement = document.getElementById('subscription-details');
+                if (detailsElement) {
+                    detailsElement.classList.add('hidden');
+                    detailsElement.style.display = 'none';
+                }
+                FrontendLicenseManager.hidePortalButtons();
+            } else {
+                // Use the enhanced updateBillingDateDisplay function
+                FrontendLicenseManager.updateBillingDateDisplay(licenseData);
 
-            // Show portal buttons (they can manage/renew even if inactive)
-            FrontendLicenseManager.showPortalButtons();
+                // Show portal buttons (they can manage/renew even if inactive)
+                FrontendLicenseManager.showPortalButtons();
+            }
 
         } else {
             console.log('No license found, showing default state');
@@ -9618,7 +9828,7 @@ function showUnlockRedirect(type = 'trial') {
         'Your subscription has expired. Choose an option to continue:' :
         'Your 30-day trial has ended. Choose an option to continue:';
     
-    if (confirm(message + '\n\n✅ Already paid? Click OK to enter unlock code\n❌ Need to pay? Click Cancel to subscribe')) {
+    if (confirm(message + '\n\nâœ… Already paid? Click OK to enter unlock code\nâŒ Need to pay? Click Cancel to subscribe')) {
         showUnlockDialog();
     } else {
         showEmbeddedPayment();
@@ -10120,64 +10330,64 @@ function showPortalErrorGuidance(guidanceType, error) {
         case 'network':
             guidanceMessage = 'Network Connection Issue';
             actions = [
-                '• Check your internet connection',
-                '• Try refreshing the page',
-                '• If using a VPN, try disconnecting temporarily'
+                'â€¢ Check your internet connection',
+                'â€¢ Try refreshing the page',
+                'â€¢ If using a VPN, try disconnecting temporarily'
             ];
             break;
             
         case 'auth':
             guidanceMessage = 'Authentication Problem';
             actions = [
-                '• Try validating your license again',
-                '• Clear browser cache and cookies for this site',
-                '• Contact support@pospal.gr if the issue persists'
+                'â€¢ Try validating your license again',
+                'â€¢ Clear browser cache and cookies for this site',
+                'â€¢ Contact support@pospal.gr if the issue persists'
             ];
             break;
             
         case 'setup':
             guidanceMessage = 'Account Setup Required';
             actions = [
-                '• This usually resolves automatically within a few minutes',
-                '• Try again in 2-3 minutes',
-                '• Contact support@pospal.gr if you continue having issues'
+                'â€¢ This usually resolves automatically within a few minutes',
+                'â€¢ Try again in 2-3 minutes',
+                'â€¢ Contact support@pospal.gr if you continue having issues'
             ];
             break;
             
         case 'retry':
             guidanceMessage = 'Service Temporarily Unavailable';
             actions = [
-                '• Wait 2-3 minutes and try again',
-                '• Check our status page for known issues',
-                '• Contact support@pospal.gr if the problem continues'
+                'â€¢ Wait 2-3 minutes and try again',
+                'â€¢ Check our status page for known issues',
+                'â€¢ Contact support@pospal.gr if the problem continues'
             ];
             break;
             
         case 'subscription':
             guidanceMessage = 'Subscription Issue';
             actions = [
-                '• Verify your subscription is active',
-                '• Try validating your license again',
-                '• Check your email for subscription notifications',
-                '• Contact support@pospal.gr for assistance'
+                'â€¢ Verify your subscription is active',
+                'â€¢ Try validating your license again',
+                'â€¢ Check your email for subscription notifications',
+                'â€¢ Contact support@pospal.gr for assistance'
             ];
             break;
             
         case 'server':
             guidanceMessage = 'Server Maintenance';
             actions = [
-                '• Our servers are being updated',
-                '• Please try again in 5-10 minutes',
-                '• No action required from you'
+                'â€¢ Our servers are being updated',
+                'â€¢ Please try again in 5-10 minutes',
+                'â€¢ No action required from you'
             ];
             break;
             
         default:
             guidanceMessage = 'Need Help?';
             actions = [
-                '• Try refreshing the page and attempting again',
-                '• Clear your browser cache',
-                '• Contact support@pospal.gr with error details'
+                'â€¢ Try refreshing the page and attempting again',
+                'â€¢ Clear your browser cache',
+                'â€¢ Contact support@pospal.gr with error details'
             ];
     }
     
@@ -10280,7 +10490,7 @@ function initializePortalReturnHandling() {
         console.log('Payment successful - showing success toast and refreshing license');
 
         // Show success toast
-        showToast('🎉 Subscription activated! Welcome back!', 'success', 5000);
+        showToast('ðŸŽ‰ Subscription activated! Welcome back!', 'success', 5000);
 
         // Force license validation to get updated status
         setTimeout(async () => {
@@ -10567,9 +10777,9 @@ function initializeLicenseUIVisibility() {
             trialActions.appendChild(message);
         }
 
-        console.log('🔒 License management UI hidden - not localhost');
+        console.log('ðŸ”’ License management UI hidden - not localhost');
     } else {
-        console.log('✅ License management UI available - localhost access');
+        console.log('âœ… License management UI available - localhost access');
     }
 }
 
@@ -10753,7 +10963,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     setUnlockLoading(false);
 
                     // Show success message
-                    showToast(`🎉 Server license activated for ${email}! All devices will use this license. Refreshing...`, 'success', 2000);
+                    showToast(`ðŸŽ‰ Server license activated for ${email}! All devices will use this license. Refreshing...`, 'success', 2000);
 
                     // Refresh the entire page to load the new server license
                     setTimeout(() => {
@@ -11234,7 +11444,7 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
         
         // Show offline status
         showConnectivityStatus(false);
-        StatusDisplayManager.updateLicenseStatus('offline');
+        StatusDisplayManager.updateLicenseStatus('offline', { isOnline: false });
         
         return false; // Assume offline
     }
@@ -11253,7 +11463,7 @@ function handleOfflineMode() {
     
     if (!isInOfflineGracePeriod()) {
         // Grace period expired - show trial mode
-        StatusDisplayManager.updateLicenseStatus('trial');
+        StatusDisplayManager.updateLicenseStatus('trial', { isOnline: false });
         showTrialModeNotification();
     } else {
         // Still in grace period - update status accordingly
@@ -11265,10 +11475,10 @@ function handleOfflineMode() {
         
         if (daysSince > normalGraceDays) {
             // In warning period
-            StatusDisplayManager.updateLicenseStatus('warning');
+            StatusDisplayManager.updateLicenseStatus('warning', { isOnline: false });
         } else {
             // Normal grace period
-            StatusDisplayManager.updateLicenseStatus('offline');
+            StatusDisplayManager.updateLicenseStatus('offline', { isOnline: false });
         }
     }
 }
@@ -11733,7 +11943,7 @@ async function attemptReconnect() {
         const isOnline = await attemptServerValidation(customerEmail, unlockToken, 10000); // 10 second timeout for manual attempts
         
         if (isOnline) {
-            showToast('✅ Reconnected successfully!', 'success', 3000);
+            showToast('âœ… Reconnected successfully!', 'success', 3000);
             // hideOfflineIndicator(); // Removed invasive popup
             // Update last daily check timestamp to reset daily schedule
             localStorage.setItem('pospal_last_daily_check', Date.now().toString());
@@ -11742,7 +11952,7 @@ async function attemptReconnect() {
                 startSession();
             }, 1000);
         } else {
-            showToast('❌ Still offline - automatic check once per day', 'error', 4000);
+            showToast('âŒ Still offline - automatic check once per day', 'error', 4000);
         }
     }
 }
@@ -11963,10 +12173,10 @@ function showTrialModeNotification() {
                 <div class="bg-blue-50 rounded-lg p-4 mb-6">
                     <h4 class="font-semibold text-blue-800 mb-2">What this means:</h4>
                     <ul class="text-sm text-blue-700 space-y-1">
-                        <li>• Basic POS functions continue to work</li>
-                        <li>• Some advanced features are temporarily limited</li>
-                        <li>• Your data and settings are completely safe</li>
-                        <li>• Full functionality resumes once connected</li>
+                        <li>â€¢ Basic POS functions continue to work</li>
+                        <li>â€¢ Some advanced features are temporarily limited</li>
+                        <li>â€¢ Your data and settings are completely safe</li>
+                        <li>â€¢ Full functionality resumes once connected</li>
                     </ul>
                 </div>
                 
@@ -12054,9 +12264,9 @@ function showConnectivityHelp() {
                         <h3 class="font-semibold text-yellow-800 mb-2">Still Having Issues?</h3>
                         <p class="text-sm text-yellow-700 mb-3">POSPal needs to reach our license servers occasionally. If you continue having problems:</p>
                         <ul class="space-y-1 text-sm text-yellow-700">
-                            <li>• Contact your IT administrator about firewall settings</li>
-                            <li>• Check if your network blocks external connections</li>
-                            <li>• Try connecting from a different network (mobile hotspot)</li>
+                            <li>â€¢ Contact your IT administrator about firewall settings</li>
+                            <li>â€¢ Check if your network blocks external connections</li>
+                            <li>â€¢ Try connecting from a different network (mobile hotspot)</li>
                         </ul>
                     </div>
                 </div>
@@ -12515,7 +12725,7 @@ function unlockPOSPal(unlockToken, customerEmail = null, customerName = null) {
     }
     
     // Show success message
-    showToast('🎉 Welcome to POSPal Pro! Your app is now unlocked.', 'success', 5000);
+    showToast('ðŸŽ‰ Welcome to POSPal Pro! Your app is now unlocked.', 'success', 5000);
     
     // Refresh the page to ensure all locked features are enabled
     setTimeout(() => {
@@ -15049,7 +15259,7 @@ async function confirmPayment() {
         }
 
         const result = await response.json();
-        const methodLabel = selectedPaymentMethod === 'cash' ? '💵 Cash' : '💳 Card';
+        const methodLabel = selectedPaymentMethod === 'cash' ? 'ðŸ’µ Cash' : 'ðŸ’³ Card';
         showToast(`${result.message || 'Table marked as paid'} (${methodLabel})`, 'success');
 
         // Refresh table data
@@ -15206,8 +15416,8 @@ function updateSplitPreview() {
                     </div>
                     <div class="flex items-center gap-2">
                         <select id="splitPaymentMethod_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                            <option value="cash">💵 Cash</option>
-                            <option value="card">💳 Card</option>
+                            <option value="cash">ðŸ’µ Cash</option>
+                            <option value="card">ðŸ’³ Card</option>
                         </select>
                         <button onclick="recordEqualSplitPayment(${i}, ${perPerson})"
                                 id="recordPaymentBtn_${i}"
@@ -15284,7 +15494,7 @@ async function recordEqualSplitPayment(personNumber, amount) {
         await showTableDetail(currentTableId);
         await reloadTableDataOnly();
 
-        const methodLabel = method === 'cash' ? '💵 Cash' : '💳 Card';
+        const methodLabel = method === 'cash' ? 'ðŸ’µ Cash' : 'ðŸ’³ Card';
         showToast(`Payment recorded: \u20AC${amount.toFixed(2)} (${methodLabel})`, 'success');
 
     } catch (error) {
@@ -15480,8 +15690,8 @@ function updateSplitSummary() {
                 ${total > 0 ? `
                     <div class="flex items-center gap-2">
                         <select id="byItemsPaymentMethod_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                            <option value="cash">💵 Cash</option>
-                            <option value="card">💳 Card</option>
+                            <option value="cash">ðŸ’µ Cash</option>
+                            <option value="card">ðŸ’³ Card</option>
                         </select>
                         <button onclick="recordByItemsPayment(${i}, ${total})"
                                 id="recordByItemsBtn_${i}"
@@ -15503,7 +15713,7 @@ function updateSplitSummary() {
         const unassignedCount = totalItems - assignedCount;
         html += `
             <div class="flex justify-between text-sm pt-2 border-t border-gray-300">
-                <span class="text-orange-600 font-medium">⚠ Unassigned:</span>
+                <span class="text-orange-600 font-medium">âš  Unassigned:</span>
                 <span class="font-semibold text-orange-600">${formatCurrency(totalUnassigned)} <span class="text-xs">(${unassignedCount} item${unassignedCount !== 1 ? 's' : ''})</span></span>
             </div>
         `;
@@ -15598,7 +15808,7 @@ async function recordByItemsPayment(personNumber, amount) {
         await showTableDetail(currentTableId);
         await reloadTableDataOnly();
 
-        const methodLabel = method === 'cash' ? '💵 Cash' : '💳 Card';
+        const methodLabel = method === 'cash' ? 'ðŸ’µ Cash' : 'ðŸ’³ Card';
         showToast(`Payment recorded: \u20AC${amount.toFixed(2)} (${methodLabel})`, 'success');
 
     } catch (error) {
@@ -15684,7 +15894,7 @@ async function activateServerLicense() {
 
         if (response.ok && data.success) {
             // Success!
-            showToast(`✅ Server license activated for ${email}! All devices will now use this license.`, 'success', 8000);
+            showToast(`âœ… Server license activated for ${email}! All devices will now use this license.`, 'success', 8000);
 
             // Clear form
             emailInput.value = '';
@@ -15700,13 +15910,13 @@ async function activateServerLicense() {
         } else {
             // Error
             const errorMsg = data.error || 'License activation failed';
-            showToast(`❌ ${errorMsg}`, 'error', 6000);
+            showToast(`âŒ ${errorMsg}`, 'error', 6000);
             console.error('Server license activation failed:', data);
         }
 
     } catch (error) {
         console.error('Error activating server license:', error);
-        showToast('❌ Network error - please try again', 'error');
+        showToast('âŒ Network error - please try again', 'error');
     } finally {
         // Re-enable button
         activateBtn.disabled = false;
@@ -15740,17 +15950,17 @@ async function deactivateServerLicense() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            showToast('✅ Server license deactivated', 'success');
+            showToast('âœ… Server license deactivated', 'success');
             passwordInput.value = '';
             await updateServerLicenseStatusDisplay(true);
             await FrontendLicenseManager.validateLicense(true);
         } else {
-            showToast(`❌ ${data.error || 'Deactivation failed'}`, 'error');
+            showToast(`âŒ ${data.error || 'Deactivation failed'}`, 'error');
         }
 
     } catch (error) {
         console.error('Error deactivating server license:', error);
-        showToast('❌ Network error - please try again', 'error');
+        showToast('âŒ Network error - please try again', 'error');
     }
 }
 
@@ -15758,11 +15968,88 @@ async function deactivateServerLicense() {
  * Update server license status display in management panel
  */
 async function updateServerLicenseStatusDisplay(forceRefresh = false) {
-    try {
-        const statusDisplay = document.getElementById('server-license-status-display');
-        const activateBtn = document.getElementById('activate-server-license-btn');
-        const deactivateBtn = document.getElementById('deactivate-server-license-btn');
+    const statusDisplay = document.getElementById('server-license-status-display');
+    const activateBtn = document.getElementById('activate-server-license-btn');
+    const deactivateBtn = document.getElementById('deactivate-server-license-btn');
+    const baseStatusClasses = 'mb-4 p-4 rounded-lg border';
+    const disabledButtonClasses = ['opacity-50', 'pointer-events-none', 'cursor-not-allowed'];
 
+    const setActionButtonsDisabled = (disabled) => {
+        [activateBtn, deactivateBtn].forEach((btn) => {
+            if (!btn) return;
+            btn.disabled = disabled;
+            disabledButtonClasses.forEach((cls) => btn.classList.toggle(cls, disabled));
+
+            if (disabled) {
+                if (!btn.dataset.originalTitle) {
+                    btn.dataset.originalTitle = btn.getAttribute('title') || '';
+                }
+                btn.setAttribute('title', 'Reconnect to manage server licensing');
+            } else if (btn.dataset.originalTitle !== undefined) {
+                btn.setAttribute('title', btn.dataset.originalTitle);
+                delete btn.dataset.originalTitle;
+            }
+        });
+    };
+
+    const isBrowserOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+
+    const renderOfflineStatus = (sourceData = null) => {
+        if (!statusDisplay) return;
+
+        const cachedLicense = typeof LicenseStorage !== 'undefined' && LicenseStorage.getLicenseData
+            ? LicenseStorage.getLicenseData()
+            : {};
+        const displaySource = sourceData || cachedLicense || {};
+
+        const lastValidatedSource =
+            displaySource.lastValidated ||
+            displaySource.validated_at ||
+            (typeof FrontendLicenseManager !== 'undefined' &&
+            typeof FrontendLicenseManager.getLastValidationTimestamp === 'function'
+                ? FrontendLicenseManager.getLastValidationTimestamp()
+                : null);
+
+        const lastValidatedTimestamp = parseTimestamp(lastValidatedSource);
+        const lastValidatedText = lastValidatedTimestamp ? formatDateTime(lastValidatedTimestamp) : 'Not yet verified';
+        const offlineDurationMs = lastValidatedTimestamp ? Date.now() - lastValidatedTimestamp : null;
+        const offlineDurationText = offlineDurationMs !== null ? formatDuration(offlineDurationMs) : null;
+
+        const nameRaw = displaySource.customerName || displaySource.customer_name;
+        const emailRaw = displaySource.customerEmail || displaySource.email;
+        const statusRaw = displaySource.subscription_status || displaySource.licenseStatus || 'unknown';
+        const nextBillingRaw = displaySource.next_billing_date || displaySource.nextBillingDate;
+
+        const customerName = nameRaw && String(nameRaw).trim() ? String(nameRaw) : 'Unknown';
+        const customerEmail = emailRaw && String(emailRaw).trim() ? String(emailRaw) : 'Unknown';
+        const subscriptionStatus = typeof statusRaw === 'string' ? statusRaw.replace(/_/g, ' ') : String(statusRaw);
+        const nextBillingText = nextBillingRaw ? formatDateTime(nextBillingRaw) : 'Unavailable offline';
+
+        statusDisplay.className = `${baseStatusClasses} border-slate-300 bg-slate-100 text-slate-700`;
+        statusDisplay.classList.remove('hidden');
+        statusDisplay.innerHTML = `
+            <div class="flex items-start gap-3">
+                <i class="fas fa-wifi-slash text-slate-500 text-lg mt-0.5"></i>
+                <div class="flex-1">
+                    <h6 class="text-sm font-semibold text-slate-800">Offline Mode - showing cached license information</h6>
+                    <p class="text-xs text-slate-600 mt-1"><strong>Customer:</strong> ${customerName}</p>
+                    <p class="text-xs text-slate-600"><strong>Email:</strong> ${customerEmail}</p>
+                    <p class="text-xs text-slate-600"><strong>Status:</strong> ${subscriptionStatus}</p>
+                    <p class="text-xs text-slate-600"><strong>Next Billing:</strong> ${nextBillingText}</p>
+                    <p class="text-xs text-slate-500 mt-2">Last verified: ${lastValidatedText}${offlineDurationText ? ` Â· Offline for ${offlineDurationText}` : ''}</p>
+                    <p class="text-xs text-slate-500 mt-1">Reconnect to update or manage this license.</p>
+                </div>
+            </div>
+        `;
+
+        setActionButtonsDisabled(true);
+    };
+
+    const clearOfflineStyling = () => {
+        setActionButtonsDisabled(false);
+    };
+
+    try {
         if (serverLicenseDisplayUnsubscribe) {
             serverLicenseDisplayUnsubscribe();
             serverLicenseDisplayUnsubscribe = null;
@@ -15771,9 +16058,16 @@ async function updateServerLicenseStatusDisplay(forceRefresh = false) {
         const applyStatus = (data) => {
             if (!statusDisplay) return;
 
+            if (isBrowserOffline()) {
+                renderOfflineStatus(data);
+                return;
+            }
+
+            clearOfflineStyling();
+
             if (data && data.licensed && data.active) {
-                statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
-                statusDisplay.classList.add('border-green-300', 'bg-green-50');
+                statusDisplay.className = `${baseStatusClasses} border-green-300 bg-green-50`;
+                statusDisplay.classList.remove('hidden');
                 statusDisplay.innerHTML = `
                     <div class="flex items-start gap-3">
                         <i class="fas fa-check-circle text-green-600 text-lg mt-0.5"></i>
@@ -15798,8 +16092,8 @@ async function updateServerLicenseStatusDisplay(forceRefresh = false) {
             }
 
             if (data && data.grace_period) {
-                statusDisplay.classList.remove('hidden', 'border-gray-300', 'bg-gray-50');
-                statusDisplay.classList.add('border-yellow-300', 'bg-yellow-50');
+                statusDisplay.className = `${baseStatusClasses} border-yellow-300 bg-yellow-50`;
+                statusDisplay.classList.remove('hidden');
                 statusDisplay.innerHTML = `
                     <div class="flex items-start gap-3">
                         <i class="fas fa-exclamation-triangle text-yellow-600 text-lg mt-0.5"></i>
@@ -15818,7 +16112,7 @@ async function updateServerLicenseStatusDisplay(forceRefresh = false) {
                 return;
             }
 
-            statusDisplay.classList.add('hidden');
+            statusDisplay.className = `${baseStatusClasses} hidden`;
             if (activateBtn) activateBtn.classList.remove('hidden');
             if (deactivateBtn) deactivateBtn.classList.add('hidden');
         };
@@ -15827,9 +16121,19 @@ async function updateServerLicenseStatusDisplay(forceRefresh = false) {
             serverLicenseDisplayUnsubscribe = ServerLicenseStatus.subscribe(applyStatus);
         }
 
+        if (isBrowserOffline()) {
+            const currentStatus = typeof ServerLicenseStatus !== 'undefined' && typeof ServerLicenseStatus.getCurrentStatus === 'function'
+                ? ServerLicenseStatus.getCurrentStatus()
+                : null;
+            renderOfflineStatus(currentStatus);
+        }
+
         await ServerLicenseStatus.ensureFetch(forceRefresh);
     } catch (error) {
         console.error('Error updating server license status:', error);
+        if (isBrowserOffline()) {
+            renderOfflineStatus();
+        }
     }
 }
 
