@@ -507,7 +507,9 @@ const StatusDisplayManager = {
                     `,
                     badge: isOnline ? 'Active & Verified' : 'Active (Offline)',
                     badgeClass: isOnline ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800',
-                    footer: customerName ? `<i class="fas fa-star text-yellow-500 mr-1"></i>Licensed to: ${customerName}` : '',
+                    footer: customerName
+                        ? { text: `Licensed to: ${customerName}`, tone: 'positive' }
+                        : { text: 'Subscription active', tone: 'positive' },
                     showSubscription: true,
                     showTrialActions: false,
                     animate: true
@@ -534,7 +536,7 @@ const StatusDisplayManager = {
                     `,
                     badge: `License ${statusText}`,
                     badgeClass: 'bg-orange-100 text-orange-800',
-                    footer: `<i class="fas fa-exclamation-circle text-orange-500 mr-1"></i>Subscription ${statusType} - Renew required`,
+                    footer: { text: `Subscription ${statusText.toLowerCase()} - renewal required`, tone: 'warning' },
                     showSubscription: true, // Show the subscription card with Manage Subscription button
                     showTrialActions: false, // Hide trial/subscribe buttons
                     animate: true
@@ -558,7 +560,10 @@ const StatusDisplayManager = {
                     `,
                     badge: 'Trial Mode',
                     badgeClass: 'bg-blue-100 text-blue-800',
-                    footer: `<i class="fas fa-clock text-blue-500 mr-1"></i>Trial Mode${daysLeft > 0 ? ` (${daysLeft} days left)` : ''}`,
+                    footer: {
+                        text: `Trial mode${daysLeft > 0 ? ` - ${daysLeft} days remaining` : ''}`,
+                        tone: 'info'
+                    },
                     showSubscription: false,
                     showTrialActions: true,
                     animate: false
@@ -582,7 +587,10 @@ const StatusDisplayManager = {
                     `,
                     badge: 'Verification Needed',
                     badgeClass: 'bg-yellow-100 text-yellow-800',
-                    footer: `<i class="fas fa-exclamation-triangle text-yellow-500 mr-1"></i>Verification needed`,
+                    footer: {
+                        text: `Verification required - ${remainingDays} days remaining`,
+                        tone: 'warning'
+                    },
                     showSubscription: false,
                     showTrialActions: true,
                     animate: false
@@ -606,7 +614,7 @@ const StatusDisplayManager = {
                     `,
                     badge: 'Validating...',
                     badgeClass: 'bg-gray-100 text-gray-600',
-                    footer: '<i class="fas fa-spinner fa-spin text-gray-500 mr-1"></i>Validating license...',
+                    footer: { text: 'Validating license...', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
                     animate: false
@@ -639,7 +647,7 @@ const StatusDisplayManager = {
                     `,
                     badge: 'Offline Mode',
                     badgeClass: 'bg-slate-200 text-slate-800',
-                    footer: `<i class="fas fa-wifi-slash text-slate-500 mr-1"></i>Offline - using cached license data`,
+                    footer: { text: 'Offline mode - using cached license data', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
                     animate: false
@@ -651,7 +659,7 @@ const StatusDisplayManager = {
                     html: '<p class="text-gray-600">Loading license status...</p>',
                     badge: 'Loading...',
                     badgeClass: 'bg-gray-100 text-gray-600',
-                    footer: '',
+                    footer: { text: '', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
                     animate: false
@@ -672,9 +680,28 @@ const StatusDisplayManager = {
         }
     },
     
-    updateFooterStatus(html) {
-        if (this.elements.footerStatus) {
-            this.elements.footerStatus.innerHTML = html;
+    updateFooterStatus(footerConfig) {
+        if (!this.elements.footerStatus) return;
+
+        const footerEl = this.elements.footerStatus;
+        const baseClasses = 'font-medium text-sm';
+        const toneClasses = {
+            positive: 'text-emerald-600',
+            warning: 'text-amber-600',
+            info: 'text-blue-600',
+            neutral: 'text-slate-500',
+            danger: 'text-rose-600'
+        };
+
+        const text = footerConfig && footerConfig.text ? footerConfig.text : '';
+        const tone = footerConfig && footerConfig.tone ? footerConfig.tone : 'neutral';
+
+        footerEl.textContent = text;
+
+        if (text) {
+            footerEl.className = `${baseClasses} ${toneClasses[tone] || toneClasses.neutral}`;
+        } else {
+            footerEl.className = `${baseClasses} text-slate-400`;
         }
     },
     
@@ -3271,8 +3298,8 @@ window.addEventListener('online', () => {
 
 window.addEventListener('offline', () => {
     if (!tableManagementEnabled) {
-        stopSimpleModeConnectionMonitor();
-        updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+        // Re-check local POS availability before changing status
+        startSimpleModeConnectionMonitor(ConnectionStatus.CHECKING);
     }
 });
 function initConnectionStatusIndicator() {
@@ -3283,7 +3310,7 @@ function initConnectionStatusIndicator() {
     // Show status banner if table management enabled
     const banner = document.getElementById('connectionStatusBanner');
     if (banner) {
-        banner.style.display = 'flex';
+        banner.style.display = 'inline-flex';
     }
 
     monitorSSEConnection();
@@ -3457,6 +3484,9 @@ function updateConnectionStatusUI(status) {
             }
             if (bannerText) bannerText.textContent = content.text;
             if (bannerSubtext) bannerSubtext.textContent = content.subtext;
+            const description = content.subtext ? `${content.text} • ${content.subtext}` : content.text;
+            banner.title = description;
+            banner.setAttribute('aria-label', description);
         }
     }
 
@@ -3464,12 +3494,12 @@ function updateConnectionStatusUI(status) {
     if (previousStatus && previousStatus !== status && previousStatus !== 'checking') {
         const toastMessages = {
             offline: {
-                message: 'âš ï¸ Server Offline - Changes may not sync in real-time',
+                message: '\u26A0\uFE0F Server Offline - Changes may not sync in real-time',
                 type: 'warning',
                 duration: 8000
             },
             live: {
-                message: 'âœ… Back Online - Real-time sync restored',
+                message: '\u2705 Back Online - Real-time sync restored',
                 type: 'success',
                 duration: 4000
             },
@@ -6844,12 +6874,131 @@ async function initializeHardwarePrintingUI() {
         // Load device settings (Phase 5)
         loadDeviceSettings();
 
+        // Load business profile for receipts
+        await loadBusinessProfile();
+
         // Load network settings
         await loadNetworkSettings();
 
     } catch (e) {
         console.error('Failed to initialize Hardware & Printing UI:', e);
     }
+}
+
+async function loadBusinessProfile() {
+    const fieldMap = {
+        name: 'businessNameInput',
+        address: 'businessAddressInput',
+        phone: 'businessPhoneInput',
+        email: 'businessEmailInput',
+        website: 'businessWebsiteInput',
+        tax_id: 'businessTaxInput',
+        footer: 'businessFooterInput'
+    };
+    const statusEl = document.getElementById('businessProfileStatus');
+    const firstField = document.getElementById('businessNameInput');
+    if (!firstField) return;
+
+    try {
+        const response = await fetch('/api/business-profile');
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || 'Failed to load business profile');
+        }
+        const profile = data.profile || {};
+        Object.entries(fieldMap).forEach(([key, id]) => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.value = profile[key] || '';
+            }
+        });
+        if (statusEl) {
+            if (profile.updated_at) {
+                const updatedDate = new Date(profile.updated_at);
+                statusEl.textContent = isNaN(updatedDate)
+                    ? `Last updated: ${profile.updated_at}`
+                    : `Last updated ${updatedDate.toLocaleString()}`;
+            } else if (profile.name) {
+                statusEl.textContent = data.source === 'env'
+                    ? 'Using environment variables'
+                    : 'Profile loaded';
+            } else {
+                statusEl.textContent = 'Not configured';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load business profile:', error);
+        if (statusEl) statusEl.textContent = 'Unable to load profile';
+        showToast(error.message || 'Failed to load business profile', 'error');
+    }
+}
+
+async function saveBusinessProfile() {
+    const saveBtn = document.getElementById('businessProfileSaveBtn');
+    const statusEl = document.getElementById('businessProfileStatus');
+    const fieldIds = {
+        name: 'businessNameInput',
+        address: 'businessAddressInput',
+        phone: 'businessPhoneInput',
+        email: 'businessEmailInput',
+        website: 'businessWebsiteInput',
+        tax_id: 'businessTaxInput',
+        footer: 'businessFooterInput'
+    };
+    const payload = {};
+
+    Object.entries(fieldIds).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        payload[key] = el ? el.value.trim() : '';
+    });
+
+    if (!payload.name) {
+        showToast('Business name is required for receipts.', 'warning');
+        document.getElementById('businessNameInput')?.focus();
+        return;
+    }
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    }
+
+    try {
+        const response = await fetch('/api/business-profile', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || result.success === false) {
+            throw new Error(result.message || 'Failed to save profile');
+        }
+        showToast('Business profile saved', 'success');
+        if (statusEl) {
+            const profile = result.profile || {};
+            if (profile.updated_at) {
+                const updatedDate = new Date(profile.updated_at);
+                statusEl.textContent = isNaN(updatedDate)
+                    ? `Last updated: ${profile.updated_at}`
+                    : `Last updated ${updatedDate.toLocaleString()}`;
+            } else {
+                statusEl.textContent = 'Profile saved';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to save business profile:', error);
+        showToast(error.message || 'Failed to save business profile', 'error');
+        if (statusEl) statusEl.textContent = 'Save failed';
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Profile';
+        }
+    }
+
+    await loadBusinessProfile();
 }
 
 // --- Device Settings Functions (Phase 5: Multi-device printer redesign) ---
@@ -16151,4 +16300,5 @@ if (typeof document !== 'undefined') {
 // END SERVER LICENSE MANAGEMENT
 // =============================================================================
 // =============================================================================
+
 

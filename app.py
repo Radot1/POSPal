@@ -5,6 +5,7 @@ from werkzeug.http import http_date
 from datetime import datetime, timedelta, date
 import csv
 import os
+from decimal import Decimal, ROUND_HALF_UP
 from config import Config
 import win32print  # type: ignore
 import time
@@ -92,6 +93,7 @@ _sse_subscribers: list[Queue] = []
 
 # --- Global hardware ID cache (calculated once at startup to prevent blocking) ---
 _cached_hardware_id: str | None = None
+_business_identity_cache = None
 
 def _sse_broadcast(event_name: str, payload: dict):
     try:
@@ -117,6 +119,74 @@ def _broadcast_license_status(payload: dict, source: str = "unknown"):
     except Exception as exc:
         app.logger.warning(f"Failed to broadcast license status update: {exc}")
 
+
+def load_business_profile_data():
+    profile = {}
+    if os.path.exists(BUSINESS_PROFILE_FILE):
+        try:
+            with open(BUSINESS_PROFILE_FILE, 'r', encoding='utf-8') as profile_file:
+                data = json.load(profile_file)
+            if isinstance(data, dict):
+                for key in BUSINESS_PROFILE_FIELDS:
+                    value = data.get(key, '')
+                    if isinstance(value, str):
+                        profile[key] = value
+                if data.get('updated_at'):
+                    profile['updated_at'] = data.get('updated_at')
+        except Exception as exc:
+            app.logger.warning(f"Failed to load business profile from {BUSINESS_PROFILE_FILE}: {exc}")
+    return profile
+
+
+def save_business_profile_data(update_data):
+    existing = load_business_profile_data()
+    base_profile = {key: existing.get(key, '') for key in BUSINESS_PROFILE_FIELDS}
+    for key in BUSINESS_PROFILE_FIELDS:
+        if key in update_data:
+            value = update_data.get(key)
+            if value is None:
+                base_profile[key] = ''
+            else:
+                base_profile[key] = str(value).strip()
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    profile_to_store = dict(base_profile)
+    profile_to_store['updated_at'] = datetime.now().isoformat()
+
+    with open(BUSINESS_PROFILE_FILE, 'w', encoding='utf-8') as profile_file:
+        json.dump(profile_to_store, profile_file, indent=2, ensure_ascii=False)
+
+    global _business_identity_cache
+    _business_identity_cache = None
+    return profile_to_store
+
+
+def get_business_identity():
+    """Load business identity details for receipts from cache, JSON profile, or environment variables."""
+    global _business_identity_cache
+    if _business_identity_cache is not None:
+        return dict(_business_identity_cache)
+
+    identity: dict[str, str] = {}
+
+    profile_data = load_business_profile_data()
+    if profile_data:
+        for key in BUSINESS_PROFILE_FIELDS:
+            value = profile_data.get(key)
+            if isinstance(value, str) and value.strip():
+                identity[key] = value.strip()
+
+    for key, env_keys in BUSINESS_PROFILE_ENV_MAP.items():
+        if key in identity:
+            continue
+        for env_key in env_keys:
+            value = os.environ.get(env_key)
+            if value and value.strip():
+                identity[key] = value.strip()
+                break
+
+    _business_identity_cache = dict(identity)
+    return dict(identity)
 # --- Cleanup handler for proper shutdown ---
 def _cleanup_on_exit():
     """Cleanup function called when the process exits normally or abnormally"""
@@ -228,13 +298,20 @@ try:
     UNIFIED_LICENSES_ENABLED = True
     app.logger.info("License integration system available")
 except ImportError as e:
-    app.logger.warning(f"Unified license system not available: {e}")
+    app.logger.critical(f"Unified license system not available: {e}")
     UNIFIED_LICENSES_ENABLED = False
-    # Fallback functions
+
     def get_license_status_integrated(force_refresh=False):
-        return check_trial_status_legacy()
+        raise RuntimeError("Unified license system not available")
+
     def validate_license_integrated(customer_email, unlock_token, hardware_id=None):
-        return {"licensed": False, "message": "Unified system not available"}
+        return {
+            "licensed": False,
+            "active": False,
+            "message": "Unified license system not available",
+            "_unified_system": False,
+            "cloud_validation": False,
+        }
 
 # License cache constants for hybrid cloud-first validation
 LICENSE_CACHE_FILE = os.path.join(DATA_DIR, 'license_cache.enc')
@@ -372,6 +449,21 @@ SERVER_LICENSE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'server_license.enc')
 # Environment variable to control migration rollout
 ENABLE_BACKEND_MIGRATION = os.environ.get('POSPAL_ENABLE_BACKEND_MIGRATION', 'true').lower() == 'true'
 
+def _unified_inactive_status(context: str, message: str, error: Exception | str | None = None) -> dict:
+    """Return a standardized inactive payload when unified licensing is unavailable."""
+    payload = {
+        'licensed': False,
+        'active': False,
+        'expired': True,
+        'source': 'unified_inactive',
+        'message': message,
+        '_migration_path': 'unified_only',
+        '_context': context,
+    }
+    if error:
+        payload['_error'] = str(error)
+    return payload
+
 def get_license_status_safe(force_refresh=False, context="general"):
     """
     Safe license status getter with migration support
@@ -390,49 +482,25 @@ def get_license_status_safe(force_refresh=False, context="general"):
         # Log context for migration tracking
         if context != "general":
             app.logger.debug(f"License check from context: {context}")
-        
-        # Use unified system if migration enabled and available
-        if ENABLE_BACKEND_MIGRATION and UNIFIED_LICENSES_ENABLED:
-            try:
-                unified_status = get_license_status_integrated(force_refresh)
-                
-                # Add migration metadata for monitoring
-                if isinstance(unified_status, dict):
-                    unified_status['_migration_path'] = 'unified'
-                    unified_status['_context'] = context
-                
-                return unified_status
-                
-            except Exception as e:
-                app.logger.error(f"Unified system error in context '{context}': {e}")
-                # Fallback to legacy system
-                app.logger.info(f"Falling back to legacy system for context: {context}")
-        
-        # Use legacy system (either by choice or fallback)
-        legacy_status = check_trial_status_legacy()
-        
-        # Add migration metadata
-        if isinstance(legacy_status, dict):
-            legacy_status['_migration_path'] = 'legacy'
-            legacy_status['_context'] = context
-            legacy_status['_fallback_reason'] = 'migration_disabled' if not ENABLE_BACKEND_MIGRATION else 'unified_unavailable'
-        
-        return legacy_status
-        
+
+        if not UNIFIED_LICENSES_ENABLED:
+            app.logger.error(f"Unified license system disabled for context '{context}'")
+            return _unified_inactive_status(context, "Unified license system disabled")
+
+        if not ENABLE_BACKEND_MIGRATION:
+            app.logger.info("Backend migration flag disabled - proceeding with unified system only")
+
+        unified_status = get_license_status_integrated(force_refresh)
+
+        if isinstance(unified_status, dict):
+            unified_status['_migration_path'] = 'unified_only'
+            unified_status['_context'] = context
+
+        return unified_status
+
     except Exception as e:
         app.logger.error(f"Critical license system error in context '{context}': {e}")
-        
-        # Emergency fallback - return safe inactive state
-        return {
-            'licensed': False,
-            'active': False,
-            'expired': True,
-            'source': 'emergency_fallback',
-            'message': f'License system critical error: {str(e)}',
-            '_migration_path': 'emergency',
-            '_context': context,
-            '_error': str(e)
-        }
+        return _unified_inactive_status(context, 'License system critical error', e)
 
 # --- Unified License Status Function ---
 def get_license_status_unified(force_refresh=False, use_legacy=None):
@@ -446,33 +514,40 @@ def get_license_status_unified(force_refresh=False, use_legacy=None):
     Returns:
         Dict containing license status in legacy format
     """
-    if UNIFIED_LICENSES_ENABLED and use_legacy is not True:
-        try:
-            return get_license_status_integrated(force_refresh)
-        except Exception as e:
-            app.logger.error(f"Unified license system error: {e}")
-            # Fallback to legacy if unified fails
-            if use_legacy is not False:
-                app.logger.info("Falling back to legacy license system")
-                return check_trial_status_legacy()
-            else:
-                # Return error state if legacy not allowed
-                return {
-                    'licensed': False,
-                    'active': False,
-                    'expired': True,
-                    'source': 'unified_system_error',
-                    'message': f'License system error: {str(e)}'
-                }
-    else:
-        # Use legacy system
-        return check_trial_status_legacy()
+    if not UNIFIED_LICENSES_ENABLED:
+        app.logger.error("Unified license system disabled - returning inactive status")
+        return _unified_inactive_status('get_license_status_unified', "Unified license system disabled")
+
+    if use_legacy:
+        app.logger.warning("Legacy license path requested but is no longer supported - returning inactive status")
+        return _unified_inactive_status('get_license_status_unified', "Legacy licensing is not supported")
+
+    try:
+        status = get_license_status_integrated(force_refresh)
+        if isinstance(status, dict):
+            status['_migration_path'] = 'unified_only'
+            status['_context'] = 'get_license_status_unified'
+        return status
+    except Exception as e:
+        app.logger.error(f"Unified license system error: {e}")
+        return _unified_inactive_status('get_license_status_unified', 'Unified license system error', e)
 
 MENU_FILE = os.path.join(DATA_DIR, 'menu.json')
 ORDER_COUNTER_FILE = os.path.join(DATA_DIR, 'order_counter.json')
 ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock file for order counter
 CONFIG_FILE_OLD = os.path.join(BASE_DIR, 'config.json')
 CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
+BUSINESS_PROFILE_FILE = os.path.join(DATA_DIR, 'business_profile.json')
+BUSINESS_PROFILE_FIELDS = ('name', 'address', 'phone', 'email', 'website', 'tax_id', 'footer')
+BUSINESS_PROFILE_ENV_MAP = {
+    'name': ['POSPAL_BUSINESS_NAME', 'BUSINESS_NAME'],
+    'address': ['POSPAL_BUSINESS_ADDRESS', 'BUSINESS_ADDRESS'],
+    'phone': ['POSPAL_BUSINESS_PHONE', 'BUSINESS_PHONE'],
+    'email': ['POSPAL_BUSINESS_EMAIL', 'BUSINESS_EMAIL'],
+    'website': ['POSPAL_BUSINESS_WEBSITE', 'BUSINESS_WEBSITE'],
+    'tax_id': ['POSPAL_BUSINESS_TAX_ID', 'BUSINESS_TAX_ID', 'ABN', 'VAT_NUMBER'],
+    'footer': ['POSPAL_BUSINESS_FOOTER', 'BUSINESS_FOOTER']
+}
 
 # --- NEW: Centralized State Management Files ---
 CURRENT_ORDER_FILE = os.path.join(DATA_DIR, 'current_order.json')
@@ -1754,15 +1829,17 @@ if getattr(sys, 'frozen', False) or sys.version_info >= (3, 13):
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+# Disable global defaults so frequent desktop polling endpoints are not rate limited.
+# Sensitive routes add explicit limits via decorators instead.
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["200 per day", "50 per hour"]
+    default_limits=[]
 )
 
 
-def to_bytes(s, encoding='cp437'): 
-    """Convert string to bytes with Greek character transliteration for thermal printers"""
+def to_bytes(s, encoding='cp858'): 
+    """Convert string to bytes with Greek character transliteration for thermal printers and Euro support"""
     if isinstance(s, bytes):
         return s
     
@@ -1776,6 +1853,20 @@ def to_bytes(s, encoding='cp437'):
     else:
         # English/Latin text - use standard encoding
         return s.encode(encoding, errors='replace')
+
+
+def to_decimal(value) -> Decimal:
+    """Safely convert values to Decimal for currency math."""
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal('0')
+
+
+def format_currency(value) -> str:
+    """Format numeric values as Euro currency strings."""
+    amount = to_decimal(value).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return f"\u20AC{format(amount, '0.00')}"
 
 def transliterate_greek_enhanced(text):
     """
@@ -3113,6 +3204,44 @@ def printing_settings():
     return jsonify({"success": False, "message": "Failed to save settings."}), 500
 
 
+@app.route('/api/business-profile', methods=['GET', 'POST'])
+def business_profile_settings():
+    if request.method == 'GET':
+        profile = load_business_profile_data()
+        source = 'stored' if profile else 'env'
+        if not profile:
+            env_profile = {}
+            for key, env_keys in BUSINESS_PROFILE_ENV_MAP.items():
+                for env_key in env_keys:
+                    value = os.environ.get(env_key)
+                    if value and value.strip():
+                        env_profile[key] = value.strip()
+                        break
+            profile = env_profile
+            if not profile:
+                source = 'default'
+        return jsonify({"success": True, "profile": profile, "source": source})
+
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"success": False, "message": "Invalid payload."}), 400
+
+    update_data = {}
+    for key in BUSINESS_PROFILE_FIELDS:
+        if key in data:
+            value = data.get(key)
+            if value is None:
+                update_data[key] = ''
+            else:
+                update_data[key] = str(value).strip()
+
+    if not update_data.get('name'):
+        return jsonify({"success": False, "message": "Business name is required."}), 400
+
+    saved_profile = save_business_profile_data(update_data)
+    return jsonify({"success": True, "profile": saved_profile})
+
+
 # --- General (non-printing) settings: UI language, etc. ---
 @app.route('/api/settings/general', methods=['GET', 'POST'])
 def general_settings():
@@ -4101,6 +4230,13 @@ def print_customer_receipt(table_id):
             "total_payments": len(payments),
             "bill_total": bill_data.get("grand_total", 0.0),
             "amount_paid_total": session.get("amount_paid", 0.0),
+            "amount_remaining": bill_data.get("amount_remaining", session.get("amount_remaining", 0.0)),
+            "payment_status": bill_data.get("payment_status", session.get("payment_status", "unpaid")),
+            "payments": payments,
+            "orders": bill_data.get("orders", []),
+            "seats": bill_data.get("seats"),
+            "bill_date": bill_data.get("bill_date"),
+            "bill_time": bill_data.get("bill_time"),
             "timestamp": datetime.now().isoformat()
         }
 
@@ -5784,11 +5920,295 @@ def print_table_bill_raw(ticket_content, bill_data, copy_info=""):
                 app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
 
 
+def build_customer_receipt_content(receipt_data):
+    """Generate ESC/POS byte content for a customer receipt."""
+    app.logger.info(
+        f"[RECEIPT] Building enhanced customer receipt for table {receipt_data.get('table_id')} "
+        f"payment {receipt_data.get('payment', {}).get('payment_id')}"
+    )
+    ticket_content = bytearray()
+    ticket_content += InitializePrinter
+    ticket_content += ESC + b't\x13'
+
+    NORMAL_FONT_LINE_WIDTH = 42
+    SMALL_FONT_LINE_WIDTH = 56
+
+    business_profile = receipt_data.get('business_profile') or get_business_identity()
+    restaurant_name = business_profile.get('name') or "POSPal"
+
+    ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+    ticket_content += to_bytes(restaurant_name + "\n")
+    ticket_content += BoldOff
+
+    contact_lines = []
+    for key in ('address', 'phone', 'email', 'website'):
+        value = business_profile.get(key)
+        if isinstance(value, str) and value.strip():
+            contact_lines.append(value.strip())
+    tax_id = business_profile.get('tax_id')
+    if isinstance(tax_id, str) and tax_id.strip():
+        contact_lines.append(f"Tax ID: {tax_id.strip()}")
+
+    if contact_lines:
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        for line in contact_lines:
+            for wrapped_line in word_wrap_text(line, SMALL_FONT_LINE_WIDTH):
+                ticket_content += to_bytes(wrapped_line + "\n")
+        ticket_content += AlignLeft + SelectFontA + NormalText
+    else:
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        ticket_content += to_bytes("Add business info via Settings > Business Profile\n")
+        ticket_content += AlignLeft + SelectFontA + NormalText
+
+    ticket_content += AlignCenter + SelectFontA + DoubleWidth + BoldOn
+    ticket_content += to_bytes("Customer Receipt\n")
+    ticket_content += BoldOff
+    ticket_content += AlignLeft + SelectFontA + NormalText
+    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+    def append_wrapped(text: str, indent: int = 0, width: int = NORMAL_FONT_LINE_WIDTH):
+        if not text:
+            return
+        indent_str = " " * indent
+        wrap_width = max(1, width - indent)
+        for line in word_wrap_text(text, wrap_width, initial_indent=indent_str, subsequent_indent=indent_str):
+            ticket_content += to_bytes(line + "\n")
+
+    def append_amount_line(label: str, amount, indent: int = 0):
+        amount_str = format_currency(amount)
+        indent_str = " " * indent
+        label_text = f"{indent_str}{label.strip()}"
+        available = NORMAL_FONT_LINE_WIDTH - len(amount_str)
+        if available <= len(indent_str):
+            append_wrapped(label_text.strip(), indent=indent)
+            ticket_content += to_bytes(indent_str + amount_str + "\n")
+            return
+        if len(label_text) <= available:
+            padding = available - len(label_text)
+            ticket_content += to_bytes(f"{label_text}{' ' * padding}{amount_str}\n")
+            return
+        label_lines = word_wrap_text(label_text.strip(), available, initial_indent=indent_str, subsequent_indent=indent_str)
+        if not label_lines:
+            append_wrapped(label_text.strip(), indent=indent)
+            ticket_content += to_bytes(indent_str + amount_str + "\n")
+            return
+        first_line = label_lines[0]
+        padding = available - len(first_line)
+        if padding < 1:
+            ticket_content += to_bytes(first_line + "\n")
+            for extra_line in label_lines[1:]:
+                ticket_content += to_bytes(extra_line + "\n")
+            ticket_content += to_bytes(indent_str + amount_str + "\n")
+        else:
+            ticket_content += to_bytes(f"{first_line}{' ' * padding}{amount_str}\n")
+            for extra_line in label_lines[1:]:
+                ticket_content += to_bytes(extra_line + "\n")
+
+    def append_label_value(label: str, value):
+        if value is None or value == "":
+            return
+        append_wrapped(f"{label}: {value}")
+
+    timestamp_iso = receipt_data.get("timestamp")
+    printed_at = datetime.now()
+    if isinstance(timestamp_iso, str):
+        try:
+            printed_at = datetime.fromisoformat(timestamp_iso)
+        except ValueError:
+            try:
+                printed_at = datetime.fromisoformat(timestamp_iso.replace('Z', '+00:00'))
+            except Exception:
+                printed_at = datetime.now()
+
+    date_display = printed_at.strftime('%d/%m/%Y')
+    time_display = printed_at.strftime('%H:%M')
+
+    table_name = receipt_data.get('table_name', f"Table {receipt_data.get('table_id', 'Unknown')}")
+    seats = receipt_data.get('seats')
+    payment = receipt_data.get('payment', {}) or {}
+    payment_id = payment.get('payment_id', '')
+    payment_method = (payment.get('method') or 'Unknown').replace('_', ' ').title()
+    payment_note = payment.get('note', '').strip()
+    payments_history = receipt_data.get('payments') or []
+    orders = receipt_data.get('orders') or []
+    total_payments = receipt_data.get('total_payments', len(payments_history) or 1)
+    payment_index = None
+    if payment_id:
+        for idx, entry in enumerate(payments_history, start=1):
+            if entry.get('payment_id') == payment_id:
+                payment_index = idx
+                break
+
+    append_wrapped(f"Date: {date_display}    Time: {time_display}")
+    if seats:
+        append_wrapped(f"Table: {table_name}    Covers: {seats}")
+    else:
+        append_wrapped(f"Table: {table_name}")
+    if payment_index and total_payments:
+        append_wrapped(f"Payment {payment_index} of {total_payments}")
+    elif total_payments > 1:
+        append_wrapped(f"Payment count: {total_payments}")
+    if payment_id:
+        append_wrapped(f"Receipt ID: {payment_id[:8].upper()}")
+
+    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+    ticket_content += SelectFontA + BoldOn
+    ticket_content += to_bytes("Items\n")
+    ticket_content += BoldOff
+
+    items_subtotal = Decimal('0')
+    item_lines_printed = False
+    multiple_orders = len(orders) > 1
+
+    for order in orders:
+        order_number = order.get('order_number') or order.get('orderNumber') or order.get('number')
+        order_timestamp = order.get('timestamp') or order.get('time')
+        order_time_display = ""
+        if isinstance(order_timestamp, str):
+            try:
+                order_time_display = datetime.fromisoformat(order_timestamp).strftime('%H:%M')
+            except ValueError:
+                try:
+                    order_time_display = datetime.fromisoformat(order_timestamp.replace('Z', '+00:00')).strftime('%H:%M')
+                except Exception:
+                    order_time_display = order_timestamp
+        if multiple_orders:
+            order_header = f"Order {order_number}" if order_number else "Order"
+            if order_time_display:
+                order_header += f" - {order_time_display}"
+            ticket_content += SelectFontA + BoldOn
+            ticket_content += to_bytes(order_header + "\n")
+            ticket_content += BoldOff
+        for item in order.get('items', []):
+            name = item.get('name', 'Item')
+            quantity = item.get('quantity', 1)
+            quantity_display = f"{quantity} x " if quantity and quantity != 1 else ""
+            price = item.get('price')
+            if price is None:
+                price = item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))
+            line_total = to_decimal(price) * to_decimal(quantity or 1)
+            items_subtotal += line_total
+            append_amount_line(f"{quantity_display}{name}", line_total)
+            options = item.get('generalSelectedOptions') or []
+            for option in options:
+                option_name = ""
+                option_delta = Decimal('0')
+                if isinstance(option, dict):
+                    option_name = option.get('name') or option.get('value') or ''
+                    option_delta = to_decimal(option.get('priceChange', 0))
+                else:
+                    option_name = str(option)
+                if option_delta != Decimal('0'):
+                    prefix = "+" if option_delta > 0 else "-"
+                    append_amount_line(f"{prefix} {option_name}", option_delta, indent=2)
+                else:
+                    append_wrapped(f"+ {option_name}", indent=4)
+            item_comment = (item.get('comment') or item.get('comments') or '').strip()
+            if item_comment:
+                append_wrapped(f"Note: {item_comment}", indent=4)
+            item_lines_printed = True
+        if multiple_orders:
+            ticket_content += to_bytes("\n")
+
+    if not item_lines_printed:
+        append_wrapped("No item details available for this receipt.")
+
+    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+
+    ticket_content += SelectFontA + BoldOn
+    ticket_content += to_bytes("Summary\n")
+    ticket_content += BoldOff
+
+    bill_total = to_decimal(receipt_data.get('bill_total', 0.0))
+    total_paid = to_decimal(receipt_data.get('amount_paid_total', 0.0))
+    payment_amount = to_decimal(payment.get('amount', 0.0))
+    previous_paid = sum(
+        (to_decimal(entry.get('amount', 0.0)) for entry in payments_history if entry.get('payment_id') != payment_id),
+        Decimal('0')
+    )
+    balance_after = bill_total - total_paid
+    change_due = Decimal('0')
+    if balance_after < Decimal('0'):
+        change_due = -balance_after
+        balance_after = Decimal('0')
+
+    if item_lines_printed and abs(items_subtotal - bill_total) > Decimal('0.01'):
+        append_amount_line("Items subtotal", items_subtotal)
+    append_amount_line("Bill total", bill_total)
+    if previous_paid > Decimal('0'):
+        append_amount_line("Paid before today", previous_paid)
+    append_amount_line("Payment received", payment_amount)
+    append_amount_line("Total paid", total_paid)
+
+    if change_due > Decimal('0'):
+        append_amount_line("Change due", change_due)
+    else:
+        append_amount_line("Balance due", balance_after)
+
+    payment_status = (receipt_data.get('payment_status') or 'unpaid').replace('_', ' ').title()
+    append_label_value("Payment status", payment_status)
+
+    ticket_content += to_bytes("\n")
+    ticket_content += SelectFontA + BoldOn
+    ticket_content += to_bytes("Payment Details\n")
+    ticket_content += BoldOff
+    append_label_value("Method", payment_method)
+    payment_timestamp = payment.get('timestamp')
+    if isinstance(payment_timestamp, str):
+        payment_time = None
+        try:
+            payment_time = datetime.fromisoformat(payment_timestamp)
+        except ValueError:
+            try:
+                payment_time = datetime.fromisoformat(payment_timestamp.replace('Z', '+00:00'))
+            except Exception:
+                payment_time = None
+        if payment_time:
+            append_label_value("Processed", payment_time.strftime('%d/%m/%Y %H:%M'))
+    if payment_note:
+        append_wrapped(f"Note: {payment_note}", indent=2)
+
+    if len(payments_history) > 1:
+        ticket_content += to_bytes("\n")
+        ticket_content += SelectFontA + BoldOn
+        ticket_content += to_bytes("Payment History\n")
+        ticket_content += BoldOff
+        for entry in payments_history:
+            entry_time = entry.get('timestamp')
+            entry_dt = None
+            if isinstance(entry_time, str):
+                try:
+                    entry_dt = datetime.fromisoformat(entry_time)
+                except ValueError:
+                    try:
+                        entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                    except Exception:
+                        entry_dt = None
+            entry_label_time = entry_dt.strftime('%d/%m %H:%M') if entry_dt else ''
+            entry_method = (entry.get('method') or 'Unknown').replace('_', ' ').title()
+            history_label = f"{entry_label_time} {entry_method}".strip()
+            append_amount_line(history_label or "Payment", entry.get('amount', 0.0))
+
+    ticket_content += to_bytes("\n")
+    ticket_content += AlignCenter + SelectFontB
+    ticket_content += to_bytes("Thank you for your visit!\n")
+    website = business_profile.get('website')
+    if isinstance(website, str) and website.strip():
+        ticket_content += to_bytes(website.strip() + "\n")
+    ticket_content += AlignLeft + SelectFontA + NormalText
+    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+    ticket_content += to_bytes("\n\n")
+    if CUT_AFTER_PRINT:
+        ticket_content += PartialCut
+
+    return ticket_content
+
+
 def print_customer_receipt_ticket(receipt_data):
     """
     Print a customer receipt for a specific payment.
     """
-    # Pre-flight checks (same as other print functions)
     global last_print_used_fallback
     last_print_used_fallback = False
     trial_status = check_trial_status()
@@ -5800,113 +6220,16 @@ def print_customer_receipt_ticket(receipt_data):
         app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print customer receipt.")
         return False
 
-    # PDF printers are not supported
     if 'pdf' in str(PRINTER_NAME).lower():
         app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for receipt printing.")
         return False
 
-    # Build the customer receipt content
     try:
-        ticket_content = bytearray()
-        ticket_content += InitializePrinter
-
-        NORMAL_FONT_LINE_WIDTH = 42
-
-        # Header - Restaurant name
-        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-        restaurant_name = "POSPal"
-        ticket_content += to_bytes(restaurant_name + "\n")
-        ticket_content += BoldOff
-
-        # Receipt title
-        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-        ticket_content += to_bytes("CUSTOMER RECEIPT\n")
-        ticket_content += BoldOff
-
-        # Date and time
-        ticket_content += AlignLeft + SelectFontA + NormalText
-        current_time = datetime.now()
-        ticket_content += to_bytes(f"Date: {current_time.strftime('%d/%m/%Y')}  Time: {current_time.strftime('%H:%M')}\n")
-
-        # Table and payment info
-        table_name = receipt_data.get('table_name', f"Table {receipt_data.get('table_id', 'Unknown')}")
-        payment_number = receipt_data.get('total_payments', 1)
-        ticket_content += to_bytes(f"{table_name} - Payment {payment_number}\n")
-
-        # Separator
-        ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
-
-        # Payment details
-        payment = receipt_data.get('payment', {})
-        payment_amount = payment.get('amount', 0.0)
-        payment_method = payment.get('method', 'Cash')
-        payment_note = payment.get('note', '')
-
-        ticket_content += SelectFontA + BoldOn
-        ticket_content += to_bytes("PAYMENT DETAILS\n")
-        ticket_content += BoldOff
-
-        # Amount paid
-        amount_left = "Amount Paid:"
-        amount_right = f"€{payment_amount:.2f}"
-        amount_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(amount_left) - len(amount_right))
-        ticket_content += to_bytes(f"{amount_left}{amount_padding}{amount_right}\n")
-
-        # Payment method
-        method_left = "Payment Method:"
-        method_right = payment_method
-        method_padding = " " * max(1, NORMAL_FONT_LINE_WIDTH - len(method_left) - len(method_right))
-        ticket_content += to_bytes(f"{method_left}{method_padding}{method_right}\n")
-
-        # Payment note if provided
-        if payment_note:
-            ticket_content += to_bytes(f"Note: {payment_note}\n")
-
-        # Bill summary
-        ticket_content += to_bytes("\n")
-        ticket_content += SelectFontA + BoldOn
-        ticket_content += to_bytes("BILL SUMMARY\n")
-        ticket_content += BoldOff
-
-        bill_total = receipt_data.get('bill_total', 0.0)
-        total_paid = receipt_data.get('amount_paid_total', 0.0)
-        remaining = max(0, bill_total - total_paid)
-
-        # Bill total
-        total_left = "Bill Total:"
-        total_right = f"€{bill_total:.2f}"
-        total_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(total_left) - len(total_right))
-        ticket_content += to_bytes(f"{total_left}{total_padding}{total_right}\n")
-
-        # Total paid
-        paid_left = "Total Paid:"
-        paid_right = f"€{total_paid:.2f}"
-        paid_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(paid_left) - len(paid_right))
-        ticket_content += to_bytes(f"{paid_left}{paid_padding}{paid_right}\n")
-
-        # Remaining balance
-        if remaining > 0.01:
-            remaining_left = "Remaining:"
-            remaining_right = f"€{remaining:.2f}"
-            remaining_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(remaining_left) - len(remaining_right))
-            ticket_content += to_bytes(f"{remaining_left}{remaining_padding}{remaining_right}\n")
-
-        # Footer
-        ticket_content += to_bytes("\n")
-        ticket_content += AlignCenter
-        ticket_content += to_bytes("Thank you for dining with us!\n")
-        ticket_content += AlignLeft
-        ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
-
-        # Cut paper if configured
-        if CUT_AFTER_PRINT:
-            ticket_content += PartialCut
-
+        ticket_content = build_customer_receipt_content(receipt_data)
     except Exception as e:
         app.logger.error(f"Failed to build customer receipt content: {e}")
         return False
 
-    # Print the receipt (same pattern as other print functions)
     print_attempts = 0
     max_attempts = COPIES_PER_ORDER
     printed_any = False
@@ -5992,6 +6315,44 @@ def print_customer_receipt_raw(ticket_content, receipt_data, copy_info=""):
                 win32print.ClosePrinter(hprinter)
             except Exception as e_close:
                 app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
+
+
+def build_simple_customer_receipt_payload(order_data_internal, order_total):
+    """Construct receipt payload for simple-mode orders."""
+    now = datetime.now()
+    table_label = (order_data_internal.get('tableNumber') or '').strip() or 'Takeaway'
+    payment_method = order_data_internal.get('paymentMethod', 'Cash')
+    payment_entry = {
+        "payment_id": str(uuid.uuid4()),
+        "amount": round(float(order_total), 2),
+        "method": payment_method,
+        "timestamp": now.isoformat(),
+        "note": order_data_internal.get('universalComment', '')
+    }
+
+    order_entry = {
+        "order_number": order_data_internal.get('number'),
+        "timestamp": now.isoformat(),
+        "items": copy.deepcopy(order_data_internal.get('items', [])),
+        "universal_comment": order_data_internal.get('universalComment', '')
+    }
+
+    return {
+        "table_id": table_label,
+        "table_name": table_label,
+        "payment": payment_entry,
+        "total_payments": 1,
+        "bill_total": round(float(order_total), 2),
+        "amount_paid_total": round(float(order_total), 2),
+        "amount_remaining": 0.0,
+        "payment_status": "paid",
+        "payments": [payment_entry],
+        "orders": [order_entry],
+        "timestamp": now.isoformat(),
+        "bill_date": now.strftime("%Y-%m-%d"),
+        "bill_time": now.strftime("%H:%M"),
+        "seats": None
+    }
 
 
 def record_order_in_csv(order_data, print_status_message):
@@ -6114,6 +6475,23 @@ def handle_order():
         'paymentMethod': order_data_from_client.get('paymentMethod', 'Cash')
     }
 
+    order_total = 0.0
+    for item in order_data_internal.get('items', []):
+        try:
+            quantity = int(item.get('quantity', 0) or 0)
+        except (ValueError, TypeError):
+            quantity = 0
+        price_source = item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))
+        try:
+            price = float(price_source or 0.0)
+        except (ValueError, TypeError):
+            price = 0.0
+        order_total += price * quantity
+
+    table_mgmt_enabled = is_table_management_enabled()
+
+
+
     # Phase 6: Check device print behavior
     device_print_behavior = order_data_from_client.get('devicePrintBehavior', 'auto')
     device_name = order_data_from_client.get('deviceName', 'Unknown Device')
@@ -6218,6 +6596,23 @@ def handle_order():
         message = f"Order #{authoritative_order_number} saved but printing FAILED. Order is safe - reprint from management panel."
         final_status_code = "success_order_saved_print_failed" 
 
+    customer_receipt_printed = False
+    should_print_customer_receipt = (
+        bool(order_data_from_client.get('printCustomerReceipt')) and
+        not table_mgmt_enabled and
+        device_print_behavior != 'disabled'
+    )
+
+    if should_print_customer_receipt:
+        try:
+            receipt_payload = build_simple_customer_receipt_payload(order_data_internal, order_total)
+            customer_receipt_printed = print_customer_receipt_ticket(receipt_payload)
+            if not customer_receipt_printed:
+                app.logger.warning(f"Customer receipt print failed for order #{authoritative_order_number}")
+        except Exception as receipt_error:
+            customer_receipt_printed = False
+            app.logger.error(f"Unable to print customer receipt for order #{authoritative_order_number}: {receipt_error}")
+
     # Track order analytics (regardless of print/log status)
     try:
         track_order_analytics(order_data_internal)
@@ -6226,7 +6621,7 @@ def handle_order():
 
     # Track table session if table management is enabled and order has valid table number
     # NOTE: Table session tracking is independent of CSV logging to ensure restaurant operations continue
-    table_mgmt_enabled = is_table_management_enabled()
+
     app.logger.info(f"[DIAGNOSTIC] Table management enabled: {table_mgmt_enabled}")
 
     if table_mgmt_enabled:
@@ -6235,12 +6630,6 @@ def handle_order():
 
         if table_number and table_number != 'N/A':
             try:
-                # Calculate order total for table tracking
-                order_total = sum(
-                    float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))) * int(item.get('quantity', 0))
-                    for item in order_data_internal.get('items', [])
-                )
-
                 # Update table session
                 app.logger.info(f"[DIAGNOSTIC] Calling update_table_session() - Table: '{table_number}', Order: #{authoritative_order_number}, Total: €{order_total:.2f}")
 
@@ -6269,7 +6658,8 @@ def handle_order():
         "order_number": authoritative_order_number,
         "printed": print_status_summary, 
         "logged": csv_log_succeeded,
-        "message": message
+        "message": message,
+        "customer_receipt_printed": customer_receipt_printed
     }), 200
 
 @app.route('/api/test/orders', methods=['POST'])

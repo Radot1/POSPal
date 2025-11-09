@@ -209,6 +209,28 @@
         .gear-status-label.status-checking { background:#475569; }
         .gear-status-label.active { display: inline-flex; justify-content: center; }
 
+        /* Keep the management footer visible by constraining the scrollable body */
+        #managementModal > div {
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #managementModal .management-content {
+            min-height: 0;
+            padding-bottom: 5.5rem;
+        }
+
+        #managementModal #appVersionContainer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            margin-top: 0;
+        }
+
         /* Offline interruption modal */
         #offlineInterruptionModal { display: none; }
 
@@ -352,103 +374,99 @@
             }
         }
 
-        /* Connection Status Banner (in Management Panel) */
+        /* Connection Status Badge (compact pill in Management header) */
         .connection-status-banner {
-            --status-accent: #475569;
-            --status-bg: rgba(148, 163, 184, 0.14);
-            --status-border: rgba(148, 163, 184, 0.35);
+            --status-accent: #4b5563;
+            --status-bg: #f3f4f6;
+            --status-border: #e5e7eb;
             --status-text: #1f2937;
-            position: relative;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            gap: 0.75rem;
-            padding: 0.75rem 1rem;
-            margin: 0 1.5rem 1rem;
-            border-radius: 14px;
-            background: var(--status-bg);
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
             border: 1px solid var(--status-border);
+            background: var(--status-bg);
             color: var(--status-text);
-            box-shadow: 0 20px 45px -28px rgba(15, 23, 42, 0.6);
-            transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
-        }
-
-        .connection-status-banner::before {
-            content: '';
-            position: absolute;
-            left: 1.6rem;
-            right: 1.6rem;
-            top: 0.45rem;
-            height: 3px;
-            border-radius: 999px;
-            background: var(--status-accent);
-            opacity: 0.7;
+            font-size: 0.8rem;
+            font-weight: 600;
+            line-height: 1.1;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
         }
 
         .connection-status-banner .status-icon {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.7);
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 9999px;
+            background: rgba(255, 255, 255, 0.9);
             color: var(--status-accent);
-            font-size: 1.15rem;
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
         }
 
         .connection-status-banner .status-copy {
-            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
         }
 
         .connection-status-banner .status-copy .status-heading {
             font-weight: 700;
-            font-size: 0.95rem;
-            letter-spacing: 0.01em;
+            font-size: 0.78rem;
         }
 
         .connection-status-banner .status-copy .status-subtext {
-            font-size: 0.75rem;
-            opacity: 0.8;
+            font-size: 0.65rem;
+            font-weight: 500;
+            color: #6b7280;
         }
 
         .connection-status-banner.status-live {
             --status-accent: #10b981;
-            --status-bg: rgba(16, 185, 129, 0.16);
-            --status-border: rgba(16, 185, 129, 0.35);
+            --status-bg: #ecfdf5;
+            --status-border: #6ee7b7;
             --status-text: #064e3b;
         }
 
         .connection-status-banner.status-polling {
             --status-accent: #f59e0b;
-            --status-bg: rgba(245, 158, 11, 0.18);
-            --status-border: rgba(245, 158, 11, 0.35);
+            --status-bg: #fffbeb;
+            --status-border: #fcd34d;
             --status-text: #78350f;
         }
 
         .connection-status-banner.status-offline {
             --status-accent: #ef4444;
-            --status-bg: rgba(239, 68, 68, 0.16);
-            --status-border: rgba(239, 68, 68, 0.4);
+            --status-bg: #fef2f2;
+            --status-border: #fecaca;
             --status-text: #7f1d1d;
         }
 
         .connection-status-banner.status-checking {
             --status-accent: #6366f1;
-            --status-bg: rgba(99, 102, 241, 0.14);
-            --status-border: rgba(99, 102, 241, 0.35);
+            --status-bg: #eef2ff;
+            --status-border: #c7d2fe;
             --status-text: #312e81;
         }
 
         @media (max-width: 640px) {
             .connection-status-banner {
-                margin: 0.5rem;
-                padding: 0.75rem;
+                width: 100%;
+                justify-content: flex-start;
+                border-radius: 0.75rem;
             }
+            .connection-status-banner .status-subtext {
+                display: none;
+            }
+        }
 
-            .connection-status-banner::before {
-                left: 1.1rem;
-                right: 1.1rem;
+        @media (min-width: 641px) {
+            .connection-status-banner {
+                flex-shrink: 0;
             }
         }
 
@@ -572,6 +590,7 @@
 
         /* Show table features when enabled */
         body.table-mode .table-mode-only:not(.fixed.inset-0) { display: block !important; }
+        body.table-mode #connectionStatusBanner.table-mode-only { display: inline-flex !important; }
         body.table-mode .simple-mode-only { display: none !important; }
 
         /* Desktop table panel styling */
@@ -1179,9 +1198,61 @@
                         <p class="text-sm text-slate-700" data-i18n="ui.offlineModal.note">POSPal tracks how long we run offline. If the grace period expires before internet returns, licensing features may pause. Resolve connectivity as soon as possible.</p>
                     </div>
                 </section>
+                <section aria-label="Troubleshooting guidance" class="space-y-4">
+                    <h3 class="text-sm uppercase tracking-wide text-slate-500 font-semibold">Troubleshooting</h3>
+                    <div class="space-y-4">
+                        <div class="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                            <h4 class="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                                <i class="fas fa-bolt"></i>
+                                Quick check
+                            </h4>
+                            <p class="text-sm text-blue-800 mt-2">Run a quick test to confirm the internet connection is working.</p>
+                            <button type="button" class="mt-3 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm font-medium transition-colors" onclick="testInternetConnection()">
+                                <i class="fas fa-globe"></i>
+                                Test internet connection
+                            </button>
+                        </div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <h4 class="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                <i class="fas fa-toolbox"></i>
+                                Common fixes
+                            </h4>
+                            <ul class="mt-3 space-y-2 text-sm text-slate-700">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-wifi text-slate-500 mt-1"></i>
+                                    <span>Make sure this device is connected to Wi-Fi or ethernet.</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-shield-alt text-slate-500 mt-1"></i>
+                                    <span>Temporarily pause firewall or antivirus software to rule out blocking.</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-router text-slate-500 mt-1"></i>
+                                    <span>Power-cycle the modem or router and wait two minutes before retrying.</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-sync text-slate-500 mt-1"></i>
+                                    <span>Restart POSPal or refresh this page after the network is back.</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                            <h4 class="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                                <i class="fas fa-life-ring"></i>
+                                Still offline?
+                            </h4>
+                            <p class="text-sm text-amber-800 mt-2">POSPal must reach our licensing servers from time to time. If you continue to have issues:</p>
+                            <ul class="mt-2 space-y-1 text-sm text-amber-800">
+                                <li>Check with your IT administrator about firewall or proxy rules.</li>
+                                <li>Confirm the network allows outbound connections to external services.</li>
+                                <li>Try connecting via a different network (for example, a mobile hotspot).</li>
+                                <li>Contact POSPal support if the retry continues to fail.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
             </div>
             <div class="offline-interruption-footer">
-                <button id="offlineOfflineHelpButton" type="button" class="text-sm text-slate-600 hover:text-slate-800 underline decoration-dotted decoration-1" data-i18n="ui.offlineModal.help">Need help troubleshooting?</button>
                 <span id="offlineModalCountdown" class="text-xs text-slate-500 mr-auto hidden"></span>
                 <button id="offlineContinueButton" type="button" class="btn-secondary py-2 px-4" data-i18n="ui.offlineModal.continue">Continue in grace mode</button>
                 <button id="offlineRetryButton" type="button" class="btn-primary py-2 px-4 flex items-center gap-2">
@@ -1558,20 +1629,20 @@
     <!-- Management Modal -->
     <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 z-[70] hidden flex flex-col justify-end sm:justify-center sm:items-center">
         <div class="bg-white shadow-xl w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-6xl flex flex-col text-gray-800 rounded-t-2xl sm:rounded-lg">
-            <div class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
-                <h2 class="text-xl font-semibold" data-i18n="ui.management.title">Management</h2>
+            <div class="p-4 border-b border-gray-200 flex flex-wrap gap-3 justify-between items-center flex-shrink-0">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <h2 class="text-xl font-semibold" data-i18n="ui.management.title">Management</h2>
+                    <div id="connectionStatusBanner" class="connection-status-banner status-checking table-mode-only" style="display: none;" role="status" aria-live="polite">
+                        <div class="status-icon">
+                            <i class="fas fa-circle-notch fa-spin"></i>
+                        </div>
+                        <div class="status-copy">
+                            <div class="status-heading" id="connectionBannerText">Checking connection...</div>
+                            <div class="status-subtext" id="connectionBannerSubtext">Verifying server status</div>
+                        </div>
+                    </div>
+                </div>
                 <button onclick="closeManagementModal()" class="text-gray-500 hover:text-black"><i class="fas fa-times text-2xl"></i></button>
-            </div>
-
-            <!-- Connection Status Banner (only visible in table management mode) -->
-            <div id="connectionStatusBanner" class="connection-status-banner status-checking table-mode-only" style="display: none;">
-                <div class="status-icon">
-                    <i class="fas fa-circle-notch fa-spin"></i>
-                </div>
-                <div class="status-copy">
-                    <div class="status-heading" id="connectionBannerText">Checking connection...</div>
-                    <div class="status-subtext" id="connectionBannerSubtext">Verifying server status</div>
-                </div>
             </div>
 
             <div class="p-2 border-b border-gray-200 management-tab-container flex-shrink-0">
@@ -1883,6 +1954,17 @@
                 <div id="hardwarePrintingManagement" class="hidden">
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">Hardware &amp; Printing</h3>
                     <div class="space-y-4">
+                        <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-gray-700">
+                            <div class="font-semibold text-purple-800 flex items-center gap-2">
+                                <i class="fas fa-map-signs"></i>
+                                Quick setup map
+                            </div>
+                            <ol class="mt-2 list-decimal list-inside space-y-1 text-xs text-gray-600">
+                                <li>Choose the Windows-hosted <strong>Server Printer</strong> so every device prints to the same hardware.</li>
+                                <li>Open <strong>This Device Settings</strong> on each tablet or register to set its name and print behavior.</li>
+                                <li>Use <strong>General Settings</strong>, Table Management, and password controls to finish the rollout.</li>
+                            </ol>
+                        </div>
                         <!-- Server Printer Configuration (Global - affects all devices) -->
                         <div class="bg-white p-4 rounded-lg border-2 border-blue-200">
                             <div class="flex items-center justify-between mb-3">
@@ -1939,11 +2021,61 @@
                                         <p class="mt-2 text-blue-700"><i class="fas fa-print mr-1"></i>🖨️ icon indicates a detected thermal printer (recommended)</p>
                                     </div>
                                 </details>
+                        </div>
+                    </div>
+
+                    <!-- Business Profile -->
+                    <div class="bg-white p-4 rounded-lg border-2 border-purple-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-gray-800 flex items-center gap-2">
+                                <i class="fas fa-receipt text-purple-600"></i>
+                                Business Profile (Receipts)
+                            </h4>
+                            <span class="text-xs text-gray-500">Printed on customer receipts</span>
+                        </div>
+                        <p class="text-xs text-gray-600 mb-4">
+                            Keep these details current so every customer receipt shows the correct venue information.
+                        </p>
+                        <div class="grid gap-3 md:grid-cols-2">
+                            <div>
+                                <label for="businessNameInput" class="block text-sm font-medium text-gray-700">Business Name<span class="text-red-500">*</span></label>
+                                <input id="businessNameInput" type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Cafe Flora">
+                            </div>
+                            <div>
+                                <label for="businessPhoneInput" class="block text-sm font-medium text-gray-700">Phone</label>
+                                <input id="businessPhoneInput" type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="+61 3 5555 1234">
+                            </div>
+                            <div>
+                                <label for="businessEmailInput" class="block text-sm font-medium text-gray-700">Email</label>
+                                <input id="businessEmailInput" type="email" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="hello@example.com">
+                            </div>
+                            <div>
+                                <label for="businessWebsiteInput" class="block text-sm font-medium text-gray-700">Website</label>
+                                <input id="businessWebsiteInput" type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="example.com">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="businessAddressInput" class="block text-sm font-medium text-gray-700">Address</label>
+                                <textarea id="businessAddressInput" rows="2" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="123 High Street&#10;Melbourne VIC 3000"></textarea>
+                            </div>
+                            <div>
+                                <label for="businessTaxInput" class="block text-sm font-medium text-gray-700">Tax / ABN / VAT</label>
+                                <input id="businessTaxInput" type="text" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="ABN 12 345 678 901">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="businessFooterInput" class="block text-sm font-medium text-gray-700">Footer Message</label>
+                                <textarea id="businessFooterInput" rows="2" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Thank you for supporting local!"></textarea>
                             </div>
                         </div>
+                        <div class="mt-3 flex items-center gap-3 flex-wrap">
+                            <span id="businessProfileStatus" class="text-xs text-gray-500">Not configured</span>
+                            <button id="businessProfileSaveBtn" onclick="saveBusinessProfile()" class="btn-primary px-4 py-2 rounded text-sm flex items-center gap-2">
+                                <i class="fas fa-save"></i> Save Profile
+                            </button>
+                        </div>
+                    </div>
 
-                        <!-- Device Settings (Local - this device only) -->
-                        <div class="bg-white p-4 rounded-lg border-2 border-green-200">
+                    <!-- Device Settings (Local - this device only) -->
+                    <div class="bg-white p-4 rounded-lg border-2 border-green-200">
                             <div class="flex items-center justify-between mb-3">
                                 <h4 class="font-semibold text-gray-800 flex items-center">
                                     <i class="fas fa-tablet-alt mr-2 text-green-600"></i>
@@ -2026,24 +2158,40 @@
 
                         <!-- General Settings -->
                         <div class="bg-white p-3 rounded border">
-                            <h4 class="font-medium text-gray-700 mb-2">General Settings</h4>
-                            <div class="flex items-center gap-3 flex-wrap mb-2">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <h4 class="font-medium text-gray-700 mb-1">General Settings</h4>
+                                    <p class="text-xs text-gray-500">Choose the interface language your staff will see inside POS.</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3 flex-wrap mt-4">
                                 <label for="languageSelect" class="text-sm text-gray-700" data-i18n="ui.management.general.language">Language</label>
                                 <select id="languageSelect" class="px-3 py-1.5 border border-gray-300 rounded-md text-sm">
                                     <option value="en" data-i18n="ui.management.general.lang_en">English</option>
                                     <option value="el" data-i18n="ui.management.general.lang_el">Greek</option>
                                 </select>
                             </div>
-                            <div class="flex items-center gap-3 flex-wrap mb-2">
-                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+                        </div>
+
+                        <!-- Table Management -->
+                        <div class="bg-white p-3 rounded border">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <h4 class="font-medium text-gray-700 mb-1">Table Management</h4>
+                                    <p class="text-xs text-gray-500">Unlock dine-in layouts, monitor table turns, and use Table Mode inside the POS.</p>
+                                </div>
+                                <label class="inline-flex items-center gap-2 text-sm cursor-pointer select-none">
+                                    <span class="font-medium text-gray-700">Enable</span>
                                     <input type="checkbox" id="tableManagementToggle" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" onchange="toggleTableManagement(this.checked)">
-                                    <span class="font-medium text-gray-700">Enable Table Management</span>
                                 </label>
-                                <span class="text-xs text-gray-500">(For restaurants with table service)</span>
+                            </div>
+                            <div class="mt-3 text-xs text-gray-500 flex items-center gap-2 border border-dashed border-gray-300 rounded px-3 py-2">
+                                <i class="fas fa-chair text-blue-500"></i>
+                                <span>Keep this on to manage floor plans and assign orders to tables.</span>
                             </div>
 
                             <!-- Table Configuration Section (shown when table management is enabled) -->
-                            <div id="tableConfigSection" style="display: none;" class="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                            <div id="tableConfigSection" style="display: none;" class="mt-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
                                 <div class="flex items-center justify-between mb-3">
                                     <h5 class="font-medium text-gray-700 text-sm flex items-center">
                                         <i class="fas fa-chair mr-2"></i>Configure Tables
@@ -2057,15 +2205,15 @@
                                     <!-- Table items will be dynamically loaded here -->
                                 </div>
 
-                                <div class="mt-3 pt-3 border-t border-gray-300 text-xs text-gray-500">
-                                    <i class="fas fa-info-circle mr-1"></i>Tables configured here will be available in the Table Mode view
+                                <div class="mt-3 pt-3 border-t border-gray-300 text-xs text-gray-500 flex items-center gap-2">
+                                    <i class="fas fa-info-circle"></i>
+                                    <span>Tables configured here will be available in the Table Mode view.</span>
                                 </div>
                             </div>
-
-                            <div class="my-3 border-t border-gray-200"></div>
                         </div>
                         <div class="bg-white p-3 rounded border">
                             <h4 class="font-medium text-gray-700 mb-2" data-i18n="ui.password.changePassword">Change Password</h4>
+                            <p class="text-xs text-gray-500 mb-3">Protect these management settings by rotating the password and only sharing it with trusted staff.</p>
                             <div class="grid gap-2 md:grid-cols-3">
                                 <input id="currentPasswordInput" type="password" class="px-3 py-2 border border-gray-300 rounded-md text-sm" data-i18n-attr='{"placeholder":"ui.password.current"}' placeholder="Current">
                                 <input id="newPasswordInput" type="password" class="px-3 py-2 border border-gray-300 rounded-md text-sm" data-i18n-attr='{"placeholder":"ui.password.new"}' placeholder="New">
@@ -2077,6 +2225,7 @@
                             <h4 class="font-medium text-gray-700 mb-2">
                                 <i class="fas fa-network-wired mr-2"></i>Mobile Connection Fix
                             </h4>
+                            <p class="text-xs text-gray-500 mb-3">If phones and tablets cannot reach POSPal, quickly test ports here without leaving the app.</p>
                             
                             <!-- Collapsible Instructions -->
                             <div class="mb-3">
@@ -2087,9 +2236,9 @@
                                 <div id="instructionsPanel" class="hidden mt-2 bg-blue-50 border border-blue-200 rounded p-3 text-sm">
                                     <div class="font-medium text-blue-900 mb-2"><i class="fas fa-info-circle mr-1"></i>How to Use This Feature</div>
                                     <div class="space-y-1 text-blue-800 text-xs">
-                                        <div><strong>🔸 Problem:</strong> Mobile devices can't access POSPal (white screen, timeout)</div>
-                                        <div><strong>🔸 Solution:</strong> Try different ports one by one</div>
-                                        <div><strong>🔸 Steps:</strong></div>
+                                        <div><strong><i class="fas fa-exclamation-triangle mr-1 text-blue-600"></i>Problem:</strong> Mobile devices can't access POSPal (white screen, timeout)</div>
+                                        <div><strong><i class="fas fa-toolbox mr-1 text-blue-600"></i>Try this:</strong> Change the server port until one works on your network</div>
+                                        <div><strong><i class="fas fa-list-ol mr-1 text-blue-600"></i>Steps:</strong></div>
                                         <div class="ml-4 space-y-0.5">
                                             <div>1. Make sure POSPal is running as Administrator</div>
                                             <div>2. Pick a different port below</div>  
@@ -2159,7 +2308,6 @@
                                     <span id="portChangeResult" class="text-sm"></span>
                                 </div>
                             </div>
-                        </div>
                     </div>
                 </div>
                 <div id="onlineMenuManagement" class="hidden">
@@ -2191,7 +2339,7 @@
                     </div>
                 </div>
             </div>
-            <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg">
+            <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gradient-to-t from-gray-50 via-gray-50 to-white flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg mt-auto">
                 <div class="flex items-center gap-4 flex-wrap"><span data-i18n="ui.footer.version">POSPal Version:</span> <span id="appVersion" class="font-medium text-gray-600">1.0.0</span><span id="footer-trial-status" class="font-medium"></span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.licenseInfo">License Info</button><button onclick="switchManagementTab('hardwarePrinting', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.settings">Settings</button><button onclick="switchManagementTab('onlineMenu', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">Online Menu</button></div>
                 <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold"><i class="fas fa-power-off mr-1.5"></i><span data-i18n="ui.footer.shutdown">Shutdown</span></button>
             </div>
@@ -3143,6 +3291,35 @@
         <span id="offlineStripHelpLink" class="help-link" data-i18n="ui.offlineStatusStrip.help">Troubleshoot</span>
     </div>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const managementModal = document.getElementById('managementModal');
+            if (!managementModal) return;
+
+            const modalIds = [
+                'tablesModal',
+                'splitBillModal',
+                'paymentMethodModal',
+                'addTableModal',
+                'editTableModal',
+                'itemFormModal',
+                'unlockTokenDialog',
+                'licenseRecoveryModal',
+                'daySummaryModal',
+                'subscriptionModal',
+                'disconnectLicenseModal',
+                'disconnectSuccessModal',
+                'printConfirmModal'
+            ];
+
+            modalIds.forEach((id) => {
+                const modal = document.getElementById(id);
+                if (modal && managementModal.contains(modal)) {
+                    document.body.appendChild(modal);
+                }
+            });
+        });
+    </script>
     <script src="./static/js/qrcode.min.js" defer></script>
     <script src="i18n.js" defer></script>
     <script src="/assets/desktop-support.js" defer></script>

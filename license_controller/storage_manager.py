@@ -148,9 +148,20 @@ class UnifiedStorageManager:
             fernet = self._get_encryption_key()
             if not fernet:
                 return None
-                
-            decrypted_data = fernet.decrypt(encrypted_data)
-            return json.loads(decrypted_data.decode())
+
+            token = encrypted_data
+            try:
+                decrypted_data = fernet.decrypt(token)
+                return json.loads(decrypted_data.decode())
+            except Exception:
+                # Compatibility: handle caches stored as base64-wrapped Fernet tokens
+                try:
+                    token = base64.urlsafe_b64decode(token.strip())
+                    decrypted_data = fernet.decrypt(token)
+                    return json.loads(decrypted_data.decode())
+                except Exception as inner_error:
+                    self.logger.error(f"Failed to decrypt data: {inner_error}")
+                    return None
             
         except Exception as e:
             self.logger.error(f"Failed to decrypt data: {e}")
