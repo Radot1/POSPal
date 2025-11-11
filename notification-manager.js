@@ -1,6 +1,10 @@
 // POSPal Unified Notification Manager
 // Consolidates toast, banner, and persistent notification systems
 
+const BYTE_TO_HEX = Array.from({ length: 256 }, (_, index) =>
+    (index + 0x100).toString(16).slice(1)
+);
+
 class NotificationManager {
     constructor() {
         this.activeNotifications = new Map();
@@ -185,8 +189,43 @@ class NotificationManager {
         return notification.id;
     }
 
+    getCrypto() {
+        if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+            return globalThis.crypto;
+        }
+        if (typeof window !== 'undefined' && window.crypto) {
+            return window.crypto;
+        }
+        return null;
+    }
+
+    generateNotificationId() {
+        const cryptoObj = this.getCrypto();
+        if (cryptoObj) {
+            if (typeof cryptoObj.randomUUID === 'function') {
+                return cryptoObj.randomUUID();
+            }
+            if (typeof cryptoObj.getRandomValues === 'function') {
+                const buffer = new Uint8Array(16);
+                cryptoObj.getRandomValues(buffer);
+                buffer[6] = (buffer[6] & 0x0f) | 0x40; // version 4
+                buffer[8] = (buffer[8] & 0x3f) | 0x80; // variant 1
+                const hex = Array.from(buffer, byte => BYTE_TO_HEX[byte]).join('');
+                return (
+                    hex.slice(0, 8) + '-' +
+                    hex.slice(8, 12) + '-' +
+                    hex.slice(12, 16) + '-' +
+                    hex.slice(16, 20) + '-' +
+                    hex.slice(20)
+                );
+            }
+        }
+        const entropy = Math.random().toString(36).slice(2, 10);
+        return `pospal-notification-${Date.now().toString(36)}-${entropy}`;
+    }
+
     createNotification(config) {
-        const id = crypto.randomUUID();
+        const id = this.generateNotificationId();
         const isMobile = window.innerWidth <= 768;
         const baseClassName = this.getClassName(config.type, config.priority, isMobile);
         const additionalClassName = (config.className || '').toString().trim();

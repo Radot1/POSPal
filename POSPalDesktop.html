@@ -1138,6 +1138,108 @@
     </style>
 </head>
 <body class="desktop-ui flex h-screen bg-gray-100 text-gray-800">
+    <!-- Blocking overlay shown when no printer is configured -->
+    <div id="printerBlockingOverlay" class="hidden fixed inset-0 z-[75] bg-black/75 flex items-center justify-center px-4 py-6">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 text-gray-900">
+            <div class="flex items-start gap-3">
+                <div class="text-3xl">&#9888;&#65039;</div>
+                <div>
+                    <p class="text-xl font-semibold mb-1">No kitchen printer selected</p>
+                    <p id="printerBlockingMessage" class="text-sm text-gray-600">
+                        Orders will save but nothing will print until a thermal printer is selected on the server.
+                    </p>
+                </div>
+            </div>
+            <ul class="mt-4 text-sm text-gray-700 space-y-1 list-disc list-inside">
+                <li>All staff can fix this - no manager code required.</li>
+                <li>Pick the thermal printer once and every device will use it automatically.</li>
+                <li>Run a quick test print to make sure the kitchen hears new orders.</li>
+            </ul>
+            <div class="mt-6 flex flex-wrap gap-3">
+                <button class="px-4 py-2 rounded-md bg-black text-white font-semibold hover:bg-gray-900 transition flex items-center gap-2"
+                        data-printer-action="open">
+                    <i class="fas fa-print"></i>
+                    Select Printer
+                </button>
+                <button class="px-4 py-2 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50 transition flex items-center gap-2"
+                        data-printer-action="refresh">
+                    <i class="fas fa-sync-alt"></i>
+                    Refresh Status
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Printer setup modal -->
+    <div id="printerSetupModal" class="hidden fixed inset-0 z-[85] px-4 py-6 items-center justify-center flex">
+        <div class="absolute inset-0 bg-black/60" data-printer-action="close" aria-hidden="true"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-6">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Kitchen printer</p>
+                    <h2 id="printerSetupTitle" class="text-2xl font-bold text-gray-900 mt-1">Select a thermal printer</h2>
+                    <p class="text-sm text-gray-600 mt-2">This printer is shared across every device connected to the server.</p>
+                </div>
+                <button class="text-gray-500 hover:text-gray-800 text-2xl leading-none" aria-label="Close printer modal"
+                        data-printer-action="close">
+                    &times;
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="printerSetupSelect" class="block text-sm font-semibold text-gray-800 mb-2">Available printers</label>
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <select id="printerSetupSelect" class="flex-1 px-3 py-2 border border-gray-300 rounded-md bg-white text-sm shadow-sm">
+                            <option value="">Loading printers...</option>
+                        </select>
+                        <button type="button" class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 flex items-center justify-center gap-2"
+                                onclick="PrinterMonitor.refreshPrinterList()">
+                            <i class="fas fa-sync-alt"></i>
+                            Refresh list
+                        </button>
+                    </div>
+                    <div id="printerSelectionState" class="flex items-center gap-2 text-xs font-medium text-gray-600 mt-2" aria-live="polite">
+                        <span class="inline-flex h-2.5 w-2.5 rounded-full bg-gray-300 transition-colors duration-200" data-indicator-dot></span>
+                        <span data-indicator-text>Saved printer: none. Select and save to enable testing.</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Only supported thermal printers are shown. Virtual/PDF printers stay hidden.</p>
+                </div>
+
+                <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700" id="printerSetupStatus">
+                    Checking printer status...
+                </div>
+            </div>
+
+            <div class="rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
+                <p class="font-semibold text-slate-900 mb-1">Need help?</p>
+                <ul class="list-disc list-inside space-y-1">
+                    <li>Pick the kitchen printer once and every tablet will use it.</li>
+                    <li>Use the refresh button if the printer was just plugged in.</li>
+                    <li>Send a quick test print so the kitchen hears new orders.</li>
+                </ul>
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-3">
+                <button type="button" class="px-4 py-2 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50"
+                        data-printer-action="close">
+                    Cancel
+                </button>
+                <button type="button" class="px-4 py-2 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50 flex items-center gap-2"
+                        data-printer-action="test"
+                        onclick="PrinterMonitor.testPrinterFromRescue()">
+                    <i class="fas fa-vial"></i>
+                    Test Print
+                </button>
+                <button type="button" class="px-4 py-2 rounded-md bg-black text-white font-semibold hover:bg-gray-900 flex items-center gap-2"
+                        data-printer-action="save"
+                        onclick="PrinterMonitor.saveRescueSelection()">
+                    <i class="fas fa-save"></i>
+                    Save Printer
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Table Selector Modal (Expandable full selector) -->
     <div id="tableSelectorModal">
@@ -1408,6 +1510,51 @@
                     </div>
                 </div>
             </form>
+            <div class="mt-6 border-t border-gray-200 pt-4 text-center">
+                <button type="button" class="inline-flex items-center gap-2 text-green-600 hover:text-green-700 text-sm font-semibold" onclick="openDeviceSettingsQuickModal()">
+                    <i class="fas fa-tablet-alt"></i>
+                    This Device Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Settings Quick Access Modal -->
+    <div id="deviceSettingsQuickModal" class="fixed inset-0 bg-black bg-opacity-70 z-[95] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-xl text-gray-800">
+            <div class="flex items-start justify-between px-6 pt-6">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h3 class="text-lg font-semibold flex items-center gap-2">
+                            <i class="fas fa-tablet-alt text-green-600"></i>
+                            This Device Settings
+                        </h3>
+                        <span class="text-xs text-gray-500 bg-green-50 px-2 py-0.5 rounded">Local Only</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Applies only to this station and saves in this browser.</p>
+                </div>
+                <button type="button" class="text-gray-400 hover:text-gray-600" aria-label="Close device settings" onclick="closeDeviceSettingsQuickModal()">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="px-6 pb-6">
+                <p class="text-xs text-gray-500 mb-4 flex items-center gap-2">
+                    <i class="fas fa-info-circle text-green-500"></i>
+                    Perfect for floor staff who just need to rename the tablet or adjust print behavior.
+                </p>
+                <div id="deviceSettingsModalMount"></div>
+                <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:gap-4">
+                        <button type="button" class="btn-secondary px-4 py-2 text-sm" onclick="closeDeviceSettingsQuickModal()">
+                            Done
+                        </button>
+                        <button type="button" class="btn-primary px-4 py-2 text-sm flex items-center gap-2" onclick="closeDeviceSettingsQuickModal(true)">
+                            <i class="fas fa-user-shield"></i>
+                            Back to Management Login
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1957,12 +2104,14 @@
                         <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-gray-700">
                             <div class="font-semibold text-purple-800 flex items-center gap-2">
                                 <i class="fas fa-map-signs"></i>
-                                Quick setup map
+                                Hardware setup checklist
                             </div>
                             <ol class="mt-2 list-decimal list-inside space-y-1 text-xs text-gray-600">
-                                <li>Choose the Windows-hosted <strong>Server Printer</strong> so every device prints to the same hardware.</li>
-                                <li>Open <strong>This Device Settings</strong> on each tablet or register to set its name and print behavior.</li>
-                                <li>Use <strong>General Settings</strong>, Table Management, and password controls to finish the rollout.</li>
+                                <li>Start with the global <strong>Server Printer</strong>: select the thermal printer, tweak cut/copy options, and run a test print.</li>
+                                <li>Complete the <strong>Business Profile</strong> card so every receipt shows the correct venue, contact, and tax/ABN details.</li>
+                                <li>Name each tablet inside <strong>This Device Settings</strong> and choose whether it prints locally, echoes the server, or stays silent.</li>
+                                <li>Enable <strong>Table Management</strong> when you need floor plans, then add tables so they appear inside Table Mode.</li>
+                                <li>Finish by rotating the management password and using <strong>Mobile Connection Fix</strong> if phones or tablets cannot reach POSPal.</li>
                             </ol>
                         </div>
                         <!-- Server Printer Configuration (Global - affects all devices) -->
@@ -2075,7 +2224,8 @@
                     </div>
 
                     <!-- Device Settings (Local - this device only) -->
-                    <div class="bg-white p-4 rounded-lg border-2 border-green-200">
+                    <div id="deviceSettingsManagementMount">
+                        <div id="deviceSettingsPanel" class="bg-white p-4 rounded-lg border-2 border-green-200">
                             <div class="flex items-center justify-between mb-3">
                                 <h4 class="font-semibold text-gray-800 flex items-center">
                                     <i class="fas fa-tablet-alt mr-2 text-green-600"></i>
@@ -2172,6 +2322,7 @@
                                 </select>
                             </div>
                         </div>
+                    </div>
 
                         <!-- Table Management -->
                         <div class="bg-white p-3 rounded border">
@@ -3320,6 +3471,7 @@
             });
         });
     </script>
+
     <script src="./static/js/qrcode.min.js" defer></script>
     <script src="i18n.js" defer></script>
     <script src="/assets/desktop-support.js" defer></script>

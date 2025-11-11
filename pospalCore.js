@@ -342,6 +342,512 @@ const DevicePreferences = {
     }
 };
 
+const PrinterMonitor = (() => {
+    const POLL_INTERVAL = 45000;
+    let pollTimer = null;
+    let lastHealth = null;
+    let isModalOpen = false;
+    const overlaySuppressionReasons = new Set();
+    const PRINTER_MODAL_IDS = {
+        modal: 'printerSetupModal',
+        select: 'printerSetupSelect',
+        status: 'printerSetupStatus',
+        selectionIndicator: 'printerSelectionState'
+    };
+
+    function getToastDetails(health) {
+        if (!health || !health.printer_configured) {
+            return {
+                type: 'error',
+                message: 'No printer configured yet. Select a thermal printer to resume kitchen printing.'
+            };
+        }
+
+        if (!health.printer_online) {
+            return {
+                type: 'error',
+                message: `Printer "${health.printer_name || 'Unknown'}" is offline. Check the cables or power.`
+            };
+        }
+
+        if (health.needs_verification) {
+            return {
+                type: 'warning',
+                message: `Printer "${health.printer_name}" is online but needs a test print to verify.`
+            };
+        }
+
+        return {
+            type: 'success',
+            message: `Printer "${health.printer_name}" is ready.`
+        };
+    }
+
+    async function refresh(options = {}) {
+        const { showToast: shouldToast = false } = options;
+        try {
+            const resp = await fetch('/api/printer/health');
+            if (!resp.ok) {
+                throw new Error(`Printer health request failed (${resp.status})`);
+            }
+            const data = await resp.json();
+            lastHealth = data;
+            applyHealthState(data);
+            if (shouldToast) {
+                const toastDetails = getToastDetails(data);
+                showToast(toastDetails.message, toastDetails.type, toastDetails.type === 'success' ? 3000 : 5000);
+            }
+        } catch (error) {
+            console.error('Failed to fetch printer health:', error);
+            lastHealth = null;
+            applyHealthState(null, error);
+            if (shouldToast) {
+                showToast(error?.message ? `Printer status unavailable: ${error.message}` : 'Unable to reach printer service.', 'error', 5000);
+            }
+        }
+    }
+
+    function applyHealthState(health, error = null) {
+        const notConfigured = Boolean(health && !health.printer_configured);
+        const offline = Boolean(health && health.printer_configured && !health.printer_online);
+        const needsVerify = Boolean(
+            health &&
+            health.printer_configured &&
+            health.printer_online &&
+            health.needs_verification
+        );
+
+        let message = '';
+
+        if (notConfigured) {
+            message = 'Orders will save but nothing will print until a thermal printer is selected.';
+        } else if (offline) {
+            message = 'The selected printer is unreachable. Orders are saved but kitchen tickets are not printing.';
+        } else if (needsVerify) {
+            message = 'Run a quick test print so the kitchen knows new tickets are coming through.';
+        } else if (error) {
+            message = 'Could not contact the printer service. Check the connection or refresh.';
+        }
+
+        updateOverlay(notConfigured, message);
+        updateRescueStatus(error ? 'Printer status unavailable. Try refreshing.' : undefined);
+    }
+
+    function isOverlaySuppressed() {
+        return overlaySuppressionReasons.size > 0;
+    }
+
+    function updateOverlay(show, message) {
+        const overlay = document.getElementById('printerBlockingOverlay');
+        if (!overlay) return;
+        if (isOverlaySuppressed()) {
+            show = false;
+        }
+        const bodyEl = document.body;
+        if (show) {
+            overlay.classList.remove('hidden');
+            const textEl = document.getElementById('printerBlockingMessage');
+            if (textEl) {
+                textEl.textContent = message || 'Orders will not print until a thermal printer is selected.';
+            }
+            bodyEl?.classList.add('overflow-hidden');
+        } else {
+            overlay.classList.add('hidden');
+            bodyEl?.classList.remove('overflow-hidden');
+        }
+    }
+
+    function suppressBlockingOverlay(reason = 'manual') {
+        overlaySuppressionReasons.add(reason);
+        updateOverlay(false);
+    }
+
+    function restoreBlockingOverlay(reason = 'manual') {
+        if (reason) {
+            overlaySuppressionReasons.delete(reason);
+        } else {
+            overlaySuppressionReasons.clear();
+        }
+
+        if (!isOverlaySuppressed()) {
+            applyHealthState(lastHealth);
+        }
+    }
+
+    async function populateRescueSelect() {
+        const select = document.getElementById(PRINTER_MODAL_IDS.select);
+        if (!select) return;
+        if (!select.dataset.selectionWatcherAttached) {
+            select.addEventListener('change', () => {
+                syncSelectionState();
+            });
+            select.dataset.selectionWatcherAttached = 'true';
+        }
+        select.disabled = true;
+        select.innerHTML = '<option value="">Loading printers...</option>';
+        try {
+            const resp = await fetch('/api/printers');
+            if (!resp.ok) throw new Error('Failed to fetch printers');
+            const data = await resp.json();
+            const printers = Array.isArray(data.printers) ? data.printers : [];
+            const normalizedPrinters = printers.map((printer) => {
+                if (typeof printer === 'string') {
+                    return {
+                        name: printer,
+                        display_hint: '',
+                        is_supported: true,
+                        recommended: false
+                    };
+                }
+                return printer;
+            });
+            const supportedPrinters = normalizedPrinters.filter((printer) => printer.is_supported !== false);
+
+            if (supportedPrinters.length === 0) {
+                select.innerHTML = '<option value="">No supported printers found</option>';
+            } else {
+                select.innerHTML = '<option value="" disabled selected>-- Select a printer --</option>';
+                supportedPrinters.forEach((printer) => {
+                    const option = document.createElement('option');
+                    option.value = printer.name;
+                    const prefix = printer.display_hint ? `${printer.display_hint} ` : '';
+                    option.textContent = `${prefix}${printer.name}`;
+                    if (printer.recommended) {
+                        option.textContent = `⭐ ${option.textContent}`;
+                    }
+                    select.appendChild(option);
+                });
+                const currentSelection = data.selected || (lastHealth && lastHealth.printer_name);
+                if (currentSelection) {
+                    select.value = currentSelection;
+                }
+            }
+        } catch (error) {
+            console.error('Unable to populate printer list:', error);
+            select.innerHTML = '<option value="">Failed to load printers</option>';
+        } finally {
+            select.disabled = false;
+            syncSelectionState();
+        }
+    }
+
+    function syncSelectionState() {
+        const select = document.getElementById(PRINTER_MODAL_IDS.select);
+        const indicator = document.getElementById(PRINTER_MODAL_IDS.selectionIndicator);
+        const modal = document.getElementById(PRINTER_MODAL_IDS.modal);
+        const testButton = modal?.querySelector('[data-printer-action="test"]');
+        if (!select && !indicator && !testButton) {
+            return;
+        }
+
+        const savedName = lastHealth?.printer_configured ? (lastHealth.printer_name || '') : '';
+        const selectedValue = select ? (select.value || '') : '';
+
+        let state = 'none';
+        let mainMessage = 'Saved printer: none';
+        let helperMessage = 'Select a printer and save it to enable testing.';
+
+        if (savedName) {
+            if (!selectedValue || selectedValue === savedName) {
+                state = 'saved';
+                mainMessage = `Saved printer: ${savedName}`;
+                helperMessage = 'Ready for test print.';
+            } else {
+                state = 'unsaved';
+                mainMessage = `Unsaved selection: ${selectedValue}`;
+                helperMessage = 'Click Save to update the shared printer.';
+            }
+        } else if (selectedValue) {
+            state = 'unsaved';
+            mainMessage = `Unsaved selection: ${selectedValue}`;
+            helperMessage = 'Save the selection before running a test.';
+        }
+
+        const composedMessage = helperMessage ? `${mainMessage}. ${helperMessage}` : mainMessage;
+
+        if (indicator) {
+            const textEl = indicator.querySelector('[data-indicator-text]');
+            if (textEl) {
+                textEl.textContent = composedMessage;
+            } else {
+                indicator.textContent = composedMessage;
+            }
+
+            indicator.dataset.state = state;
+            indicator.classList.remove('text-gray-600', 'text-amber-600', 'text-green-600');
+            if (state === 'saved') {
+                indicator.classList.add('text-green-600');
+            } else if (state === 'unsaved') {
+                indicator.classList.add('text-amber-600');
+            } else {
+                indicator.classList.add('text-gray-600');
+            }
+
+            const dot = indicator.querySelector('[data-indicator-dot]');
+            if (dot) {
+                dot.classList.remove('bg-gray-300', 'bg-amber-400', 'bg-green-500');
+                if (state === 'saved') {
+                    dot.classList.add('bg-green-500');
+                } else if (state === 'unsaved') {
+                    dot.classList.add('bg-amber-400');
+                } else {
+                    dot.classList.add('bg-gray-300');
+                }
+            }
+        }
+
+        if (testButton) {
+            if (testButton.dataset.busy === 'true') {
+                testButton.disabled = true;
+            } else {
+                testButton.disabled = state !== 'saved';
+            }
+            testButton.title = state === 'saved' ? '' : 'Save a printer before sending a test print.';
+        }
+    }
+
+    function updateRescueStatus(extraMessage) {
+        const statusEl = document.getElementById(PRINTER_MODAL_IDS.status);
+        if (!statusEl) {
+            syncSelectionState();
+            return;
+        }
+
+        let statusText = '';
+
+        if (extraMessage) {
+            statusText = extraMessage;
+        } else if (!lastHealth) {
+            statusText = 'Printer status unavailable. Try refreshing.';
+        } else if (!lastHealth.printer_configured) {
+            statusText = 'No printer configured yet. Choose a thermal printer below and save it.';
+        } else {
+            const statusBits = [];
+            statusBits.push(`Selected: ${lastHealth.printer_name || 'Unknown'}`);
+
+            if (lastHealth.printer_online) {
+                statusBits.push('Status: Online');
+            } else {
+                statusBits.push('Status: Offline or unreachable');
+            }
+
+            if (lastHealth.needs_verification) {
+                statusBits.push('Verification required');
+            }
+
+            statusText = statusBits.join(' \u0007 ');
+        }
+
+        statusEl.textContent = statusText;
+        syncSelectionState();
+    }
+
+
+    function showModal() {
+        const modal = document.getElementById(PRINTER_MODAL_IDS.modal);
+        if (!modal) return;
+        isModalOpen = true;
+        modal.classList.remove('hidden');
+        modal.style.display = 'flex';
+        populateRescueSelect();
+        updateRescueStatus();
+        document.body?.classList.add('overflow-hidden');
+    }
+
+    function hideModal() {
+        const modal = document.getElementById(PRINTER_MODAL_IDS.modal);
+        if (!modal) return;
+        isModalOpen = false;
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+        document.body?.classList.remove('overflow-hidden');
+    }
+
+    async function saveRescueSelection() {
+        const select = document.getElementById(PRINTER_MODAL_IDS.select);
+        if (!select) {
+            showToast('Printer list unavailable', 'error');
+            return;
+        }
+        const choice = select.value;
+        if (!choice) {
+            showToast('Please select a printer first', 'warning');
+            return;
+        }
+
+        const modal = document.getElementById(PRINTER_MODAL_IDS.modal);
+        const saveButton = modal?.querySelector('[data-printer-action="save"]');
+        if (saveButton) {
+            saveButton.disabled = true;
+        }
+
+        try {
+            if (saveButton) {
+                saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Saving...</span>';
+            }
+            const resp = await fetch('/api/printer/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ printer_name: choice })
+            });
+            const result = await resp.json();
+            if (resp.ok && result.success) {
+                showToast('Printer saved successfully!', 'success');
+                await refresh();
+                updateRescueStatus();
+            } else {
+                showToast(result.message || 'Failed to save printer', 'error');
+            }
+        } catch (error) {
+            console.error('Unable to save printer:', error);
+            showToast('Error saving printer selection', 'error');
+        } finally {
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.innerHTML = '<i class="fas fa-save"></i><span>Save Printer</span>';
+            }
+        }
+    }
+
+    async function testPrinterFromRescue() {
+        const modal = document.getElementById(PRINTER_MODAL_IDS.modal);
+        const button = modal?.querySelector('[data-printer-action="test"]');
+        try {
+            if (button) {
+                button.dataset.busy = 'true';
+                button.disabled = true;
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Testing...</span>';
+            }
+            const deviceName = DevicePreferences.getDeviceName();
+            const resp = await fetch('/api/printer/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_name: deviceName })
+            });
+            const result = await resp.json();
+            if (result.success) {
+                showToast('Test print sent successfully!', 'success');
+            } else {
+                showToast(result.message || 'Test print failed', 'error');
+            }
+            await refresh();
+            updateRescueStatus();
+        } catch (error) {
+            console.error('Printer test failed:', error);
+            showToast('Error sending test print', 'error');
+        } finally {
+            if (button) {
+                delete button.dataset.busy;
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-vial"></i><span>Test Print</span>';
+            }
+            syncSelectionState();
+        }
+    }
+
+    function init() {
+        refresh();
+        if (pollTimer) {
+            clearInterval(pollTimer);
+        }
+        pollTimer = setInterval(refresh, POLL_INTERVAL);
+    }
+
+    return {
+        init,
+        refresh: () => refresh(),
+        refreshWithToast: () => refresh({ showToast: true }),
+        openRescueModal: () => {
+            showModal();
+        },
+        closeRescueModal: () => {
+            hideModal();
+        },
+        refreshPrinterList: () => populateRescueSelect(),
+        saveRescueSelection,
+        testPrinterFromRescue,
+        updateRescueStatus,
+        suppressBlockingOverlay,
+        restoreBlockingOverlay
+    };
+})();
+
+window.PrinterMonitor = PrinterMonitor;
+
+function basicShowPrinterModal() {
+    const modal = document.getElementById('printerSetupModal');
+    if (!modal) {
+        showToast('Printer setup UI not available on this page.', 'error');
+        return;
+    }
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+}
+
+function basicHidePrinterModal() {
+    const modal = document.getElementById('printerSetupModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+}
+
+function openPrinterRescueModal() {
+    if (window.PrinterMonitor && typeof PrinterMonitor.openRescueModal === 'function') {
+        PrinterMonitor.openRescueModal();
+    } else {
+        basicShowPrinterModal();
+    }
+}
+
+function closePrinterRescueModal() {
+    if (window.PrinterMonitor && typeof PrinterMonitor.closeRescueModal === 'function') {
+        PrinterMonitor.closeRescueModal();
+    } else {
+        basicHidePrinterModal();
+    }
+}
+
+function refreshPrinterStatusWithToast() {
+    if (window.PrinterMonitor && typeof PrinterMonitor.refreshWithToast === 'function') {
+        PrinterMonitor.refreshWithToast();
+    } else {
+        showToast('Printer monitor not ready yet. Please try again in a moment.', 'warning');
+    }
+}
+
+window.openPrinterRescueModal = openPrinterRescueModal;
+window.closePrinterRescueModal = closePrinterRescueModal;
+window.refreshPrinterStatusWithToast = refreshPrinterStatusWithToast;
+
+const PRINTER_ACTIONS_WITH_DELEGATION = new Set(['open', 'close', 'refresh']);
+
+function handlePrinterActionClick(event) {
+    const target = event.target.closest('[data-printer-action]');
+    if (!target) return;
+
+    const action = target.getAttribute('data-printer-action');
+    if (!PRINTER_ACTIONS_WITH_DELEGATION.has(action)) {
+        return;
+    }
+
+    event.preventDefault();
+    switch (action) {
+        case 'open':
+            openPrinterRescueModal();
+            break;
+        case 'close':
+            closePrinterRescueModal();
+            break;
+        case 'refresh':
+            refreshPrinterStatusWithToast();
+            break;
+        default:
+            break;
+    }
+}
+
+document.addEventListener('click', handlePrinterActionClick);
+
 // --- NEW: Centralized State Management ---
 // Generate unique device ID for this session
 const DEVICE_ID = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -1523,12 +2029,6 @@ const FrontendLicenseManager = {
             return this.currentValidationState;
         }
 
-        if (serverLicense.offline) {
-            console.warn('License validation operating in offline grace mode');
-            this.presentOfflineFallback(serverLicense.error);
-            return this.currentValidationState;
-        }
-
         const sourceHint = serverLicense.source || '';
         const graceSources = new Set([
             'server_license_cached',
@@ -1537,7 +2037,17 @@ const FrontendLicenseManager = {
             'cached_grace_period',
             'server_grace'
         ]);
-        const isGraceResponse = Boolean(serverLicense.grace_period) || graceSources.has(sourceHint);
+        const rawConnectivity = serverLicense.connectivity_status;
+        const normalizedConnectivity = typeof rawConnectivity === 'string'
+            ? rawConnectivity.toLowerCase()
+            : 'unknown';
+        const offlineStates = new Set(['offline', 'offline_cached']);
+        const onlineStates = new Set(['online', 'online_cached']);
+        const isServerOfflineForLicense = offlineStates.has(normalizedConnectivity) || Boolean(serverLicense.offline);
+        const isServerOnline = !isServerOfflineForLicense && (onlineStates.has(normalizedConnectivity) || normalizedConnectivity === 'unknown');
+        const connectivityStatus = rawConnectivity || (isServerOfflineForLicense ? 'offline' : 'online');
+        const indicatesGrace = Boolean(serverLicense.grace_period) || graceSources.has(sourceHint);
+        const isGraceResponse = isServerOfflineForLicense || (indicatesGrace && !isServerOnline);
 
         if (isGraceResponse) {
             const graceDaysLeft = typeof serverLicense.grace_days_left === 'number'
@@ -1575,7 +2085,8 @@ const FrontendLicenseManager = {
                 grace_days_left: graceDaysLeft,
                 days_offline: daysOfflineFromServer,
                 source: sourceHint || 'server_grace',
-                timestamp: graceValidationTimestamp
+                timestamp: graceValidationTimestamp,
+                connectivityStatus
             };
 
             const computedGracePeriod = (daysOfflineFromServer !== null && graceDaysLeft !== null)
@@ -1603,7 +2114,7 @@ const FrontendLicenseManager = {
             return this.currentValidationState;
         }
 
-        if (serverLicense.licensed && serverLicense.active) {
+        if (serverLicense.licensed && serverLicense.active && isServerOnline) {
             console.log('Server license found and active - using server license');
 
             const validationTimestamp = Date.now();
@@ -1635,7 +2146,8 @@ const FrontendLicenseManager = {
                 customerName: serverLicense.customer_name,
                 email: serverLicense.email,
                 source: 'server',
-                timestamp: validationTimestamp
+                timestamp: validationTimestamp,
+                connectivityStatus
             };
 
             OfflineInterruptionManager.handleOnline();
@@ -1661,6 +2173,7 @@ const FrontendLicenseManager = {
             LicenseStorage.clearPaymentData();
         }
 
+        this.cache.isOnline = isServerOnline;
         await this.checkTrialStatus();
         return this.currentValidationState;
     },
@@ -2489,6 +3002,10 @@ function cacheDOMElements() {
     elements.passwordInput = document.getElementById('passwordInput');
     elements.loginError = document.getElementById('loginError');
     elements.loginSubmitBtn = document.getElementById('loginSubmitBtn');
+    elements.deviceSettingsPanel = document.getElementById('deviceSettingsPanel');
+    elements.deviceSettingsManagementMount = document.getElementById('deviceSettingsManagementMount');
+    elements.deviceSettingsModal = document.getElementById('deviceSettingsQuickModal');
+    elements.deviceSettingsModalMount = document.getElementById('deviceSettingsModalMount');
     
 
     elements.managementModal = document.getElementById('managementModal');
@@ -3033,7 +3550,7 @@ function createTableCard(tableId, table, session, isSuggestion = false, matchQua
                     matchQuality === 'perfect' ? 'bg-green-500' :
                     matchQuality === 'good' ? 'bg-yellow-500' : 'bg-orange-500'
                 }">
-                    ${matchQuality === 'perfect' ? 'ðŸŽ¯' : matchQuality === 'good' ? 'ðŸ‘' : 'âœ“'}
+                    ${matchQuality === 'perfect' ? '\u{1F3AF}' : matchQuality === 'good' ? '\u{1F44D}' : '\u2713'}
                 </div>
             ` : ''}
 
@@ -3256,7 +3773,9 @@ let lastSSEEventTime = null;
 function startSimpleModeConnectionMonitor(initialStatus = ConnectionStatus.CHECKING) {
     stopSimpleModeConnectionMonitor();
 
-    if (initialStatus) {
+    if (navigator.onLine === false) {
+        updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+    } else if (initialStatus) {
         updateConnectionStatusUI(initialStatus);
     }
 
@@ -3298,8 +3817,8 @@ window.addEventListener('online', () => {
 
 window.addEventListener('offline', () => {
     if (!tableManagementEnabled) {
-        // Re-check local POS availability before changing status
-        startSimpleModeConnectionMonitor(ConnectionStatus.CHECKING);
+        updateConnectionStatusUI(ConnectionStatus.OFFLINE);
+        startSimpleModeConnectionMonitor(ConnectionStatus.OFFLINE);
     }
 });
 function initConnectionStatusIndicator() {
@@ -4345,7 +4864,7 @@ const ErrorMessages = {
         message: 'Cannot connect to server. Check your network connection.',
         suggestions: ['Check WiFi/ethernet connection', 'Try refreshing the page'],
         type: 'error',
-        icon: 'ðŸŒ'
+        icon: '\u{1F310}'
     },
     NETWORK_TIMEOUT: {
         message: 'Request timed out. Server may be slow.',
@@ -4357,7 +4876,7 @@ const ErrorMessages = {
         message: 'Server error occurred.',
         suggestions: ['Try again', 'Contact support if error persists'],
         type: 'error',
-        icon: 'ðŸ”§'
+        icon: '\u{1F527}'
     },
     DATA_VALIDATION: {
         message: 'Invalid data format received from server.',
@@ -4667,7 +5186,7 @@ function updateTableIndicatorBadge() {
 
     if (selectedTableId === null) {
         console.log('[BADGE-UPDATE] Takeaway mode selected');
-        iconSpan.textContent = 'ðŸ¥¡';
+        iconSpan.textContent = '\u{1F961}';
         textSpan.textContent = 'Takeaway';
         indicator.setAttribute('aria-label', 'Takeaway mode - Click to select table');
     } else {
@@ -4682,14 +5201,14 @@ function updateTableIndicatorBadge() {
             console.log('[BADGE-UPDATE] table.total:', table.total, 'using value:', total);
             console.log('[BADGE-UPDATE] Full table object:', table);
 
-            iconSpan.textContent = 'ðŸ“';
+            iconSpan.textContent = '\u{1F4CD}';
             textSpan.textContent = `T${table.table_number} | \u20AC${total.toFixed(2)}`;
             indicator.setAttribute('aria-label', `Table ${table.table_number}, Total: \u20AC${total.toFixed(2)} - Click to change table`);
 
             console.log('[BADGE-UPDATE] Badge updated to:', textSpan.textContent);
         } else {
             console.error('[BADGE-UPDATE] TABLE NOT FOUND in allTablesData!');
-            iconSpan.textContent = 'ðŸ“';
+            iconSpan.textContent = '\u{1F4CD}';
             textSpan.textContent = `T${selectedTableId} | \u20AC0.00`;
             indicator.setAttribute('aria-label', `Table ${selectedTableId} - Click to change table`);
         }
@@ -5169,6 +5688,9 @@ function initializeAppState() {
 
     // Check if first-time setup wizard should be shown (Phase 4)
     checkAndShowSetupWizard();
+
+    // Start monitoring shared printer health for all devices
+    PrinterMonitor.init();
 
     console.log('initializeAppState completed');
 }
@@ -5784,7 +6306,7 @@ async function submitOrderToServer(tableNumberForOrder, printBehavior) {
                 showToast(result.message || `Order #${result.order_number}${tableMessage} sent, all copies printed, and logged!`, 'success');
             } else if (result.status === "success_order_saved_print_failed") {
                 // Phase 7: Enhanced print failure alert
-                const alertMessage = `âš ï¸ ORDER #${result.order_number} SAVED BUT NOT PRINTED! Kitchen won't see it. Reprint now from Management â†’ Orders.`;
+                const alertMessage = `\u26A0\uFE0F ORDER #${result.order_number} SAVED BUT NOT PRINTED! Kitchen won't see it. Reprint now from Management -> Orders.`;
                 showToast(alertMessage, 'error', 15000);
 
                 // Play alert sound (Phase 7)
@@ -6398,6 +6920,54 @@ function closeLoginModal() {
     }
 }
 
+function moveDeviceSettingsPanel(targetElement) {
+    if (!elements.deviceSettingsPanel || !targetElement) return false;
+    targetElement.appendChild(elements.deviceSettingsPanel);
+    return true;
+}
+
+function ensureDeviceSettingsInManagementMount() {
+    if (!elements.deviceSettingsPanel || !elements.deviceSettingsManagementMount) return;
+    if (elements.deviceSettingsPanel.parentElement !== elements.deviceSettingsManagementMount) {
+        elements.deviceSettingsManagementMount.appendChild(elements.deviceSettingsPanel);
+    }
+}
+
+function openDeviceSettingsQuickModal() {
+    if (!elements.deviceSettingsModal || !elements.deviceSettingsModalMount) {
+        console.warn('Device settings modal elements missing');
+        return;
+    }
+
+    // Always move the shared panel into the modal region
+    moveDeviceSettingsPanel(elements.deviceSettingsModalMount);
+
+    // Ensure fields reflect the current saved state
+    try {
+        loadDeviceSettings();
+    } catch (error) {
+        console.error('Failed to load device settings for quick modal:', error);
+    }
+
+    closeLoginModal();
+
+    elements.deviceSettingsModal.classList.remove('hidden');
+    elements.deviceSettingsModal.classList.add('flex');
+}
+
+function closeDeviceSettingsQuickModal(reopenLogin = false) {
+    if (!elements.deviceSettingsModal) return;
+
+    ensureDeviceSettingsInManagementMount();
+
+    elements.deviceSettingsModal.classList.add('hidden');
+    elements.deviceSettingsModal.classList.remove('flex');
+
+    if (reopenLogin) {
+        openLoginModal();
+    }
+}
+
 async function handleLogin(event) {
     event.preventDefault();
     if (!elements.passwordInput || !elements.loginSubmitBtn || !elements.loginError) return;
@@ -6468,6 +7038,17 @@ function handleSettingsGearClick() {
         alert('Error: Management modal not found. Please refresh the page.');
         return;
     }
+
+    // Ensure stray printer modal is closed before opening management
+    if (typeof closePrinterRescueModal === 'function') {
+        closePrinterRescueModal();
+    } else {
+        const rescueModal = document.getElementById('printerSetupModal');
+        if (rescueModal) {
+            rescueModal.classList.add('hidden');
+            rescueModal.style.display = 'none';
+        }
+    }
     
     // For business use, provide direct access to management features
     // This bypasses the login modal for better user experience
@@ -6483,6 +7064,21 @@ function openManagementModal() {
             createFallbackManagementModal();
             return;
         }
+    }
+
+    // Make sure printer rescue modal is closed so only one dialog is visible
+    if (typeof closePrinterRescueModal === 'function') {
+        closePrinterRescueModal();
+    }
+
+    // If legacy markup placed the blocking overlay inside the management modal, move it back to body
+    const blockingOverlay = document.getElementById('printerBlockingOverlay');
+    if (blockingOverlay && elements.managementModal.contains(blockingOverlay)) {
+        document.body.appendChild(blockingOverlay);
+    }
+
+    if (window.PrinterMonitor && typeof PrinterMonitor.suppressBlockingOverlay === 'function') {
+        PrinterMonitor.suppressBlockingOverlay('management');
     }
     
     // Handle different UI variants
@@ -6536,6 +7132,10 @@ function openManagementModal() {
 
 function closeManagementModal() {
     if (!elements.managementModal) return;
+    
+    if (window.PrinterMonitor && typeof PrinterMonitor.restoreBlockingOverlay === 'function') {
+        PrinterMonitor.restoreBlockingOverlay('management');
+    }
     
     // Handle different UI variants
     const isDesktopUI = document.body.classList.contains('desktop-ui');
@@ -7280,6 +7880,11 @@ async function testPrint() {
 
 // --- First-Time Setup Wizard Functions (Phase 4: Multi-device printer redesign) ---
 let wizardCurrentStep = 1;
+let wizardPrinterHealthState = {
+    configured: false,
+    online: false,
+    name: ''
+};
 
 async function checkAndShowSetupWizard() {
     // Check if first-time setup is needed
@@ -7407,6 +8012,13 @@ async function wizardGoNext() {
         }
     }
 
+    if (wizardCurrentStep === 2) {
+        if (!wizardPrinterHealthState.configured) {
+            showToast('Select and save a printer before continuing', 'warning');
+            return;
+        }
+    }
+
     if (wizardCurrentStep < 3) {
         wizardCurrentStep++;
         await wizardUpdateUI();
@@ -7429,6 +8041,12 @@ async function wizardLoadPrinterStatus() {
     try {
         const resp = await fetch('/api/printer/health');
         const health = await resp.json();
+
+        wizardPrinterHealthState = {
+            configured: Boolean(health.printer_configured),
+            online: Boolean(health.printer_online),
+            name: health.printer_name || ''
+        };
 
         if (printerNameEl) {
             printerNameEl.textContent = health.printer_name || 'Not configured';
@@ -7461,6 +8079,7 @@ async function wizardLoadPrinterStatus() {
         }
     } catch (e) {
         console.error('[Setup Wizard] Error loading printer status:', e);
+        wizardPrinterHealthState = { configured: false, online: false, name: '' };
         if (printerStatusEl) {
             printerStatusEl.innerHTML = '<span class="text-red-600"><i class="fas fa-times-circle mr-1"></i>Error</span>';
         }
@@ -7935,7 +8554,7 @@ async function changePort() {
         document.getElementById('currentPortDisplay').textContent = newPort;
         
         if (firewallResult.success) {
-            resultSpan.textContent = `âœ… Port changed to ${newPort} and firewall configured! Restart POSPal to use new port.`;
+            resultSpan.textContent = `\u2705 Port changed to ${newPort} and firewall configured! Restart POSPal to use new port.`;
             resultSpan.className = 'text-sm text-green-600';
             showToast(`Port changed to ${newPort}! Please restart POSPal.`, 'success');
         } else {
@@ -7949,7 +8568,7 @@ async function changePort() {
         
     } catch (error) {
         console.error('Error changing port:', error);
-        resultSpan.textContent = `âŒ Failed to change port: ${error.message}`;
+        resultSpan.textContent = `\u274C Failed to change port: ${error.message}`;
         resultSpan.className = 'text-sm text-red-600';
         showToast('Error changing port.', 'error');
     } finally {
@@ -8216,7 +8835,7 @@ function openItemFormModal(itemIdToEdit = null) {
         populateItemFormForEdit(itemIdToEdit);
     } else {
         elements.itemFormModalTitle.textContent = t('ui.items.editItem', 'Add New Item');
-        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = 'ðŸ’¾ ' + t('ui.items.saveNewItem', 'Save New Item');
+        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '\u{1F4BE} ' + t('ui.items.saveNewItem', 'Save New Item');
     }
     // Handle different UI variants
     const isDesktopUI = document.body.classList.contains('desktop-ui');
@@ -8271,7 +8890,7 @@ function populateItemFormForEdit(itemIdToEdit) {
         // Populate enhanced menu data
         populateEnhancedMenuData(foundItem);
 
-        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = 'ðŸ”„ Update Item';
+        if (elements.saveItemBtn) elements.saveItemBtn.innerHTML = '\u{1F504} Update Item';
     }
 }
 
@@ -9536,7 +10155,7 @@ async function checkAutomaticActivation() {
             localStorage.removeItem('pospal_cached_status');
             localStorage.removeItem('pospal_daily_retry_count');
             localStorage.removeItem('pospal_last_daily_check');
-            console.log('âœ… Old browser license data cleared');
+            console.log('\u2705 Old browser license data cleared');
         }
 
         // Check for payment success (Stripe return)
@@ -9601,32 +10220,45 @@ async function loadLicenseInfo() {
                 const serverLicense = await response.json();
                 console.log('Server license data:', serverLicense);
 
-                // If server has active license, populate licenseData from it
-                if (serverLicense.licensed && serverLicense.active) {
-                    const graceMode = Boolean(
-                        serverLicense.grace_period ||
-                        serverLicense.source === 'server_license_cached' ||
-                        serverLicense.source === 'cached_grace_period'
-                    );
+                const connectivityStatus = serverLicense.connectivity_status || 'unknown';
+                const normalizedConnectivity = typeof connectivityStatus === 'string'
+                    ? connectivityStatus.toLowerCase()
+                    : 'unknown';
+                const offlineConnectivityStates = new Set(['offline', 'offline_cached']);
+                const onlineConnectivityStates = new Set(['online', 'online_cached']);
+                const connectivityIndicatesOffline = offlineConnectivityStates.has(normalizedConnectivity);
+                const connectivityIndicatesOnline = !connectivityIndicatesOffline && (onlineConnectivityStates.has(normalizedConnectivity) || normalizedConnectivity === 'unknown');
+                const graceSourceHints = new Set([
+                    'server_license_cached',
+                    'server_license_cached_backoff',
+                    'server_license_cached_direct',
+                    'cached_grace_period',
+                    'server_grace'
+                ]);
+                const graceMode = connectivityIndicatesOffline || (!connectivityIndicatesOnline && (
+                    Boolean(serverLicense.grace_period) ||
+                    graceSourceHints.has(serverLicense.source)
+                ));
 
+                // If server has active license, populate licenseData from it
+                if (serverLicense.licensed && serverLicense.active && !graceMode) {
                     licenseData = {
                         unlockToken: true,  // Set to truthy value so existing checks work
                         customerEmail: serverLicense.email,
                         customerName: serverLicense.customer_name,
-                        licenseStatus: graceMode ? 'offline_grace' : (serverLicense.subscription_status || 'active'),
+                        licenseStatus: serverLicense.subscription_status || 'active',
                         nextBillingDate: serverLicense.next_billing_date,
                         subscriptionPrice: serverLicense.subscription_price,
                         subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
                         lastValidated: serverLicense.validated_at,
                         graceDaysLeft: serverLicense.grace_days_left,
                         daysOffline: serverLicense.days_offline,
-                        isGraceMode: graceMode,
-                        isOnline: !graceMode
+                        isGraceMode: false,
+                        isOnline: true,
+                        connectivityStatus
                     };
-                    console.log(graceMode
-                        ? 'Server license cached in grace mode, license data populated'
-                        : 'Active server license found, license data populated');
-                } else if (serverLicense.grace_period) {
+                    console.log('Active server license found, license data populated');
+                } else if (graceMode || serverLicense.grace_period) {
                     licenseData = {
                         unlockToken: true,
                         customerEmail: serverLicense.email,
@@ -9639,7 +10271,8 @@ async function loadLicenseInfo() {
                         graceDaysLeft: serverLicense.grace_days_left,
                         daysOffline: serverLicense.days_offline,
                         isGraceMode: true,
-                        isOnline: false
+                        isOnline: false,
+                        connectivityStatus: connectivityStatus || 'offline'
                     };
                     console.log('Server license running in grace mode - offline status reflected in UI data');
                 }
@@ -9664,12 +10297,25 @@ async function loadLicenseInfo() {
                 licenseData.daysOffline = licenseData.days_offline;
             }
 
-            const derivedGraceMode = Boolean(
+            let connectivityStatus = licenseData.connectivityStatus || licenseData.connectivity_status;
+            if (!connectivityStatus) {
+                connectivityStatus = licenseData.isGraceMode ? 'offline_cached' : 'online';
+            }
+            licenseData.connectivityStatus = connectivityStatus;
+            const normalizedConnectivity = typeof connectivityStatus === 'string'
+                ? connectivityStatus.toLowerCase()
+                : 'unknown';
+            const offlineConnectivityStates = new Set(['offline', 'offline_cached']);
+            const onlineConnectivityStates = new Set(['online', 'online_cached']);
+            const connectivityIndicatesOffline = offlineConnectivityStates.has(normalizedConnectivity);
+            const connectivityIndicatesOnline = !connectivityIndicatesOffline && (onlineConnectivityStates.has(normalizedConnectivity) || normalizedConnectivity === 'unknown');
+
+            const derivedGraceMode = connectivityIndicatesOffline || (!connectivityIndicatesOnline && Boolean(
                 licenseData.isGraceMode ||
                 licenseData.licenseStatus === 'offline_grace' ||
                 licenseData.grace_period ||
                 typeof licenseData.graceDaysLeft === 'number'
-            );
+            ));
 
             if (derivedGraceMode) {
                 licenseData.isGraceMode = true;
@@ -9683,7 +10329,8 @@ async function loadLicenseInfo() {
                         licenseData.daysOffline = (Date.now() - lastValidationTs) / (1000 * 60 * 60 * 24);
                     }
                 }
-            } else if (licenseData.isOnline === undefined) {
+            } else {
+                licenseData.isGraceMode = false;
                 licenseData.isOnline = true;
             }
         }
@@ -9977,7 +10624,7 @@ function showUnlockRedirect(type = 'trial') {
         'Your subscription has expired. Choose an option to continue:' :
         'Your 30-day trial has ended. Choose an option to continue:';
     
-    if (confirm(message + '\n\nâœ… Already paid? Click OK to enter unlock code\nâŒ Need to pay? Click Cancel to subscribe')) {
+    if (confirm(message + '\n\n\u2705 Already paid? Click OK to enter unlock code\n\u274C Need to pay? Click Cancel to subscribe')) {
         showUnlockDialog();
     } else {
         showEmbeddedPayment();
@@ -10639,7 +11286,7 @@ function initializePortalReturnHandling() {
         console.log('Payment successful - showing success toast and refreshing license');
 
         // Show success toast
-        showToast('ðŸŽ‰ Subscription activated! Welcome back!', 'success', 5000);
+        showToast('\u{1F389} Subscription activated! Welcome back!', 'success', 5000);
 
         // Force license validation to get updated status
         setTimeout(async () => {
@@ -10926,9 +11573,9 @@ function initializeLicenseUIVisibility() {
             trialActions.appendChild(message);
         }
 
-        console.log('ðŸ”’ License management UI hidden - not localhost');
+        console.log('\u{1F512} License management UI hidden - not localhost');
     } else {
-        console.log('âœ… License management UI available - localhost access');
+        console.log('\u2705 License management UI available - localhost access');
     }
 }
 
@@ -11112,7 +11759,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     setUnlockLoading(false);
 
                     // Show success message
-                    showToast(`ðŸŽ‰ Server license activated for ${email}! All devices will use this license. Refreshing...`, 'success', 2000);
+                    showToast(`\u{1F389} Server license activated for ${email}! All devices will use this license. Refreshing...`, 'success', 2000);
 
                     // Refresh the entire page to load the new server license
                     setTimeout(() => {
@@ -12092,7 +12739,7 @@ async function attemptReconnect() {
         const isOnline = await attemptServerValidation(customerEmail, unlockToken, 10000); // 10 second timeout for manual attempts
         
         if (isOnline) {
-            showToast('âœ… Reconnected successfully!', 'success', 3000);
+            showToast('\u2705 Reconnected successfully!', 'success', 3000);
             // hideOfflineIndicator(); // Removed invasive popup
             // Update last daily check timestamp to reset daily schedule
             localStorage.setItem('pospal_last_daily_check', Date.now().toString());
@@ -12101,7 +12748,7 @@ async function attemptReconnect() {
                 startSession();
             }, 1000);
         } else {
-            showToast('âŒ Still offline - automatic check once per day', 'error', 4000);
+            showToast('\u274C Still offline - automatic check once per day', 'error', 4000);
         }
     }
 }
@@ -12874,7 +13521,7 @@ function unlockPOSPal(unlockToken, customerEmail = null, customerName = null) {
     }
     
     // Show success message
-    showToast('ðŸŽ‰ Welcome to POSPal Pro! Your app is now unlocked.', 'success', 5000);
+    showToast('\u{1F389} Welcome to POSPal Pro! Your app is now unlocked.', 'success', 5000);
     
     // Refresh the page to ensure all locked features are enabled
     setTimeout(() => {
@@ -15408,7 +16055,7 @@ async function confirmPayment() {
         }
 
         const result = await response.json();
-        const methodLabel = selectedPaymentMethod === 'cash' ? 'ðŸ’µ Cash' : 'ðŸ’³ Card';
+        const methodLabel = selectedPaymentMethod === 'cash' ? '\u{1F4B5} Cash' : '\u{1F4B3} Card';
         showToast(`${result.message || 'Table marked as paid'} (${methodLabel})`, 'success');
 
         // Refresh table data
@@ -15565,8 +16212,8 @@ function updateSplitPreview() {
                     </div>
                     <div class="flex items-center gap-2">
                         <select id="splitPaymentMethod_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                            <option value="cash">ðŸ’µ Cash</option>
-                            <option value="card">ðŸ’³ Card</option>
+                            <option value="cash">\u{1F4B5} Cash</option>
+                            <option value="card">\u{1F4B3} Card</option>
                         </select>
                         <button onclick="recordEqualSplitPayment(${i}, ${perPerson})"
                                 id="recordPaymentBtn_${i}"
@@ -15643,7 +16290,7 @@ async function recordEqualSplitPayment(personNumber, amount) {
         await showTableDetail(currentTableId);
         await reloadTableDataOnly();
 
-        const methodLabel = method === 'cash' ? 'ðŸ’µ Cash' : 'ðŸ’³ Card';
+        const methodLabel = method === 'cash' ? '\u{1F4B5} Cash' : '\u{1F4B3} Card';
         showToast(`Payment recorded: \u20AC${amount.toFixed(2)} (${methodLabel})`, 'success');
 
     } catch (error) {
@@ -15839,8 +16486,8 @@ function updateSplitSummary() {
                 ${total > 0 ? `
                     <div class="flex items-center gap-2">
                         <select id="byItemsPaymentMethod_${i}" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                            <option value="cash">ðŸ’µ Cash</option>
-                            <option value="card">ðŸ’³ Card</option>
+                            <option value="cash">\u{1F4B5} Cash</option>
+                            <option value="card">\u{1F4B3} Card</option>
                         </select>
                         <button onclick="recordByItemsPayment(${i}, ${total})"
                                 id="recordByItemsBtn_${i}"
@@ -15957,7 +16604,7 @@ async function recordByItemsPayment(personNumber, amount) {
         await showTableDetail(currentTableId);
         await reloadTableDataOnly();
 
-        const methodLabel = method === 'cash' ? 'ðŸ’µ Cash' : 'ðŸ’³ Card';
+        const methodLabel = method === 'cash' ? '\u{1F4B5} Cash' : '\u{1F4B3} Card';
         showToast(`Payment recorded: \u20AC${amount.toFixed(2)} (${methodLabel})`, 'success');
 
     } catch (error) {
@@ -16043,7 +16690,7 @@ async function activateServerLicense() {
 
         if (response.ok && data.success) {
             // Success!
-            showToast(`âœ… Server license activated for ${email}! All devices will now use this license.`, 'success', 8000);
+            showToast(`\u2705 Server license activated for ${email}! All devices will now use this license.`, 'success', 8000);
 
             // Clear form
             emailInput.value = '';
@@ -16059,13 +16706,13 @@ async function activateServerLicense() {
         } else {
             // Error
             const errorMsg = data.error || 'License activation failed';
-            showToast(`âŒ ${errorMsg}`, 'error', 6000);
+            showToast(`\u274C ${errorMsg}`, 'error', 6000);
             console.error('Server license activation failed:', data);
         }
 
     } catch (error) {
         console.error('Error activating server license:', error);
-        showToast('âŒ Network error - please try again', 'error');
+        showToast('\u274C Network error - please try again', 'error');
     } finally {
         // Re-enable button
         activateBtn.disabled = false;
@@ -16099,17 +16746,17 @@ async function deactivateServerLicense() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            showToast('âœ… Server license deactivated', 'success');
+            showToast('\u2705 Server license deactivated', 'success');
             passwordInput.value = '';
             await updateServerLicenseStatusDisplay(true);
             await FrontendLicenseManager.validateLicense(true);
         } else {
-            showToast(`âŒ ${data.error || 'Deactivation failed'}`, 'error');
+            showToast(`\u274C ${data.error || 'Deactivation failed'}`, 'error');
         }
 
     } catch (error) {
         console.error('Error deactivating server license:', error);
-        showToast('âŒ Network error - please try again', 'error');
+        showToast('\u274C Network error - please try again', 'error');
     }
 }
 

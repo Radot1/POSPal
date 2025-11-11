@@ -6881,7 +6881,7 @@ def check_trial_status_legacy():
             cloud_validation_attempted = True
             
             # Attempt cloud validation with timeout
-            success, cloud_license_data, error_msg, from_cache = _validate_license_with_cloud(
+            success, cloud_license_data, error_msg, from_cache, cloud_reachable = _validate_license_with_cloud(
                 customer_email,
                 unlock_token,
                 hardware_id,
@@ -8405,7 +8405,7 @@ def validate_license_api():
             if not result.get('licensed') and result.get('message') == 'Integration system not available':
                 app.logger.warning("Unified system not available, falling back to direct cloud validation")
                 try:
-                    success, cloud_data, error_msg, from_cache = _validate_license_with_cloud(
+                    success, cloud_data, error_msg, from_cache, cloud_reachable = _validate_license_with_cloud(
                         customer_email, unlock_token, hardware_id, CLOUD_VALIDATION_TIMEOUT
                     )
                     if success and cloud_data and not from_cache:
@@ -9055,7 +9055,7 @@ def activate_server_license():
 
         # Validate license with Cloudflare Workers
         app.logger.info("Validating license with Cloudflare Workers...")
-        success, license_data, error_msg, from_cache = _validate_license_with_cloud(
+        success, license_data, error_msg, from_cache, cloud_reachable = _validate_license_with_cloud(
             email,
             unlock_token,
             hardware_id,
@@ -9219,7 +9219,9 @@ def _get_cached_license_payload(email: str | None, source_hint: str = "server_li
         "subscription_currency": subscription_currency,
         "current_period_end": current_period_end,
         "warning": f"Server offline for {days_offline} days. {days_left} days remaining.",
-        "source": source_hint
+        "source": source_hint,
+        "offline": True,
+        "connectivity_status": "offline_cached",
     }
 
     if warning_level is not None:
@@ -9303,6 +9305,7 @@ def _normalize_license_status_payload(email: str | None,
         "days_offline": payload.get('days_offline'),
         "source": payload.get('source', source),
         "validated_at": payload.get('validated_at'),
+        "connectivity_status": payload.get('connectivity_status', 'unknown'),
         "timestamp": datetime.now().isoformat(),
     })
 
@@ -9339,7 +9342,7 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
 
     hardware_id = get_enhanced_hardware_id()
 
-    success, license_data, error_msg, from_cache = _validate_license_with_cloud(
+    success, license_data, error_msg, from_cache, cloud_reachable = _validate_license_with_cloud(
         email,
         unlock_token,
         hardware_id,
@@ -9360,6 +9363,9 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
         if not payload.get("validated_at"):
             payload["validated_at"] = license_data.get('validated_at') or datetime.now().isoformat()
         payload["_cache_hit"] = from_cache
+        payload["connectivity_status"] = "online_cached" if from_cache else "online"
+        payload["grace_period"] = False
+        payload["offline"] = False
         return payload
 
     if license_data:
@@ -9370,6 +9376,10 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
             source=license_data.get('source', 'server_license_cached_payload')
         )
         normalized["_cache_hit"] = True
+        if not normalized.get("connectivity_status"):
+            normalized["connectivity_status"] = "online_cached" if cloud_reachable else "offline_cached"
+        if not cloud_reachable:
+            normalized["offline"] = True
         return normalized
 
     cached_payload = _get_cached_license_payload(email, "server_license_cached_direct")
@@ -9381,6 +9391,9 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
             source=cached_payload.get('source', 'server_license_cached_direct')
         )
         normalized["_cache_hit"] = True
+        if not normalized.get("connectivity_status"):
+            normalized["connectivity_status"] = "offline_cached"
+        normalized["offline"] = True
         return normalized
 
     return {
@@ -9389,7 +9402,8 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
         "error": error_msg or "License validation failed",
         "email": email,
         "source": "server_license_failed",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "connectivity_status": "online" if cloud_reachable else "offline"
     }
 
 
@@ -9759,8 +9773,8 @@ def _validate_license_with_cloud(
     force_refresh=False
 ):
     """
-    Validate license with Cloudflare Worker with timeout and error handling
-    Returns: (success: bool, license_data: dict, error_message: str)
+    Validate license with Cloudflare Worker with timeout and error handling.
+    Returns: (success, license_data, error_message, from_cache, cloud_reachable)
     """
     if _should_skip_cloud_validation():
         backoff_remaining = CLOUD_FAILURE_BACKOFF_SECONDS - (
@@ -9772,7 +9786,7 @@ def _validate_license_with_cloud(
             f"Backoff remaining: {max(int(backoff_remaining), 0)}s"
         )
         cached_payload = _get_cached_license_payload(customer_email, "server_license_cached_backoff")
-        return False, cached_payload, _last_cloud_failure.get("error") or "Cloud validation backoff active", bool(cached_payload)
+        return False, cached_payload, _last_cloud_failure.get("error") or "Cloud validation backoff active", bool(cached_payload), False
 
     def _cache_age_seconds(cache_info):
         if not cache_info:
@@ -9795,13 +9809,13 @@ def _validate_license_with_cloud(
                     "Skipping cloud validation - cached license confirmation "
                     f"{age_seconds:.1f}s old (threshold {CLOUD_VALIDATION_CACHE_SECONDS}s)"
                 )
-                return True, dict(license_data), None, True
+                return True, dict(license_data), None, True, True
 
     lock_acquired = _cloud_validation_lock.acquire(blocking=False)
     if not lock_acquired:
         if not force_refresh and cache_info and cache_info.get('license_data'):
             app.logger.info("Cloud validation already in progress - returning cached license data")
-            return True, dict(cache_info['license_data']), None, True
+            return True, dict(cache_info['license_data']), None, True, True
         # Wait for the in-flight validation to finish before re-checking freshness
         _cloud_validation_lock.acquire()
         lock_acquired = True
@@ -9817,7 +9831,7 @@ def _validate_license_with_cloud(
                         "Skipping cloud validation after lock acquisition - cached license confirmation "
                         f"{age_seconds:.1f}s old"
                     )
-                    return True, dict(license_data), None, True
+                    return True, dict(license_data), None, True, True
 
         app.logger.info(f"Attempting cloud license validation for {customer_email[:5]}*** with {timeout}s timeout")
         
@@ -9833,7 +9847,7 @@ def _validate_license_with_cloud(
         
         if not response:
             _record_cloud_failure("No response from cloud validation service")
-            return False, None, "No response from cloud validation service"
+            return False, None, "No response from cloud validation service", False, False
             
         if response.get('valid'):
             # The worker returns the license data directly in the response
@@ -9857,18 +9871,18 @@ def _validate_license_with_cloud(
                 
             _clear_cloud_failure()
             app.logger.info(f"Cloud validation successful for {customer_email[:5]}***")
-            return True, license_data, None, False
+            return True, license_data, None, False, True
         else:
             error_msg = response.get('error', 'Unknown cloud validation error')
             app.logger.warning(f"Cloud validation failed: {error_msg}")
             _record_cloud_failure(error_msg)
-            return False, None, error_msg, False
+            return False, None, error_msg, False, True
             
     except Exception as e:
         error_msg = f"Cloud validation exception: {str(e)}"
         app.logger.error(error_msg)
         _record_cloud_failure(error_msg)
-        return False, None, error_msg, False
+        return False, None, error_msg, False, False
     finally:
         if lock_acquired:
             _cloud_validation_lock.release()
@@ -11221,7 +11235,7 @@ if __name__ == '__main__':
                     try:
                         unlock_token = server_license.get('unlock_token')
                         hardware_id = get_enhanced_hardware_id()
-                        success, license_data, error_msg, from_cache = _validate_license_with_cloud(
+                        success, license_data, error_msg, from_cache, cloud_reachable = _validate_license_with_cloud(
                             email, unlock_token, hardware_id, timeout=5
                         )
                         if success and license_data:
