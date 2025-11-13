@@ -4237,7 +4237,9 @@ def print_customer_receipt(table_id):
             "seats": bill_data.get("seats"),
             "bill_date": bill_data.get("bill_date"),
             "bill_time": bill_data.get("bill_time"),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "mode": "table",
+            "channel_label": "Table Service"
         }
 
         # Print customer receipt
@@ -5484,132 +5486,49 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
 
     # 2. Build the ticket content (can fail without opening resources)
     try:
-        ticket_content = bytearray()
-        ticket_content += InitializePrinter
-        
-        # Initialize printer with standard settings only
-        
-        NORMAL_FONT_LINE_WIDTH = 42 
-        SMALL_FONT_LINE_WIDTH = 56
+        order_total = Decimal('0')
+        for item in order_data.get('items', []):
+            price = to_decimal(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
+            quantity = to_decimal(item.get('quantity', 0) or 0)
+            order_total += price * quantity
+        order_total_value = float(order_total)
 
-        # ... (rest of ticket content generation logic) ...
-        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-        restaurant_name = "POSPal" 
-        ticket_content += to_bytes(restaurant_name + "\n")
-        ticket_content += BoldOff 
-        
-        ticket_content += AlignCenter + SelectFontA + NormalText
-        
-        ticket_content += AlignLeft 
-        
-        ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
-        order_num_text = f"Order #: {order_data.get('number', 'N/A')}"
-        ticket_content += to_bytes(order_num_text + "\n")
-        
-        table_number = order_data.get('tableNumber')
-        if table_number and table_number.upper() != 'N/A':
-            table_text = f"Table: {table_number}"
-            ticket_content += to_bytes(table_text + "\n")
-        ticket_content += BoldOff 
-            
-        ticket_content += SelectFontA + NormalText
-        time_to_display = original_timestamp_str if original_timestamp_str else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        ticket_content += to_bytes(f"Time: {time_to_display}\n")
-        
-        ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
-        
-        grand_total = 0.0
-        for item_idx, item in enumerate(order_data.get('items', [])):
-            item_quantity = item.get('quantity', 0)
-            item_name_orig = item.get('name', 'Unknown Item')
-            item_price_unit = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0))) 
-            line_total = item_quantity * item_price_unit
-            grand_total += line_total
+        receipt_payload = build_simple_customer_receipt_payload(order_data, order_total_value)
+        if original_timestamp_str:
+            receipt_payload['timestamp'] = original_timestamp_str
 
-            left_side = f"{item_quantity}x {item_name_orig}"
-            right_side = f"{line_total:.2f}"
-            large_text_width = len(left_side) * 2
-            normal_text_width = len(right_side)
-            
-            if large_text_width + normal_text_width < NORMAL_FONT_LINE_WIDTH:
-                ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
-                ticket_content += to_bytes(left_side)
-                ticket_content += NormalText + BoldOff
-                padding_size = NORMAL_FONT_LINE_WIDTH - large_text_width - normal_text_width
-                padding = " " * padding_size
-                ticket_content += to_bytes(padding + right_side + "\n")
-            else:
-                ticket_content += SelectFontA + DoubleHeightWidth + BoldOn
-                DOUBLE_WIDTH_LINE_CHARS = NORMAL_FONT_LINE_WIDTH // 2
-                wrapped_name_lines = word_wrap_text(left_side, DOUBLE_WIDTH_LINE_CHARS)
-                for line in wrapped_name_lines[:-1]:
-                    ticket_content += to_bytes(line + "\n")
-                last_line = wrapped_name_lines[-1]
-                last_line_width = len(last_line) * 2
-                available_space = NORMAL_FONT_LINE_WIDTH - last_line_width
-                padding = " " * max(0, available_space - normal_text_width)
-                ticket_content += to_bytes(last_line)
-                ticket_content += NormalText + BoldOff + to_bytes(padding + right_side + "\n")
-                ticket_content += AlignLeft
-            ticket_content += NormalText + BoldOff 
+        table_number = (order_data.get('tableNumber') or '').strip() or None
+        if table_number:
+            receipt_payload['mode'] = 'table'
+            receipt_payload['table_id'] = table_number
+            receipt_payload['table_name'] = table_number
 
-            general_options = item.get('generalSelectedOptions', [])
-            if general_options:
-                for opt in general_options:
-                    opt_name = opt.get('name', 'N/A')
-                    opt_price_change = float(opt.get('priceChange', 0.0))
-                    price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})" if opt_price_change != 0 else ""
-                    option_line = f"  + {opt_name}{price_change_str}"
-                    for opt_line_part in word_wrap_text(option_line, NORMAL_FONT_LINE_WIDTH, initial_indent="  ", subsequent_indent="    "):
-                        ticket_content += to_bytes(opt_line_part + "\n")
+        receipt_payload['header_title'] = "Kitchen Ticket"
+        receipt_payload['copy_label'] = copy_info or "Kitchen Copy"
+        receipt_payload['include_payment_details'] = False
+        receipt_payload['payment_status'] = "unpaid"
+        receipt_payload['amount_paid_total'] = 0.0
+        receipt_payload['amount_remaining'] = receipt_payload.get('bill_total', order_total_value)
+        receipt_payload['payments'] = []
+        receipt_payload['total_payments'] = 0
+        receipt_payload['payment'] = {
+            "payment_id": "",
+            "amount": 0.0,
+            "method": (order_data.get('paymentMethod') or 'Pending').replace('_', ' ').title(),
+            "timestamp": receipt_payload['timestamp'],
+            "note": (order_data.get('universalComment') or '').strip()
+        }
 
-            item_comment = item.get('comment', '').strip()
-            if item_comment:
-                ticket_content += BoldOn
-                for comment_line in word_wrap_text(f"Note: {item_comment}", NORMAL_FONT_LINE_WIDTH, initial_indent="    ", subsequent_indent="    "):
-                     ticket_content += to_bytes(comment_line + "\n")
-                ticket_content += BoldOff                  
-            
-            if item_idx < len(order_data.get('items', [])) - 1:
-                ticket_content += to_bytes("." * NORMAL_FONT_LINE_WIDTH + "\n")
+        channel_override = (
+            order_data.get('saleChannel')
+            or order_data.get('channel')
+            or order_data.get('orderType')
+            or receipt_payload.get('channel_label')
+        )
+        if channel_override:
+            receipt_payload['channel_label'] = channel_override
 
-        ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
-        ticket_content += SelectFontA + DoubleHeightWidth + BoldOn + AlignRight
-        total_string = f"TOTAL: EUR {grand_total:.2f}"
-        ticket_content += to_bytes(total_string + "\n")
-        ticket_content += BoldOff + AlignLeft
-        # Payment method directly under total
-        try:
-            payment_method = str(order_data.get('paymentMethod', 'Cash')).strip().capitalize() or 'Cash'
-        except Exception:
-            payment_method = 'Cash'
-        # Emphasize payment method only (no label): double width and bold
-        ticket_content += SelectFontA + DoubleWidth
-        ticket_content += BoldOn + to_bytes(payment_method.upper()) + BoldOff + to_bytes("\n")
-        ticket_content += NormalText
-        
-        ticket_content += SelectFontA + NormalText
-        ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n") 
-        
-        universal_comment = order_data.get('universalComment', '').strip()
-        if universal_comment:
-            ticket_content += SelectFontA + NormalText + BoldOn 
-            ticket_content += to_bytes("ORDER NOTES:\n") + BoldOff 
-            ticket_content += SelectFontA + NormalText 
-            for line in word_wrap_text(universal_comment, NORMAL_FONT_LINE_WIDTH, initial_indent="", subsequent_indent=""):
-                ticket_content += to_bytes(line + "\n")
-            ticket_content += to_bytes("\n")
-        
-        ticket_content += to_bytes("\n")
-        ticket_content += AlignCenter + SelectFontB
-        disclaimer_text = "This is not a legal receipt of payment and is for informational purposes only."
-        for line in word_wrap_text(disclaimer_text, SMALL_FONT_LINE_WIDTH):
-            ticket_content += to_bytes(line + "\n")
-
-        ticket_content += SelectFontA + AlignLeft
-        ticket_content += to_bytes("\n\n\n\n") 
-        if CUT_AFTER_PRINT:
-            ticket_content += FullCut
+        ticket_content = build_customer_receipt_content(receipt_payload)
 
     except Exception as e_build:
         app.logger.error(f"Error building ticket content for order #{order_data.get('number', 'N/A')}: {str(e_build)}")
@@ -5934,37 +5853,60 @@ def build_customer_receipt_content(receipt_data):
     SMALL_FONT_LINE_WIDTH = 56
 
     business_profile = receipt_data.get('business_profile') or get_business_identity()
-    restaurant_name = business_profile.get('name') or "POSPal"
+    restaurant_name = (business_profile.get('name') or "POSPal").strip() or "POSPal"
 
-    ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-    ticket_content += to_bytes(restaurant_name + "\n")
-    ticket_content += BoldOff
+    address_lines = []
+    address_value = business_profile.get('address')
+    if isinstance(address_value, str):
+        for raw_line in address_value.replace('\r', '').split('\n'):
+            if raw_line.strip():
+                address_lines.append(raw_line.strip())
+
+    phone_value = business_profile.get('phone')
+    email_value = business_profile.get('email')
+    website_value = business_profile.get('website')
 
     contact_lines = []
-    for key in ('address', 'phone', 'email', 'website'):
-        value = business_profile.get(key)
-        if isinstance(value, str) and value.strip():
-            contact_lines.append(value.strip())
-    tax_id = business_profile.get('tax_id')
-    if isinstance(tax_id, str) and tax_id.strip():
-        contact_lines.append(f"Tax ID: {tax_id.strip()}")
-
-    if contact_lines:
-        ticket_content += AlignCenter + SelectFontB + NormalText
-        for line in contact_lines:
-            for wrapped_line in word_wrap_text(line, SMALL_FONT_LINE_WIDTH):
-                ticket_content += to_bytes(wrapped_line + "\n")
-        ticket_content += AlignLeft + SelectFontA + NormalText
+    if isinstance(phone_value, str) and phone_value.strip():
+        contact_lines.append(f"Phone: {phone_value.strip()}")
+    if isinstance(email_value, str) and email_value.strip():
+        contact_lines.append(f"Email: {email_value.strip()}")
+    if isinstance(website_value, str) and website_value.strip():
+        website_value = website_value.strip()
+        contact_lines.append(f"Web: {website_value}")
     else:
-        ticket_content += AlignCenter + SelectFontB + NormalText
-        ticket_content += to_bytes("Add business info via Settings > Business Profile\n")
-        ticket_content += AlignLeft + SelectFontA + NormalText
+        website_value = ""
 
-    ticket_content += AlignCenter + SelectFontA + DoubleWidth + BoldOn
-    ticket_content += to_bytes("Customer Receipt\n")
-    ticket_content += BoldOff
-    ticket_content += AlignLeft + SelectFontA + NormalText
-    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+    tax_id_line = business_profile.get('tax_id')
+    if isinstance(tax_id_line, str):
+        tax_id_line = tax_id_line.strip()
+    else:
+        tax_id_line = ""
+
+    footer_message = business_profile.get('footer')
+    footer_lines = []
+    if isinstance(footer_message, str):
+        footer_lines = [line.strip() for line in footer_message.replace('\r', '').split('\n') if line.strip()]
+
+    def append_centered_lines(lines):
+        filtered = [line.strip() for line in lines if isinstance(line, str) and line.strip()]
+        if not filtered:
+            return False
+        ticket_content.extend(AlignCenter + SelectFontB + NormalText)
+        for line in filtered:
+            for wrapped_line in word_wrap_text(line, SMALL_FONT_LINE_WIDTH):
+                ticket_content.extend(to_bytes(wrapped_line + "\n"))
+        ticket_content.extend(AlignLeft + SelectFontA + NormalText)
+        return True
+
+    def append_section_heading(title: str):
+        if not title:
+            return
+        ticket_content.extend(to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n"))
+        ticket_content.extend(SelectFontA + BoldOn)
+        ticket_content.extend(to_bytes(f"{title.upper()}\n"))
+        ticket_content.extend(BoldOff)
+        ticket_content.extend(AlignLeft + SelectFontA + NormalText)
 
     def append_wrapped(text: str, indent: int = 0, width: int = NORMAL_FONT_LINE_WIDTH):
         if not text:
@@ -5972,7 +5914,7 @@ def build_customer_receipt_content(receipt_data):
         indent_str = " " * indent
         wrap_width = max(1, width - indent)
         for line in word_wrap_text(text, wrap_width, initial_indent=indent_str, subsequent_indent=indent_str):
-            ticket_content += to_bytes(line + "\n")
+            ticket_content.extend(to_bytes(line + "\n"))
 
     def append_amount_line(label: str, amount, indent: int = 0):
         amount_str = format_currency(amount)
@@ -5981,28 +5923,28 @@ def build_customer_receipt_content(receipt_data):
         available = NORMAL_FONT_LINE_WIDTH - len(amount_str)
         if available <= len(indent_str):
             append_wrapped(label_text.strip(), indent=indent)
-            ticket_content += to_bytes(indent_str + amount_str + "\n")
+            ticket_content.extend(to_bytes(indent_str + amount_str + "\n"))
             return
         if len(label_text) <= available:
             padding = available - len(label_text)
-            ticket_content += to_bytes(f"{label_text}{' ' * padding}{amount_str}\n")
+            ticket_content.extend(to_bytes(f"{label_text}{' ' * padding}{amount_str}\n"))
             return
         label_lines = word_wrap_text(label_text.strip(), available, initial_indent=indent_str, subsequent_indent=indent_str)
         if not label_lines:
             append_wrapped(label_text.strip(), indent=indent)
-            ticket_content += to_bytes(indent_str + amount_str + "\n")
+            ticket_content.extend(to_bytes(indent_str + amount_str + "\n"))
             return
         first_line = label_lines[0]
         padding = available - len(first_line)
         if padding < 1:
-            ticket_content += to_bytes(first_line + "\n")
+            ticket_content.extend(to_bytes(first_line + "\n"))
             for extra_line in label_lines[1:]:
-                ticket_content += to_bytes(extra_line + "\n")
-            ticket_content += to_bytes(indent_str + amount_str + "\n")
+                ticket_content.extend(to_bytes(extra_line + "\n"))
+            ticket_content.extend(to_bytes(indent_str + amount_str + "\n"))
         else:
-            ticket_content += to_bytes(f"{first_line}{' ' * padding}{amount_str}\n")
+            ticket_content.extend(to_bytes(f"{first_line}{' ' * padding}{amount_str}\n"))
             for extra_line in label_lines[1:]:
-                ticket_content += to_bytes(extra_line + "\n")
+                ticket_content.extend(to_bytes(extra_line + "\n"))
 
     def append_label_value(label: str, value):
         if value is None or value == "":
@@ -6023,7 +5965,11 @@ def build_customer_receipt_content(receipt_data):
     date_display = printed_at.strftime('%d/%m/%Y')
     time_display = printed_at.strftime('%H:%M')
 
-    table_name = receipt_data.get('table_name', f"Table {receipt_data.get('table_id', 'Unknown')}")
+    table_name = receipt_data.get('table_name') or f"Table {receipt_data.get('table_id', 'Unknown')}"
+    if not isinstance(table_name, str):
+        table_name = str(table_name)
+    table_name = table_name.strip() or f"Table {receipt_data.get('table_id', 'Unknown')}"
+
     seats = receipt_data.get('seats')
     payment = receipt_data.get('payment', {}) or {}
     payment_id = payment.get('payment_id', '')
@@ -6039,23 +5985,96 @@ def build_customer_receipt_content(receipt_data):
                 payment_index = idx
                 break
 
-    append_wrapped(f"Date: {date_display}    Time: {time_display}")
-    if seats:
-        append_wrapped(f"Table: {table_name}    Covers: {seats}")
+    bill_date = receipt_data.get('bill_date')
+    bill_time = receipt_data.get('bill_time')
+
+    mode = (receipt_data.get('mode') or '').strip().lower()
+    if mode not in ('table', 'simple'):
+        mode = 'table' if seats else 'simple'
+    is_table_mode = mode == 'table'
+    channel_label = receipt_data.get('channel_label')
+    if isinstance(channel_label, str) and channel_label.strip():
+        channel_label = channel_label.strip()
     else:
-        append_wrapped(f"Table: {table_name}")
+        channel_label = "Table Service" if is_table_mode else "Simple Sale"
+
+    header_title = (receipt_data.get('header_title') or "Customer Receipt").strip() or "Customer Receipt"
+    copy_label = (receipt_data.get('copy_label') or "").strip()
+    include_payment_details = bool(receipt_data.get('include_payment_details', True))
+
+    order_numbers = []
+    for order in orders:
+        for key in ('order_number', 'orderNumber', 'number'):
+            candidate = order.get(key)
+            if candidate is None:
+                continue
+            candidate_str = str(candidate).strip()
+            if candidate_str and candidate_str not in order_numbers:
+                order_numbers.append(candidate_str)
+                break
+
+    ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+    ticket_content += to_bytes(restaurant_name + "\n")
+    ticket_content += BoldOff
+
+    details_printed = False
+    if append_centered_lines(address_lines):
+        details_printed = True
+    if append_centered_lines(contact_lines):
+        details_printed = True
+    if tax_id_line:
+        if append_centered_lines([f"Tax / ABN / VAT: {tax_id_line}"]):
+            details_printed = True
+    if not details_printed:
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        ticket_content += to_bytes("Add business info via Settings > Business Profile\n")
+        ticket_content += AlignLeft + SelectFontA + NormalText
+
+    ticket_content += AlignCenter + SelectFontA + DoubleWidth + BoldOn
+    ticket_content += to_bytes(f"{header_title}\n")
+    ticket_content += BoldOff
+    ticket_content += AlignLeft + SelectFontA + NormalText
+    if copy_label:
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        ticket_content += to_bytes(copy_label.upper() + "\n")
+        ticket_content += AlignLeft + SelectFontA + NormalText
+
+    append_section_heading("Order Info")
+    append_wrapped(f"Date: {date_display}    Time: {time_display}")
+    if isinstance(bill_date, str) and bill_date.strip():
+        opened_line = f"Opened: {bill_date.strip()}"
+        if isinstance(bill_time, str) and bill_time.strip():
+            opened_line += f" {bill_time.strip()}"
+        append_wrapped(opened_line)
+    if order_numbers:
+        if len(order_numbers) == 1:
+            append_wrapped(f"Order #: {order_numbers[0]}")
+        else:
+            display_numbers = ", ".join(order_numbers[:3])
+            if len(order_numbers) > 3:
+                display_numbers += f", +{len(order_numbers) - 3} more"
+            append_wrapped(f"Orders: {display_numbers}")
+    if payment_id:
+        append_wrapped(f"Receipt ID: {payment_id[:8].upper()}")
     if payment_index and total_payments:
         append_wrapped(f"Payment {payment_index} of {total_payments}")
     elif total_payments > 1:
-        append_wrapped(f"Payment count: {total_payments}")
-    if payment_id:
-        append_wrapped(f"Receipt ID: {payment_id[:8].upper()}")
+        append_wrapped(f"Payments recorded: {total_payments}")
 
-    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
+    if is_table_mode:
+        dining_parts = [f"Table: {table_name}"]
+        if seats:
+            dining_parts.append(f"Guests: {seats}")
+        append_wrapped("    ".join(dining_parts))
+        if channel_label:
+            append_wrapped(f"Dining: {channel_label}")
+    else:
+        append_wrapped(f"Channel: {channel_label}")
+        label_candidate = table_name.lower()
+        if label_candidate not in ("takeaway", "counter", "pickup"):
+            append_wrapped(f"Label: {table_name}")
 
-    ticket_content += SelectFontA + BoldOn
-    ticket_content += to_bytes("Items\n")
-    ticket_content += BoldOff
+    append_section_heading("Items")
 
     items_subtotal = Decimal('0')
     item_lines_printed = False
@@ -6103,10 +6122,14 @@ def build_customer_receipt_content(receipt_data):
                     prefix = "+" if option_delta > 0 else "-"
                     append_amount_line(f"{prefix} {option_name}", option_delta, indent=2)
                 else:
-                    append_wrapped(f"+ {option_name}", indent=4)
+                    ticket_content += AlignLeft + SelectFontB + NormalText
+                    append_wrapped(f"+ {option_name}", indent=4, width=SMALL_FONT_LINE_WIDTH)
+                    ticket_content += AlignLeft + SelectFontA + NormalText
             item_comment = (item.get('comment') or item.get('comments') or '').strip()
             if item_comment:
-                append_wrapped(f"Note: {item_comment}", indent=4)
+                ticket_content += AlignLeft + SelectFontB + NormalText
+                append_wrapped(f"Note: {item_comment}", indent=4, width=SMALL_FONT_LINE_WIDTH)
+                ticket_content += AlignLeft + SelectFontA + NormalText
             item_lines_printed = True
         if multiple_orders:
             ticket_content += to_bytes("\n")
@@ -6114,11 +6137,7 @@ def build_customer_receipt_content(receipt_data):
     if not item_lines_printed:
         append_wrapped("No item details available for this receipt.")
 
-    ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
-
-    ticket_content += SelectFontA + BoldOn
-    ticket_content += to_bytes("Summary\n")
-    ticket_content += BoldOff
+    append_section_heading("Totals")
 
     bill_total = to_decimal(receipt_data.get('bill_total', 0.0))
     total_paid = to_decimal(receipt_data.get('amount_paid_total', 0.0))
@@ -6136,10 +6155,11 @@ def build_customer_receipt_content(receipt_data):
     if item_lines_printed and abs(items_subtotal - bill_total) > Decimal('0.01'):
         append_amount_line("Items subtotal", items_subtotal)
     append_amount_line("Bill total", bill_total)
-    if previous_paid > Decimal('0'):
+    if previous_paid > Decimal('0') and include_payment_details:
         append_amount_line("Paid before today", previous_paid)
-    append_amount_line("Payment received", payment_amount)
-    append_amount_line("Total paid", total_paid)
+    if include_payment_details:
+        append_amount_line("Payment received", payment_amount)
+        append_amount_line("Total paid", total_paid)
 
     if change_due > Decimal('0'):
         append_amount_line("Change due", change_due)
@@ -6147,33 +6167,31 @@ def build_customer_receipt_content(receipt_data):
         append_amount_line("Balance due", balance_after)
 
     payment_status = (receipt_data.get('payment_status') or 'unpaid').replace('_', ' ').title()
-    append_label_value("Payment status", payment_status)
+    if include_payment_details:
+        append_label_value("Payment status", payment_status)
+    if tax_id_line:
+        append_label_value("Tax / ABN / VAT", tax_id_line)
 
-    ticket_content += to_bytes("\n")
-    ticket_content += SelectFontA + BoldOn
-    ticket_content += to_bytes("Payment Details\n")
-    ticket_content += BoldOff
-    append_label_value("Method", payment_method)
-    payment_timestamp = payment.get('timestamp')
-    if isinstance(payment_timestamp, str):
-        payment_time = None
-        try:
-            payment_time = datetime.fromisoformat(payment_timestamp)
-        except ValueError:
+    if include_payment_details:
+        append_section_heading("Payment Details")
+        append_label_value("Method", payment_method)
+        payment_timestamp = payment.get('timestamp')
+        if isinstance(payment_timestamp, str):
+            payment_time = None
             try:
-                payment_time = datetime.fromisoformat(payment_timestamp.replace('Z', '+00:00'))
-            except Exception:
-                payment_time = None
-        if payment_time:
-            append_label_value("Processed", payment_time.strftime('%d/%m/%Y %H:%M'))
-    if payment_note:
-        append_wrapped(f"Note: {payment_note}", indent=2)
+                payment_time = datetime.fromisoformat(payment_timestamp)
+            except ValueError:
+                try:
+                    payment_time = datetime.fromisoformat(payment_timestamp.replace('Z', '+00:00'))
+                except Exception:
+                    payment_time = None
+            if payment_time:
+                append_label_value("Processed", payment_time.strftime('%d/%m/%Y %H:%M'))
+        if payment_note:
+            append_wrapped(f"Note: {payment_note}", indent=2)
 
-    if len(payments_history) > 1:
-        ticket_content += to_bytes("\n")
-        ticket_content += SelectFontA + BoldOn
-        ticket_content += to_bytes("Payment History\n")
-        ticket_content += BoldOff
+    if include_payment_details and len(payments_history) > 1:
+        append_section_heading("Payment History")
         for entry in payments_history:
             entry_time = entry.get('timestamp')
             entry_dt = None
@@ -6191,12 +6209,11 @@ def build_customer_receipt_content(receipt_data):
             append_amount_line(history_label or "Payment", entry.get('amount', 0.0))
 
     ticket_content += to_bytes("\n")
-    ticket_content += AlignCenter + SelectFontB
-    ticket_content += to_bytes("Thank you for your visit!\n")
-    website = business_profile.get('website')
-    if isinstance(website, str) and website.strip():
-        ticket_content += to_bytes(website.strip() + "\n")
-    ticket_content += AlignLeft + SelectFontA + NormalText
+    closing_lines = footer_lines[:] if footer_lines else ["Thank you for your visit!"]
+    if website_value and website_value not in closing_lines:
+        closing_lines.append(website_value)
+    append_centered_lines(closing_lines)
+
     ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
     ticket_content += to_bytes("\n\n")
     if CUT_AFTER_PRINT:
@@ -6322,6 +6339,13 @@ def build_simple_customer_receipt_payload(order_data_internal, order_total):
     now = datetime.now()
     table_label = (order_data_internal.get('tableNumber') or '').strip() or 'Takeaway'
     payment_method = order_data_internal.get('paymentMethod', 'Cash')
+    channel_label = (
+        order_data_internal.get('saleChannel')
+        or order_data_internal.get('channel')
+        or order_data_internal.get('orderType')
+        or order_data_internal.get('orderMode')
+        or 'Simple Sale'
+    )
     payment_entry = {
         "payment_id": str(uuid.uuid4()),
         "amount": round(float(order_total), 2),
@@ -6351,7 +6375,9 @@ def build_simple_customer_receipt_payload(order_data_internal, order_total):
         "timestamp": now.isoformat(),
         "bill_date": now.strftime("%Y-%m-%d"),
         "bill_time": now.strftime("%H:%M"),
-        "seats": None
+        "seats": None,
+        "mode": "simple",
+        "channel_label": channel_label
     }
 
 

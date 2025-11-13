@@ -635,7 +635,7 @@ const PrinterMonitor = (() => {
                 statusBits.push('Verification required');
             }
 
-            statusText = statusBits.join(' \u0007 ');
+            statusText = statusBits.join(' \u2022 ');
         }
 
         statusEl.textContent = statusText;
