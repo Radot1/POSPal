@@ -1934,126 +1934,129 @@
                 <div id="licenseManagement" class="hidden">
                     <h3 class="text-xl font-semibold text-gray-800 mb-4" data-i18n="ui.license.infoTitle">License & Subscription</h3>
 
-                    <!-- Main Status Card with Essential Information -->
-                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
-                        <div class="flex items-center justify-between mb-6">
-                            <div class="flex items-center gap-3">
-                                <h4 class="text-lg font-semibold text-gray-800" data-i18n="ui.license.currentStatus">Current Status</h4>
-                                <div id="license-status-badge" class="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">Loading...</div>
+                    <!-- Main Status Card with essential information and contextual actions -->
+                    <div class="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm space-y-6">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-3">
+                                    <h4 class="text-lg font-semibold text-gray-800" data-i18n="ui.license.currentStatus">Current Status</h4>
+                                    <div id="license-status-badge" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-600">Loading...</div>
+                                </div>
+                                <p class="text-sm text-gray-500">This card mirrors the billing portal so you always know whether POSPal is licensed.</p>
                             </div>
-                            <button id="quick-portal-btn" onclick="openCustomerPortal()" class="portal-access-btn hidden text-blue-600 hover:text-blue-700 p-2 rounded-md transition-colors" title="Quick Portal Access">
-                                <i class="fas fa-external-link-alt text-lg"></i>
+                            <button id="quick-portal-btn" onclick="openCustomerPortal()" data-portal-action="true" class="portal-access-btn hidden text-blue-600 hover:text-blue-700 px-3 py-2 rounded-md bg-blue-50 hover:bg-blue-100 transition-colors font-medium" title="Quick Portal Access">
+                                <i class="fas fa-external-link-alt mr-2"></i>
+                                Open Portal
                             </button>
                         </div>
 
-                        <div id="license-status-display" class="mb-6">
-                            <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 flex items-center gap-2">
-                                <i class="fas fa-spinner fa-spin text-gray-500"></i>
-                                <span data-i18n="ui.license.loadingStatus">Loading license status...</span>
-                            </div>
-                        </div>
-
-                        <!-- Key Information Cards (2x2 Grid for Active Subscriptions) -->
-                        <div id="subscription-details" class="hidden">
-                            <div class="grid grid-cols-2 gap-4 mb-6">
-                                <!-- Next Payment Date -->
-                                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
-                                    <div class="text-xs text-blue-600 uppercase tracking-wide font-medium mb-1">Next Payment</div>
-                                    <div id="next-billing-date" class="text-lg font-bold text-blue-800">--</div>
+                        <div class="space-y-6">
+                                <div id="license-status-display" class="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                                    <div class="flex items-start gap-3">
+                                        <i class="fas fa-spinner fa-spin text-gray-500 mt-1"></i>
+                                        <div>
+                                            <h3 class="text-lg font-semibold text-gray-900">Validating license</h3>
+                                            <p class="text-sm text-gray-600" data-i18n="ui.license.loadingStatus">Hang on while we confirm your subscription status...</p>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <!-- Monthly Amount -->
-                                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
-                                    <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Monthly Cost</div>
-                                    <div id="subscription-price" class="text-lg font-bold text-green-800">&euro;20.00</div>
+                                <div id="subscription-details" class="hidden space-y-5" style="display: none;">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-200 text-center">
+                                            <div class="text-xs text-emerald-600 uppercase tracking-wide font-medium mb-1">Plan</div>
+                                            <div id="subscription-status-display" class="text-lg font-bold text-emerald-800">Active</div>
+                                            <p class="text-xs text-emerald-600 mt-1">Full POSPal access on this device</p>
+                                        </div>
+                                        <div class="bg-blue-50 p-4 rounded-xl border border-blue-200 text-center">
+                                            <div class="text-xs text-blue-600 uppercase tracking-wide font-medium mb-1">Next Payment</div>
+                                            <div id="next-billing-date" class="text-lg font-bold text-blue-800">--</div>
+                                            <p class="text-xs text-blue-600 mt-1">Updates automatically once verified</p>
+                                        </div>
+                                        <div class="bg-green-50 p-4 rounded-xl border border-green-200 text-center">
+                                            <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Monthly Cost</div>
+                                            <div id="subscription-price" class="text-lg font-bold text-green-800">&euro;20.00</div>
+                                            <p class="text-xs text-green-600 mt-1">Includes support &amp; updates</p>
+                                        </div>
+                                        <div class="bg-purple-50 p-4 rounded-xl border border-purple-200 text-center">
+                                            <div class="text-xs text-purple-600 uppercase tracking-wide font-medium mb-1">Renewal In</div>
+                                            <div id="days-until-renewal" class="text-lg font-bold text-purple-800">-- days</div>
+                                            <p class="text-xs text-purple-600 mt-1">We remind you before billing</p>
+                                        </div>
+                                    </div>
+                                    <div class="rounded-2xl border border-gray-100 bg-gray-50 p-5 text-center shadow-inner">
+                                        <p class="text-sm text-gray-600 mb-3">Need invoices, to cancel, or to update your payment method?</p>
+                                        <button id="manage-subscription-btn" onclick="openCustomerPortal()" data-portal-action="true" class="btn-primary w-full px-6 py-3 rounded-lg text-base font-semibold flex items-center justify-center gap-2 shadow-sm">
+                                            <i class="fas fa-cog"></i>
+                                            Manage Subscription
+                                        </button>
+                                        <p class="text-xs text-gray-500 mt-2">Cancel, update payment method, or view billing history</p>
+                                    </div>
                                 </div>
-
-                                <!-- Subscription Status -->
-                                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-center">
-                                    <div class="text-xs text-emerald-600 uppercase tracking-wide font-medium mb-1">Status</div>
-                                    <div id="subscription-status-display" class="text-lg font-bold text-emerald-800">Active</div>
+                                <div id="trial-details" class="hidden space-y-4">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div class="bg-yellow-50 p-4 rounded-xl border border-yellow-200 text-center">
+                                            <div class="text-xs text-yellow-600 uppercase tracking-wide font-medium mb-1">Trial Status</div>
+                                            <div id="trial-status-display" class="text-lg font-bold text-yellow-800">Active Trial</div>
+                                        </div>
+                                        <div class="bg-orange-50 p-4 rounded-xl border border-orange-200 text-center">
+                                            <div class="text-xs text-orange-600 uppercase tracking-wide font-medium mb-1">Days Remaining</div>
+                                            <div id="trial-days-remaining" class="text-lg font-bold text-orange-800">-- days</div>
+                                        </div>
+                                        <div class="bg-blue-50 p-4 rounded-xl border border-blue-200 text-center">
+                                            <div class="text-xs text-blue-600 uppercase tracking-wide font-medium mb-1">Orders Processed</div>
+                                            <div id="trial-orders-count" class="text-lg font-bold text-blue-800">0</div>
+                                        </div>
+                                        <div class="bg-green-50 p-4 rounded-xl border border-green-200 text-center">
+                                            <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Revenue Tracked</div>
+                                            <div id="trial-revenue-amount" class="text-lg font-bold text-green-800">&euro;0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+                                        Unlock POSPal permanently at any time&mdash;your menu, hardware, and history stay exactly as you configured them.
+                                    </div>
                                 </div>
-
-                                <!-- Days Until Renewal -->
-                                <div class="bg-purple-50 p-4 rounded-lg border border-purple-200 text-center">
-                                    <div class="text-xs text-purple-600 uppercase tracking-wide font-medium mb-1">Renewal In</div>
-                                    <div id="days-until-renewal" class="text-lg font-bold text-purple-800">-- days</div>
+                                <div id="renewal-actions" class="hidden bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-inner space-y-4" style="display: none;">
+                                    <div class="flex items-start gap-3">
+                                        <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-orange-600 shadow">
+                                            <i class="fas fa-history"></i>
+                                        </span>
+                                        <div>
+                                            <h4 class="text-base font-semibold text-orange-900">Renew your license</h4>
+                                            <p class="text-sm text-orange-800">Reconnect billing in a few seconds. We already saved your products, tills, and preferences.</p>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-3">
+                                        <button type="button"
+                                                class="w-full text-left rounded-2xl border-2 border-[#ff5c00] bg-[#ff5c00] px-6 py-4 text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:bg-[#e85400] focus:outline-none focus:ring-4 focus:ring-[#ffb37a] flex flex-col gap-2"
+                                                data-portal-action="true"
+                                                data-portal-always-enabled="true"
+                                                onclick="openCustomerPortal()"
+                                                title="Open the secure Stripe billing portal">
+                                            <span class="text-xs font-semibold uppercase tracking-wide text-white/90 flex items-center gap-2">
+                                                <i class="fas fa-exclamation-triangle text-base"></i>
+                                                License expired - action required
+                                            </span>
+                                            <span class="w-full text-xl font-bold flex items-center justify-between">
+                                                Open Stripe Customer Portal
+                                                <i class="fas fa-arrow-right ml-3 text-lg"></i>
+                                            </span>
+                                            <span class="text-sm text-white/80">
+                                                Pay your renewal now so Cloudflare can confirm the license instantly.
+                                            </span>
+                                        </button>
+                                    </div>
+                                    <div class="border-t border-orange-200 pt-3 text-xs text-orange-900 space-y-2">
+                                        <button type="button" class="text-left font-semibold hover:text-orange-700 transition-colors" onclick="showLicenseRecoveryModal()">
+                                            <i class="fas fa-envelope-open-text mr-2"></i>
+                                            Lost your license key? Recover it
+                                        </button>
+                                        <p>Need help? Use the billing portal chat or reach your POSPal rep.</p>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <!-- Prominent Manage Subscription Button -->
-                            <div class="text-center">
-                                <button id="manage-subscription-btn" onclick="openCustomerPortal()" class="btn-primary px-8 py-3 rounded-lg text-base font-semibold hover:transform hover:scale-105 transition-all duration-200 shadow-md">
-                                    <i class="fas fa-cog mr-3"></i>
-                                    Manage Subscription
-                                </button>
-                                <p class="text-xs text-gray-500 mt-2">Cancel, update payment method, or view billing history</p>
-                            </div>
-                        </div>
-
-                        <!-- Trial Information Cards (for Trial Users) -->
-                        <div id="trial-details" class="hidden">
-                            <div class="grid grid-cols-2 gap-4 mb-6">
-                                <!-- Trial Status -->
-                                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center">
-                                    <div class="text-xs text-yellow-600 uppercase tracking-wide font-medium mb-1">Trial Status</div>
-                                    <div id="trial-status-display" class="text-lg font-bold text-yellow-800">Active Trial</div>
-                                </div>
-
-                                <!-- Days Remaining -->
-                                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200 text-center">
-                                    <div class="text-xs text-orange-600 uppercase tracking-wide font-medium mb-1">Days Remaining</div>
-                                    <div id="trial-days-remaining" class="text-lg font-bold text-orange-800">-- days</div>
-                                </div>
-
-                                <!-- Orders Processed -->
-                                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
-                                    <div class="text-xs text-blue-600 uppercase tracking-wide font-medium mb-1">Orders Processed</div>
-                                    <div id="trial-orders-count" class="text-lg font-bold text-blue-800">0</div>
-                                </div>
-
-                                <!-- Revenue Tracked -->
-                                <div class="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
-                                    <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Revenue Tracked</div>
-                                    <div id="trial-revenue-amount" class="text-lg font-bold text-green-800">&euro;0.00</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Trial/Expired Actions (shown for trial/expired users) -->
-                        <div id="trial-actions" class="hidden text-center">
-                            <div class="mb-6">
-                                <button type="button" class="btn-primary px-8 py-3 rounded-lg text-base font-semibold mb-3 hover:transform hover:scale-105 transition-all duration-200 shadow-md" onclick="showEmbeddedPayment()">
-                                    <i class="fas fa-credit-card mr-3"></i>
-                                    Subscribe - &euro;20/month
-                                </button>
-                                <p class="text-xs text-gray-500 mb-4">Instant access �&euro;� Cancel anytime</p>
-
-                                <button type="button" class="btn-secondary px-6 py-2 rounded-md text-sm font-medium" onclick="showUnlockDialog()">
-                                    <i class="fas fa-key mr-2"></i>
-                                    Already paid? Enter unlock code
-                                </button>
-                            </div>
-
-                            <div class="border-t border-gray-200 pt-4">
-                                <button type="button" class="text-blue-600 hover:text-blue-700 text-sm font-medium hover:underline transition-colors" onclick="showLicenseRecoveryModal()">
-                                    <i class="fas fa-envelope mr-1"></i>
-                                    Lost your license key? Recover it here
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Loading State -->
-                        <div id="license-loading" class="text-center py-8 hidden">
-                            <div class="inline-flex items-center text-gray-600">
-                                <i class="fas fa-spinner fa-spin mr-2"></i>
-                                <span>Loading subscription information...</span>
-                            </div>
                         </div>
                     </div>
-
-                    
-                    <!-- Device & Advanced Controls -->
+<!-- Device & Advanced Controls -->
                     <div class="mb-6 grid gap-6 lg:grid-cols-2">
                         <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                             <h4 class="text-lg font-semibold text-gray-800 mb-2">Device Session</h4>
@@ -2491,7 +2494,7 @@
                 </div>
             </div>
             <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gradient-to-t from-gray-50 via-gray-50 to-white flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg mt-auto">
-                <div class="flex items-center gap-4 flex-wrap"><span data-i18n="ui.footer.version">POSPal Version:</span> <span id="appVersion" class="font-medium text-gray-600">1.0.0</span><span id="footer-trial-status" class="font-medium"></span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.licenseInfo">License Info</button><button onclick="switchManagementTab('hardwarePrinting', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.settings">Settings</button><button onclick="switchManagementTab('onlineMenu', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">Online Menu</button></div>
+                <div class="flex items-center gap-4 flex-wrap"><span data-i18n="ui.footer.version">POSPal Version:</span> <span id="appVersion" class="font-medium text-gray-600">1.0.0</span><span id="footer-trial-status" class="font-medium text-xs text-gray-400">Checking license...</span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.licenseInfo">License Info</button><button onclick="switchManagementTab('hardwarePrinting', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.settings">Settings</button><button onclick="switchManagementTab('onlineMenu', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">Online Menu</button></div>
                 <button onclick="shutdownApplication()" class="btn-danger text-white py-1 px-3 rounded-md flex items-center text-xs font-semibold"><i class="fas fa-power-off mr-1.5"></i><span data-i18n="ui.footer.shutdown">Shutdown</span></button>
             </div>
         </div>

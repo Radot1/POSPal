@@ -956,6 +956,7 @@ const StatusDisplayManager = {
             footerStatus: document.getElementById('footer-trial-status'),
             subscriptionDetails: document.getElementById('subscription-details'),
             trialActions: document.getElementById('trial-actions'),
+            renewalActions: document.getElementById('renewal-actions'),
             nextBillingDate: document.getElementById('next-billing-date'),
             daysUntilRenewal: document.getElementById('days-until-renewal'),
             subscriptionStatusLabel: document.getElementById('subscription-status-display'),
@@ -981,7 +982,11 @@ const StatusDisplayManager = {
         this.updateStatusDisplay(statusConfig.html);
         this.updateStatusBadge(statusConfig.badge, statusConfig.badgeClass);
         this.updateFooterStatus(statusConfig.footer);
-        this.toggleUIElements(statusConfig.showSubscription, statusConfig.showTrialActions);
+        this.toggleUIElements(
+            statusConfig.showSubscription,
+            statusConfig.showTrialActions,
+            statusConfig.showRenewalActions
+        );
         this.setPortalAccessEnabled(Boolean(isOnline));
         this.updateSupplementalFields(statusType);
         
@@ -1018,6 +1023,7 @@ const StatusDisplayManager = {
                         : { text: 'Subscription active', tone: 'positive' },
                     showSubscription: true,
                     showTrialActions: false,
+                    showRenewalActions: false,
                     animate: true
                 };
 
@@ -1026,7 +1032,7 @@ const StatusDisplayManager = {
                 const statusText = statusType === 'cancelled' ? 'Cancelled' : 'Inactive';
                 return {
                     html: `
-                        <div class="flex items-center space-x-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div class="flex items-start space-x-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
                             <div class="flex-shrink-0">
                                 <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16c-.77.833.192 2.5 1.732 2.5z"></path>
@@ -1034,9 +1040,8 @@ const StatusDisplayManager = {
                             </div>
                             <div class="flex-1">
                                 <h3 class="text-lg font-semibold text-orange-800">License ${statusText}</h3>
-                                <p class="text-orange-700">Your license is registered but subscription is ${statusType}.</p>
-                                ${customerName ? `<p class="text-sm text-orange-600">Licensed to: ${customerName}</p>` : ''}
-                                <p class="text-sm text-orange-600 mt-1">Renew your subscription to unlock all features.</p>
+                                <p class="text-orange-700">We still recognize ${customerName || 'your venue'}, but billing is paused.</p>
+                                <p class="text-sm text-orange-600 mt-1">Use the Renew actions on the right to re-enable POSPal immediately.</p>
                             </div>
                         </div>
                     `,
@@ -1045,6 +1050,7 @@ const StatusDisplayManager = {
                     footer: { text: `Subscription ${statusText.toLowerCase()} - renewal required`, tone: 'warning' },
                     showSubscription: true, // Show the subscription card with Manage Subscription button
                     showTrialActions: false, // Hide trial/subscribe buttons
+                    showRenewalActions: true,
                     animate: true
                 };
 
@@ -1072,13 +1078,19 @@ const StatusDisplayManager = {
                     },
                     showSubscription: false,
                     showTrialActions: true,
+                    showRenewalActions: false,
                     animate: false
                 };
                 
             case 'warning':
+                const countdownText = typeof remainingDays === 'number'
+                    ? (remainingDays > 0
+                        ? `${remainingDays} day${remainingDays === 1 ? '' : 's'} remaining before trial mode.`
+                        : 'Trial fallback begins now. Renew to keep every feature unlocked.')
+                    : 'Reconnect or renew to keep POSPal fully licensed.';
                 return {
                     html: `
-                        <div class="flex items-center space-x-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div class="flex items-start space-x-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                             <div class="flex-shrink-0">
                                 <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 15c-.77.833.192 2.5 1.732 2.5z"></path>
@@ -1086,8 +1098,9 @@ const StatusDisplayManager = {
                             </div>
                             <div class="flex-1">
                                 <h3 class="text-lg font-semibold text-yellow-800">Verification Needed</h3>
-                                <p class="text-yellow-700">License verification required!</p>
-                                <p class="text-sm text-yellow-600">${remainingDays} days remaining before trial mode.</p>
+                                <p class="text-yellow-700">We could not confirm billing automatically.</p>
+                                <p class="text-sm text-yellow-600">${countdownText}</p>
+                                <p class="text-xs text-yellow-600 mt-1">Use the Renew actions or subscribe buttons to stay unlocked.</p>
                             </div>
                         </div>
                     `,
@@ -1099,9 +1112,10 @@ const StatusDisplayManager = {
                     },
                     showSubscription: false,
                     showTrialActions: true,
+                    showRenewalActions: true,
                     animate: false
                 };
-                
+
             case 'loading':
                 return {
                     html: `
@@ -1123,6 +1137,7 @@ const StatusDisplayManager = {
                     footer: { text: 'Validating license...', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
+                    showRenewalActions: false,
                     animate: false
                 };
 
@@ -1156,6 +1171,7 @@ const StatusDisplayManager = {
                     footer: { text: 'Offline mode - using cached license data', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
+                    showRenewalActions: false,
                     animate: false
                 };
             }
@@ -1168,6 +1184,7 @@ const StatusDisplayManager = {
                     footer: { text: '', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
+                    showRenewalActions: false,
                     animate: false
                 };
         }
@@ -1211,7 +1228,7 @@ const StatusDisplayManager = {
         }
     },
     
-    toggleUIElements(showSubscription, showTrialActions) {
+    toggleUIElements(showSubscription, showTrialActions, showRenewalActions) {
         if (this.elements.subscriptionDetails) {
             const shouldShowSubscription = Boolean(showSubscription);
             this.elements.subscriptionDetails.classList.toggle('hidden', !shouldShowSubscription);
@@ -1221,6 +1238,11 @@ const StatusDisplayManager = {
             const shouldShowTrial = Boolean(showTrialActions);
             this.elements.trialActions.classList.toggle('hidden', !shouldShowTrial);
             this.elements.trialActions.style.display = shouldShowTrial ? '' : 'none';
+        }
+        if (this.elements.renewalActions) {
+            const shouldShowRenewal = Boolean(showRenewalActions);
+            this.elements.renewalActions.classList.toggle('hidden', !shouldShowRenewal);
+            this.elements.renewalActions.style.display = shouldShowRenewal ? '' : 'none';
         }
     },
 
@@ -1271,10 +1293,23 @@ const StatusDisplayManager = {
     },
 
     setPortalAccessEnabled(isEnabled) {
-        const buttons = [
-            this.elements && this.elements.portalButton ? this.elements.portalButton : document.getElementById('quick-portal-btn'),
-            this.elements && this.elements.manageSubscriptionButton ? this.elements.manageSubscriptionButton : document.getElementById('manage-subscription-btn')
-        ].filter(Boolean);
+        const buttonSet = new Set();
+        const fallbackPortal = document.getElementById('quick-portal-btn');
+        const fallbackManage = document.getElementById('manage-subscription-btn');
+
+        const registerButton = (btn) => {
+            if (btn) {
+                buttonSet.add(btn);
+            }
+        };
+
+        registerButton(this.elements && this.elements.portalButton ? this.elements.portalButton : fallbackPortal);
+        registerButton(this.elements && this.elements.manageSubscriptionButton ? this.elements.manageSubscriptionButton : fallbackManage);
+        document
+            .querySelectorAll('[data-portal-action="true"]')
+            .forEach(btn => registerButton(btn));
+
+        const buttons = Array.from(buttonSet);
 
         const disabledTitle = translate('ui.license.offlineManageHint', 'Reconnect to manage your subscription');
 
@@ -1283,18 +1318,23 @@ const StatusDisplayManager = {
                 btn.dataset.originalTitle = btn.getAttribute('title') || '';
             }
 
-            if (isEnabled) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'pointer-events-none');
-                btn.removeAttribute('aria-disabled');
-                if (btn.dataset.originalTitle !== undefined) {
-                    btn.setAttribute('title', btn.dataset.originalTitle);
-                }
-            } else {
+            const alwaysEnabled = btn.dataset.portalAlwaysEnabled === 'true';
+            const shouldDisable = !isEnabled && !alwaysEnabled;
+
+            if (shouldDisable) {
                 btn.disabled = true;
                 btn.classList.add('opacity-50', 'pointer-events-none');
                 btn.setAttribute('aria-disabled', 'true');
                 btn.setAttribute('title', disabledTitle);
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'pointer-events-none');
+                btn.removeAttribute('aria-disabled');
+                if (btn.dataset.originalTitle !== undefined && btn.dataset.originalTitle !== '') {
+                    btn.setAttribute('title', btn.dataset.originalTitle);
+                } else {
+                    btn.removeAttribute('title');
+                }
             }
         });
     },
@@ -6756,6 +6796,21 @@ function confirmOptionSelection() {
 // --- Management Modal, Login & Data Logic ---
 let currentManagementTab = 'analytics';
 let tempItemOptionsModal = [];
+const REQUEST_TIMEOUTS = {
+    login: 12000
+};
+
+function fetchWithTimeout(url, options = {}, timeout = 10000) {
+    const controller = new AbortController();
+    const mergedOptions = {
+        ...options,
+        signal: options.signal || controller.signal
+    };
+    const timerId = setTimeout(() => controller.abort(), timeout);
+    return fetch(url, mergedOptions).finally(() => {
+        clearTimeout(timerId);
+    });
+}
 
 function openLoginModal() {
     console.log('Opening login modal...');
@@ -6978,7 +7033,7 @@ async function handleLogin(event) {
     elements.loginError.classList.add('hidden');
 
     try {
-        const response = await fetch('/api/login', {
+        const response = await fetchWithTimeout('/api/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -6986,7 +7041,7 @@ async function handleLogin(event) {
             body: JSON.stringify({
                 password: password
             })
-        });
+        }, REQUEST_TIMEOUTS.login);
 
         const result = await response.json();
 
@@ -7000,7 +7055,14 @@ async function handleLogin(event) {
         }
     } catch (error) {
         console.error('Login error:', error);
-        elements.loginError.textContent = t('ui.login.networkError','A network error occurred. Please try again.');
+        if (error.name === 'AbortError') {
+            elements.loginError.textContent = t(
+                'ui.login.timeout',
+                'No response from the POSPal server. Make sure POSPal is running on this device or reachable over the network.'
+            );
+        } else {
+            elements.loginError.textContent = t('ui.login.networkError','A network error occurred. Please try again.');
+        }
         elements.loginError.classList.remove('hidden');
     } finally {
         elements.loginSubmitBtn.disabled = false;
@@ -10462,7 +10524,7 @@ async function loadLicenseInfo() {
             if (loadingElement) {
                 loadingElement.style.display = 'block';
                 // Update the loading message to be more informative
-                const loadingSpan = loadingElement.querySelector('span');
+                const loadingSpan = loadingElement.querySelector('#license-loading-message') || loadingElement.querySelector('span');
                 if (loadingSpan) {
                     // Check trial status from localStorage
                     const trialStarted = localStorage.getItem('pospal_trial_started');
@@ -11013,7 +11075,9 @@ async function debugCustomerValidation(email) {
 
 // Function to manage portal loading states
 function showPortalLoading(isLoading, message = 'Loading...') {
-    const portalButtons = document.querySelectorAll('#manage-subscription-btn, #update-payment-btn, .portal-access-btn');
+    const portalButtons = Array.from(new Set(Array.from(
+        document.querySelectorAll('#manage-subscription-btn, #update-payment-btn, .portal-access-btn, [data-portal-action="true"]')
+    )));
     
     portalButtons.forEach(button => {
         if (isLoading) {
@@ -11329,26 +11393,63 @@ function initializePortalReturnHandling() {
 
 async function openCustomerPortal() {
     try {
-        // Fetch license credentials from server (localhost-only endpoint)
-        const credentialsResponse = await fetch('/api/license/credentials');
+        showPortalLoading(true, 'Preparing secure portal session...');
 
-        if (!credentialsResponse.ok) {
-            if (credentialsResponse.status === 404) {
-                showToast('No active subscription found. Please subscribe first.', 'warning');
-            } else if (credentialsResponse.status === 403) {
-                showToast('Customer Portal is only available on the server device.', 'warning');
-            } else {
-                showToast('Unable to access license credentials. Please try again.', 'error');
-            }
-            return;
+        let credentials = null;
+        let credentialFetchIssue = null;
+        let credentialsResponse = null;
+
+        try {
+            credentialsResponse = await fetch('/api/license/credentials');
+        } catch (fetchError) {
+            credentialFetchIssue = fetchError;
+            console.warn('Failed to reach credential endpoint, attempting fallback credentials.', fetchError);
         }
 
-        const credentials = await credentialsResponse.json();
+        if (credentialsResponse) {
+            if (credentialsResponse.ok) {
+                credentials = await credentialsResponse.json();
+            } else {
+                credentialFetchIssue = credentialsResponse;
+            }
+        }
+
+        if (!credentials) {
+            const fallbackEmail = localStorage.getItem('pospal_customer_email');
+            const fallbackToken = localStorage.getItem('pospal_unlock_token');
+
+            if (fallbackEmail && fallbackToken) {
+                credentials = {
+                    email: fallbackEmail,
+                    unlockToken: fallbackToken
+                };
+                console.warn('Using stored unlock token for portal access because server credentials are unavailable.', credentialFetchIssue);
+                showToast('Connecting with stored license details...', 'info', 4000);
+            } else {
+                if (credentialFetchIssue && typeof credentialFetchIssue.status === 'number') {
+                    if (credentialFetchIssue.status === 404) {
+                        showToast('No active subscription found. Please subscribe first.', 'warning');
+                    } else if (credentialFetchIssue.status === 403) {
+                        showToast('Customer Portal is only available on the server device.', 'warning');
+                    } else {
+                        showToast('Unable to access license credentials. Please try again.', 'error');
+                    }
+                } else if (credentialFetchIssue) {
+                    showToast('Unable to access license credentials. Please check your connection and try again.', 'error');
+                } else {
+                    showToast('No active subscription found. Please subscribe first.', 'warning');
+                }
+                showPortalLoading(false);
+                return;
+            }
+        }
+
         const customerEmail = credentials.email;
         const unlockToken = credentials.unlockToken;
 
         if (!customerEmail || !unlockToken) {
             showToast('No active subscription found. Please subscribe first.', 'warning');
+            showPortalLoading(false);
             return;
         }
 
