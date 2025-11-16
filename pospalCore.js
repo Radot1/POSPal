@@ -1118,13 +1118,44 @@ const StatusDisplayManager = {
                     badge: 'Verification Needed',
                     badgeClass: 'bg-yellow-100 text-yellow-800',
                     footer: {
-                        text: `Verification required - ${remainingDays} days remaining`,
+                        text: remainingDays
+                            ? `Verification required - ${remainingDays} day${remainingDays === 1 ? '' : 's'} remaining`
+                            : 'Verification required',
                         tone: 'warning'
                     },
                     showSubscription: false,
                     showTrialActions: true,
                     showRenewalActions: true,
                     animate: false
+                };
+            
+            case 'trial_expired':
+                return {
+                    html: `
+                        <div class="flex items-start space-x-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <div class="flex-shrink-0">
+                                <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M6 20h12c1.54 0 2.5-1.6 1.73-2.4L13.73 4c-.77-.8-1.96-.8-2.73 0L4.27 17.6C3.5 18.4 4.46 20 6 20z"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-red-800">Trial Expired</h3>
+                                <p class="text-red-700">Your 30-day free trial has ended.</p>
+                                <p class="text-sm text-red-600">Activate a subscription now to keep taking orders and printing receipts.</p>
+                                <p class="text-xs text-red-600 mt-1">Use the Subscribe buttons to unlock POSPal instantly.</p>
+                            </div>
+                        </div>
+                    `,
+                    badge: 'Trial Expired',
+                    badgeClass: 'bg-red-100 text-red-800',
+                    footer: {
+                        text: 'Trial expired - subscription required',
+                        tone: 'error'
+                    },
+                    showSubscription: false,
+                    showTrialActions: true,
+                    showRenewalActions: false,
+                    animate: true
                 };
 
             case 'loading':
@@ -2496,7 +2527,7 @@ const FrontendLicenseManager = {
         };
         
         this.throttledUIUpdate(() => {
-            StatusDisplayManager.updateLicenseStatus('warning', { remainingDays: 0 });
+            StatusDisplayManager.updateLicenseStatus('trial_expired');
             this.hidePortalButtons();
         });
     },
@@ -13464,6 +13495,48 @@ function resetEmailValidationState() {
         validationTimeout: null
     };
     showEmailValidationMessage('clear');
+    hideSubscriptionError();
+}
+
+const SUBSCRIPTION_ERROR_DEFAULT_CLASS = 'bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2';
+const SUBSCRIPTION_ERROR_INFO_CLASS = 'bg-blue-50 border-l-4 border-blue-400 text-blue-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2';
+const SUBSCRIPTION_ERROR_ALERT_CLASS = 'bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2';
+const SUBSCRIPTION_ERROR_AUTO_HIDE_MS = 4500;
+let subscriptionErrorHideTimeout = null;
+
+function showSubscriptionError(autoHideDelay = null) {
+    const errorDiv = document.getElementById('subscription-error');
+    if (!errorDiv) {
+        return;
+    }
+
+    errorDiv.style.display = 'block';
+
+    if (subscriptionErrorHideTimeout) {
+        clearTimeout(subscriptionErrorHideTimeout);
+        subscriptionErrorHideTimeout = null;
+    }
+
+    if (typeof autoHideDelay === 'number' && autoHideDelay > 0) {
+        subscriptionErrorHideTimeout = setTimeout(() => {
+            errorDiv.style.display = 'none';
+            subscriptionErrorHideTimeout = null;
+        }, autoHideDelay);
+    }
+}
+
+function hideSubscriptionError() {
+    const errorDiv = document.getElementById('subscription-error');
+    if (!errorDiv) {
+        return;
+    }
+
+    errorDiv.style.display = 'none';
+
+    if (subscriptionErrorHideTimeout) {
+        clearTimeout(subscriptionErrorHideTimeout);
+        subscriptionErrorHideTimeout = null;
+    }
 }
 
 // Email duplicate validation function
@@ -13611,8 +13684,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Check if user has active duplicate and prevent submission
             if (emailValidationState.isDuplicate && !emailValidationState.isReturningCustomer) {
                 showEmailValidationMessage('active');
+                errorDiv.className = SUBSCRIPTION_ERROR_DEFAULT_CLASS;
                 errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>You already have an active subscription. Please manage your existing subscription instead.';
-                errorDiv.style.display = 'block';
+                showSubscriptionError(SUBSCRIPTION_ERROR_AUTO_HIDE_MS);
                 return;
             }
 
@@ -13629,8 +13703,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (validationResult === null) {
                     // Validation failed - block submission
+                    errorDiv.className = SUBSCRIPTION_ERROR_DEFAULT_CLASS;
                     errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Unable to verify email. Please check your internet connection and try again.';
-                    errorDiv.style.display = 'block';
+                    showSubscriptionError();
                     showEmailValidationMessage('clear');
                     return;
                 }
@@ -13643,8 +13718,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     if (!validationResult.isReturningCustomer) {
                         showEmailValidationMessage('active', validationResult.portalUrl);
+                        errorDiv.className = SUBSCRIPTION_ERROR_DEFAULT_CLASS;
                         errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>You already have an active subscription. Please manage your existing subscription instead.';
-                        errorDiv.style.display = 'block';
+                        showSubscriptionError(SUBSCRIPTION_ERROR_AUTO_HIDE_MS);
                         return;
                     }
                 }
@@ -13653,7 +13729,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show loading state
             submitBtn.disabled = true;
             loadingDiv.style.display = 'block';
-            errorDiv.style.display = 'none';
+            hideSubscriptionError();
             showEmailValidationMessage('clear');
             
             try {
@@ -13674,13 +13750,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Handle duplicate customer response from backend
                     const duplicateData = await response.json();
                     if (duplicateData.redirectToPortal && duplicateData.portalUrl) {
+                        errorDiv.className = SUBSCRIPTION_ERROR_INFO_CLASS;
                         errorDiv.innerHTML = `<i class="fas fa-info-circle mr-2"></i>You already have an active subscription. <a href="${duplicateData.portalUrl}" target="_blank" class="underline font-semibold">Manage your subscription here</a>.`;
-                        errorDiv.className = 'bg-blue-50 border-l-4 border-blue-400 p-3 text-blue-700 text-sm rounded';
-                        errorDiv.style.display = 'block';
+                        showSubscriptionError();
                     } else {
+                        errorDiv.className = SUBSCRIPTION_ERROR_DEFAULT_CLASS;
                         errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>This email is already associated with an active subscription.';
-                        errorDiv.style.display = 'block';
+                        showSubscriptionError(SUBSCRIPTION_ERROR_AUTO_HIDE_MS);
                     }
+                    submitBtn.disabled = false;
+                    loadingDiv.style.display = 'none';
                     return;
                 }
                 
@@ -13715,8 +13794,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 errorDiv.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i>${userMessage}`;
-                errorDiv.className = 'bg-red-50 border-l-4 border-red-400 p-3 text-red-700 text-sm rounded';
-                errorDiv.style.display = 'block';
+                errorDiv.className = SUBSCRIPTION_ERROR_ALERT_CLASS;
+                showSubscriptionError();
                 
                 // Reset button state
                 submitBtn.disabled = false;
