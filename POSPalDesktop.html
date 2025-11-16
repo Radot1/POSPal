@@ -2016,6 +2016,35 @@
                                         Unlock POSPal permanently at any time&mdash;your menu, hardware, and history stay exactly as you configured them.
                                     </div>
                                 </div>
+                                <div id="trial-actions" class="hidden" style="display: none;">
+                                    <div class="rounded-2xl border border-indigo-100 bg-white p-5 shadow-sm space-y-4">
+                                        <div>
+                                            <h4 class="text-base font-semibold text-gray-900">Ready to keep POSPal unlocked?</h4>
+                                            <p class="text-sm text-gray-600">Choose the option that fits you best. Nothing needs reconfiguring after activation.</p>
+                                        </div>
+                                        <div class="space-y-3">
+                                            <button type="button"
+                                                    class="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-white font-semibold shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200"
+                                                    onclick="showEmbeddedPayment()">
+                                                <i class="fas fa-credit-card"></i>
+                                                Subscribe for &euro;20/month
+                                            </button>
+                                            <button type="button"
+                                                    class="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-gray-200 px-6 py-3 text-gray-800 font-semibold hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                                                    onclick="showUnlockDialog()">
+                                                <i class="fas fa-key text-gray-600"></i>
+                                                Already paid? Enter unlock code
+                                            </button>
+                                            <button type="button"
+                                                    class="w-full flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-colors"
+                                                    onclick="showLicenseRecoveryModal()">
+                                                <i class="fas fa-envelope-open-text"></i>
+                                                Recover forgotten license
+                                            </button>
+                                        </div>
+                                        <p class="text-xs text-gray-500 text-center">Secure Stripe checkout &bull; License works offline &bull; Support included.</p>
+                                    </div>
+                                </div>
                                 <div id="renewal-actions" class="hidden bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-inner space-y-4" style="display: none;">
                                     <div class="flex items-start gap-3">
                                         <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-orange-600 shadow">

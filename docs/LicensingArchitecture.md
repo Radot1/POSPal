@@ -124,6 +124,10 @@ Tamper detection:
   the start date. Support can review `last_ip/metadata` to confirm.
 - **Backend logging**: look for `Trial registry enforced start date` /
   `Remote trial registry adjusted first run` entries in `pospal_debug.log`.
+- **Worker 404s**: if `/trial/register` or `/trial/status` returns 404, the
+  production worker was never redeployed with the new endpoints. Re-run
+  `wrangler deploy --env production` from `cloudflare-licensing/` after the
+  migration so D1 writes succeed.
 - **Temporary bypass**: set `POSPAL_ENABLE_REMOTE_TRIAL_SYNC=false` before
   launching the app (useful in lab environments where the worker is unavailable).
 
