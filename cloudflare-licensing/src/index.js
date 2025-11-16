@@ -16,6 +16,7 @@ import {
   logEmailDelivery,
   updateEmailStatus,
   hashMachineFingerprint,
+  hashHardwareIdentifier,
   isSubscriptionActive,
   getDetailedSubscriptionStatus,
   getCustomerForValidation,
@@ -101,6 +102,10 @@ export default {
         return handleCustomerPortal(request, env);
       case '/create-portal-session':
         return handleCreatePortalSession(request, env);
+      case '/trial/register':
+        return handleTrialRegister(request, env);
+      case '/trial/status':
+        return handleTrialStatus(request, env);
       case '/check-duplicate':
         return handleCheckDuplicate(request, env);
       case '/recover-license':
@@ -2657,6 +2662,261 @@ async function handleRecoverLicense(request, env) {
   } catch (error) {
     console.error('License recovery error:', error);
     return createResponse({ error: 'Failed to process recovery request' }, 500);
+  }
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function getTrialDurationDays(env) {
+  const raw = parseInt(env.TRIAL_DURATION_DAYS || '30', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30;
+}
+
+function formatDateToISO(date) {
+  const dt = date instanceof Date ? date : new Date(date);
+  return dt.toISOString().slice(0, 10);
+}
+
+function normalizeTrialDate(value) {
+  if (!value) {
+    return formatDateToISO(new Date());
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return formatDateToISO(new Date());
+  }
+  return formatDateToISO(parsed);
+}
+
+function calculateTrialExpiry(firstRunDate, env) {
+  const durationDays = getTrialDurationDays(env);
+  const base = new Date(`${firstRunDate}T00:00:00Z`);
+  base.setUTCDate(base.getUTCDate() + durationDays);
+  return formatDateToISO(base);
+}
+
+function calculateTrialDaysLeft(expiresAt) {
+  const expiry = new Date(`${expiresAt}T00:00:00Z`);
+  const diffMs = expiry.getTime() - Date.now();
+  return Math.ceil(diffMs / MS_PER_DAY);
+}
+
+function buildTrialMetadata(payload = {}) {
+  const metadata = {
+    appVersion: payload.appVersion || null,
+    hostname: payload.hostname || null,
+    platform: payload.platform || null,
+    notes: payload.notes || null
+  };
+  const hasData = Object.values(metadata).some(value => Boolean(value));
+  return hasData ? metadata : null;
+}
+
+async function deriveTrialHardwareHash(hardwareId, env) {
+  if (!hardwareId) {
+    return null;
+  }
+  const salt = env.TRIAL_HW_SALT || env.APP_SECRET_KEY || env.STRIPE_SECRET_KEY || 'pospal-trial-salt';
+  return hashHardwareIdentifier(hardwareId, salt);
+}
+
+async function fetchTrialRecord(env, hardwareHash) {
+  return env.DB.prepare('SELECT * FROM trial_devices WHERE hardware_hash = ?').bind(hardwareHash).first();
+}
+
+async function persistTrialRecord(env, hardwareHash, payload) {
+  const metadataString = payload.metadata ? JSON.stringify(payload.metadata) : null;
+  await env.DB.prepare(`
+    INSERT INTO trial_devices (hardware_hash, hardware_last4, first_run, expires_at, status, tamper_flag, metadata, last_ip)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    hardwareHash,
+    payload.hardwareLast4,
+    payload.firstRun,
+    payload.expiresAt,
+    payload.status || 'active',
+    payload.tamperFlag ? 1 : 0,
+    metadataString,
+    payload.lastIp || 'unknown'
+  ).run();
+  return fetchTrialRecord(env, hardwareHash);
+}
+
+async function formatTrialRecordResponse(record, env) {
+  if (!record) {
+    return null;
+  }
+  let expiresAt = record.expires_at;
+  if (!expiresAt) {
+    expiresAt = calculateTrialExpiry(record.first_run, env);
+    await env.DB.prepare(`
+      UPDATE trial_devices
+         SET expires_at = ?, updated_at = datetime('now')
+       WHERE hardware_hash = ?
+    `).bind(expiresAt, record.hardware_hash).run();
+  }
+  let daysLeft = calculateTrialDaysLeft(expiresAt);
+  if (!Number.isFinite(daysLeft)) {
+    daysLeft = 0;
+  }
+  const expiredByTime = daysLeft <= 0;
+  let status = record.status || 'active';
+  if (status === 'blocked') {
+    daysLeft = 0;
+  } else if (expiredByTime && status !== 'expired') {
+    status = 'expired';
+    daysLeft = 0;
+    await env.DB.prepare(`
+      UPDATE trial_devices
+         SET status = 'expired', updated_at = datetime('now')
+       WHERE hardware_hash = ?
+    `).bind(record.hardware_hash).run();
+  }
+  return {
+    firstRunDate: record.first_run,
+    expiresAt,
+    daysLeft: Math.max(0, daysLeft),
+    expired: status === 'expired' || status === 'blocked',
+    status,
+    tamperFlag: Boolean(record.tamper_flag)
+  };
+}
+
+async function handleTrialRegister(request, env) {
+  try {
+    const payload = await request.json();
+    const hardwareId = (payload.hardwareId || '').trim();
+    if (!hardwareId) {
+      return createErrorResponse('hardwareId is required', 400, { code: 'TRIAL_HW_REQUIRED' });
+    }
+
+    const ipAddress = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for') || 'unknown';
+    const normalizedFirstRun = normalizeTrialDate(payload.firstRunDate);
+    const metadata = buildTrialMetadata(payload);
+    const hardwareHash = await deriveTrialHardwareHash(hardwareId, env);
+
+    if (!hardwareHash) {
+      return createErrorResponse('Unable to derive trial identity', 400, { code: 'TRIAL_HASH_FAILED' });
+    }
+
+    let record = await fetchTrialRecord(env, hardwareHash);
+
+    if (!record) {
+      const expiresAt = calculateTrialExpiry(normalizedFirstRun, env);
+      record = await persistTrialRecord(env, hardwareHash, {
+        hardwareLast4: hardwareId.slice(-8),
+        firstRun: normalizedFirstRun,
+        expiresAt,
+        status: 'active',
+        metadata,
+        lastIp: ipAddress
+      });
+    } else {
+      if (normalizedFirstRun > record.first_run && !record.tamper_flag) {
+        await env.DB.prepare(`
+          UPDATE trial_devices
+             SET tamper_flag = 1,
+                 updated_at = datetime('now')
+           WHERE hardware_hash = ?
+        `).bind(hardwareHash).run();
+      }
+
+      if (normalizedFirstRun < record.first_run) {
+        const expiresAt = calculateTrialExpiry(normalizedFirstRun, env);
+        await env.DB.prepare(`
+          UPDATE trial_devices
+             SET first_run = ?, expires_at = ?, updated_at = datetime('now')
+           WHERE hardware_hash = ?
+        `).bind(normalizedFirstRun, expiresAt, hardwareHash).run();
+      }
+
+      await env.DB.prepare(`
+        UPDATE trial_devices
+           SET last_seen = datetime('now'),
+               last_ip = ?,
+               updated_at = datetime('now'),
+               metadata = COALESCE(?, metadata)
+         WHERE hardware_hash = ?
+      `).bind(ipAddress, metadata ? JSON.stringify(metadata) : null, hardwareHash).run();
+
+      record = await fetchTrialRecord(env, hardwareHash);
+    }
+
+    const responsePayload = await formatTrialRecordResponse(record, env);
+    return createResponse(responsePayload || { error: 'Unable to evaluate trial record' });
+  } catch (error) {
+    console.error('Trial register error:', error);
+    return createErrorResponse('Failed to register trial device', 500, { code: 'TRIAL_REGISTER_FAILED' });
+  }
+}
+
+async function handleTrialStatus(request, env) {
+  try {
+    let payload = {};
+    try {
+      payload = await request.json();
+    } catch (err) {
+      const url = new URL(request.url);
+      payload.hardwareId = payload.hardwareId || url.searchParams.get('hardwareId');
+      payload.firstRunDate = payload.firstRunDate || url.searchParams.get('firstRunDate');
+    }
+
+    const hardwareId = (payload.hardwareId || '').trim();
+    if (!hardwareId) {
+      return createErrorResponse('hardwareId is required', 400, { code: 'TRIAL_HW_REQUIRED' });
+    }
+
+    const ipAddress = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || request.headers.get('x-forwarded-for') || 'unknown';
+    const normalizedFirstRun = normalizeTrialDate(payload.firstRunDate);
+    const hardwareHash = await deriveTrialHardwareHash(hardwareId, env);
+
+    if (!hardwareHash) {
+      return createErrorResponse('Unable to derive trial identity', 400, { code: 'TRIAL_HASH_FAILED' });
+    }
+
+    let record = await fetchTrialRecord(env, hardwareHash);
+
+    if (!record) {
+      const expiresAt = calculateTrialExpiry(normalizedFirstRun, env);
+      record = await persistTrialRecord(env, hardwareHash, {
+        hardwareLast4: hardwareId.slice(-8),
+        firstRun: normalizedFirstRun,
+        expiresAt,
+        status: 'active',
+        lastIp: ipAddress
+      });
+    } else {
+      if (normalizedFirstRun < record.first_run) {
+        const expiresAt = calculateTrialExpiry(normalizedFirstRun, env);
+        await env.DB.prepare(`
+          UPDATE trial_devices
+             SET first_run = ?, expires_at = ?, updated_at = datetime('now')
+           WHERE hardware_hash = ?
+        `).bind(normalizedFirstRun, expiresAt, hardwareHash).run();
+      } else if (normalizedFirstRun > record.first_run && !record.tamper_flag) {
+        await env.DB.prepare(`
+          UPDATE trial_devices
+             SET tamper_flag = 1, updated_at = datetime('now')
+           WHERE hardware_hash = ?
+        `).bind(hardwareHash).run();
+      }
+
+      await env.DB.prepare(`
+        UPDATE trial_devices
+           SET last_seen = datetime('now'),
+               last_ip = ?,
+               updated_at = datetime('now')
+         WHERE hardware_hash = ?
+      `).bind(ipAddress, hardwareHash).run();
+
+      record = await fetchTrialRecord(env, hardwareHash);
+    }
+
+    const responsePayload = await formatTrialRecordResponse(record, env);
+    return createResponse(responsePayload || { error: 'Unable to evaluate trial record' });
+  } catch (error) {
+    console.error('Trial status error:', error);
+    return createErrorResponse('Failed to fetch trial status', 500, { code: 'TRIAL_STATUS_FAILED' });
   }
 }
 

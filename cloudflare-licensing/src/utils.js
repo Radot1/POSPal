@@ -166,6 +166,22 @@ export async function hashMachineFingerprint(fingerprint) {
 }
 
 /**
+ * Hash hardware identifiers with optional salt (for trial enforcement)
+ */
+export async function hashHardwareIdentifier(identifier, salt = '') {
+  if (!identifier || typeof identifier !== 'string') {
+    return null;
+  }
+
+  const encoder = new TextEncoder();
+  const normalizedInput = `${identifier}:${salt || ''}`.trim();
+  const data = encoder.encode(normalizedInput);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Check if subscription should be considered active
  * Enhanced for hybrid validation with detailed status information
  */

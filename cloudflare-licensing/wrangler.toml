@@ -11,6 +11,7 @@ database_id = "62f81f71-2c41-4c60-bd74-649aa619f2fc"
 [vars]
 ENVIRONMENT = "development"
 STRIPE_PRICE_ID = "price_1S2vQN0ee6hGru1PTberJVcZ"
+TRIAL_DURATION_DAYS = "30"
 
 # Production environment
 [env.production]
@@ -25,6 +26,7 @@ database_id = "2f0fd6ad-4886-4348-ab6b-9f98087e76f9"
 [env.production.vars]
 ENVIRONMENT = "production"
 STRIPE_PRICE_ID = "price_1S26QQ1HM7SuDGcMAqFI7r9C"
+TRIAL_DURATION_DAYS = "30"
 # Secrets are set via: wrangler secret put STRIPE_SECRET_KEY --env production
 # Secrets are set via: wrangler secret put STRIPE_WEBHOOK_SECRET --env production
 # Secrets are set via: wrangler secret put RESEND_API_KEY --env production
@@ -43,6 +45,7 @@ ENVIRONMENT = "development"
 # Set development secrets via: wrangler secret put STRIPE_WEBHOOK_SECRET --env development
 # Set development secrets via: wrangler secret put RESEND_API_KEY --env development
 STRIPE_PRICE_ID = "price_1S2vQN0ee6hGru1PTberJVcZ"
+TRIAL_DURATION_DAYS = "30"
 
 # Workers routes (configure these later)
 # [[env.production.routes]]

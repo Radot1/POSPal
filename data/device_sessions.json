@@ -1,20 +1,20 @@
 {
-  "device_1761466459627_qo3srdxzx": {
+  "device_1763280030541_by2q54za6": {
     "info": {
-      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
       "ip": "127.0.0.1",
-      "timestamp": "2025-10-26T10:14:19.632507"
+      "timestamp": "2025-11-16T10:00:30.566529"
     },
-    "last_seen": "2025-10-26T10:14:19.633175",
+    "last_seen": "2025-11-16T10:00:30.567080",
     "active": true
   },
-  "device_1761467934658_4q1v3vfb7": {
+  "device_1763280133487_ljr0nsd1i": {
     "info": {
-      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
       "ip": "127.0.0.1",
-      "timestamp": "2025-10-26T10:38:54.670746"
+      "timestamp": "2025-11-16T10:02:13.493057"
     },
-    "last_seen": "2025-10-26T10:38:55.127422",
+    "last_seen": "2025-11-16T10:02:13.493258",
     "active": true
   }
 }

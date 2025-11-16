@@ -22,6 +22,17 @@ const NETWORK_ERROR_HINTS = [
     'ECONNREFUSED'
 ];
 
+const LICENSE_STATES = {
+    TRIAL_ACTIVE: 'trial_active',
+    TRIAL_EXPIRED: 'trial_expired',
+    LICENSED_ACTIVE: 'licensed_active',
+    LICENSED_GRACE: 'licensed_grace',
+    LICENSED_RENEWAL_REQUIRED: 'licensed_renewal_required',
+    LICENSED_CANCELLED: 'licensed_cancelled',
+    LICENSE_MISSING: 'license_missing',
+    LICENSE_ERROR: 'license_error'
+};
+
 function isLikelyNetworkError(error) {
     if (!error) return false;
     const message = String(error.message || error).toLowerCase();
@@ -2070,6 +2081,15 @@ const FrontendLicenseManager = {
         }
 
         const sourceHint = serverLicense.source || '';
+        const normalizedLicenseState = typeof serverLicense.license_state === 'string'
+            ? serverLicense.license_state.toLowerCase()
+            : '';
+        const trialDaysLeft = typeof serverLicense.trial_days_left === 'number'
+            ? serverLicense.trial_days_left
+            : (typeof serverLicense.days_left === 'number' ? serverLicense.days_left : null);
+        const trialExpiredFlag = typeof serverLicense.trial_expired === 'boolean'
+            ? serverLicense.trial_expired
+            : (trialDaysLeft !== null ? trialDaysLeft <= 0 : null);
         const graceSources = new Set([
             'server_license_cached',
             'server_license_cached_backoff',
@@ -2087,7 +2107,9 @@ const FrontendLicenseManager = {
         const isServerOnline = !isServerOfflineForLicense && (onlineStates.has(normalizedConnectivity) || normalizedConnectivity === 'unknown');
         const connectivityStatus = rawConnectivity || (isServerOfflineForLicense ? 'offline' : 'online');
         const indicatesGrace = Boolean(serverLicense.grace_period) || graceSources.has(sourceHint);
-        const isGraceResponse = isServerOfflineForLicense || (indicatesGrace && !isServerOnline);
+        const isGraceResponse = isServerOfflineForLicense
+            || (indicatesGrace && !isServerOnline)
+            || normalizedLicenseState === LICENSE_STATES.LICENSED_GRACE;
 
         if (isGraceResponse) {
             const graceDaysLeft = typeof serverLicense.grace_days_left === 'number'
@@ -2154,7 +2176,8 @@ const FrontendLicenseManager = {
             return this.currentValidationState;
         }
 
-        if (serverLicense.licensed && serverLicense.active && isServerOnline) {
+        const isActiveState = normalizedLicenseState === LICENSE_STATES.LICENSED_ACTIVE;
+        if ((serverLicense.licensed && serverLicense.active && isServerOnline) || isActiveState) {
             console.log('Server license found and active - using server license');
 
             const validationTimestamp = Date.now();
@@ -2197,7 +2220,8 @@ const FrontendLicenseManager = {
                     customerName: serverLicense.customer_name,
                     isOnline: true
                 });
-                this.showPortalButtons();
+                this.applyServerBillingDetails(serverLicense);
+                this.showPortalButtons({ showManageButton: false });
             });
 
             console.log('Server license validation complete');
@@ -2205,6 +2229,89 @@ const FrontendLicenseManager = {
         }
 
         console.log('â„¹ï¸  No server license found - showing trial status');
+
+        if (normalizedLicenseState === LICENSE_STATES.LICENSED_RENEWAL_REQUIRED) {
+            console.log('Server license requires renewal');
+            this.cache.isOnline = isServerOnline;
+            this.currentValidationState = {
+                status: 'inactive',
+                customerName: serverLicense.customer_name,
+                email: serverLicense.email,
+                licenseState: normalizedLicenseState,
+                timestamp: Date.now(),
+                connectivityStatus
+            };
+
+            this.throttledUIUpdate(() => {
+                StatusDisplayManager.updateLicenseStatus('inactive', {
+                    customerName: serverLicense.customer_name,
+                    isOnline: isServerOnline
+                });
+                this.applyServerBillingDetails(serverLicense);
+                this.showPortalButtons();
+            });
+            return this.currentValidationState;
+        }
+
+        if (normalizedLicenseState === LICENSE_STATES.LICENSED_CANCELLED) {
+            console.log('Server license cancelled');
+            this.cache.isOnline = isServerOnline;
+            this.currentValidationState = {
+                status: 'cancelled',
+                customerName: serverLicense.customer_name,
+                email: serverLicense.email,
+                licenseState: normalizedLicenseState,
+                timestamp: Date.now(),
+                connectivityStatus
+            };
+
+            this.throttledUIUpdate(() => {
+                StatusDisplayManager.updateLicenseStatus('cancelled', {
+                    customerName: serverLicense.customer_name,
+                    isOnline: isServerOnline
+                });
+                this.applyServerBillingDetails(serverLicense);
+                this.showPortalButtons();
+            });
+            return this.currentValidationState;
+        }
+
+        if (normalizedLicenseState === LICENSE_STATES.TRIAL_ACTIVE) {
+            const daysLeft = typeof trialDaysLeft === 'number' ? trialDaysLeft : 0;
+            this.cache.isOnline = isServerOnline;
+            this.updateUIForTrialStatus(daysLeft, daysLeft > 0);
+            return this.currentValidationState;
+        }
+
+        if (normalizedLicenseState === LICENSE_STATES.TRIAL_EXPIRED) {
+            this.cache.isOnline = isServerOnline;
+            this.updateUIForExpiredTrial();
+            return this.currentValidationState;
+        }
+
+        if (normalizedLicenseState === LICENSE_STATES.LICENSE_MISSING && trialDaysLeft !== null) {
+            this.cache.isOnline = isServerOnline;
+            if (!trialExpiredFlag) {
+                this.updateUIForTrialStatus(trialDaysLeft, true);
+            } else {
+                this.updateUIForExpiredTrial();
+            }
+            return this.currentValidationState;
+        }
+
+        if (normalizedLicenseState === LICENSE_STATES.LICENSE_ERROR) {
+            this.cache.isOnline = isServerOnline;
+            this.currentValidationState = {
+                status: 'error',
+                message: serverLicense.message,
+                timestamp: Date.now()
+            };
+            this.throttledUIUpdate(() => {
+                StatusDisplayManager.updateLicenseStatus('warning', { remainingDays: 0 });
+                this.hidePortalButtons();
+            });
+            return this.currentValidationState;
+        }
 
         const paymentData = LicenseStorage.getPaymentData();
         if (paymentData.paymentSuccess) {
@@ -2353,7 +2460,7 @@ const FrontendLicenseManager = {
             this.updateBillingDateDisplay(licenseData);
 
             // Show portal access buttons
-            this.showPortalButtons();
+            this.showPortalButtons({ showManageButton: false });
 
             // Update license status badge if it exists
             const statusBadge = document.getElementById('license-status-badge');
@@ -2587,7 +2694,28 @@ const FrontendLicenseManager = {
         }
     },
     
-    showPortalButtons() {
+    applyServerBillingDetails(serverLicense) {
+        if (!serverLicense) return;
+        const derivedStatus = serverLicense.subscription_status
+            ? serverLicense.subscription_status
+            : (serverLicense.active ? 'active' : 'inactive');
+        const billingPayload = {
+            unlockToken: true,
+            customerName: serverLicense.customer_name || serverLicense.email,
+            licenseStatus: derivedStatus,
+            nextBillingDate: serverLicense.next_billing_date,
+            subscriptionPrice: serverLicense.subscription_price,
+            subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+            lastValidated: serverLicense.validated_at
+        };
+        this.updateBillingDateDisplay(billingPayload);
+    },
+    
+    showPortalButtons(options = {}) {
+        const {
+            showQuickButton = true,
+            showManageButton = true
+        } = options;
         const quickPortalBtn = document.getElementById('quick-portal-btn');
         const manageSubBtn = document.getElementById('manage-subscription-btn');
         // Note: footer-portal-btn removed - only using quick access button in license modal
@@ -2596,8 +2724,18 @@ const FrontendLicenseManager = {
             this.elements.manageSubscriptionButton = manageSubBtn;
         }
 
-        if (quickPortalBtn) quickPortalBtn.classList.remove('hidden');
-        if (manageSubBtn) manageSubBtn.classList.remove('hidden');
+        if (quickPortalBtn) {
+            quickPortalBtn.classList.toggle('hidden', !showQuickButton);
+            if (showQuickButton) {
+                quickPortalBtn.classList.remove('hidden');
+            }
+        }
+        if (manageSubBtn) {
+            manageSubBtn.classList.toggle('hidden', !showManageButton);
+            if (showManageButton) {
+                manageSubBtn.classList.remove('hidden');
+            }
+        }
 
         // Update button text based on license status
         const licenseData = LicenseStorage.getLicenseData();
@@ -2607,7 +2745,7 @@ const FrontendLicenseManager = {
         const isManualSubscription = subscriptionId && subscriptionId.includes('manual');
         const isInactive = licenseStatus && (licenseStatus === 'inactive' || licenseStatus === 'cancelled');
 
-        if (manageSubBtn) {
+        if (manageSubBtn && showManageButton) {
             if (isManualSubscription || isInactive) {
                 // Change button to "Reactivate Subscription" for inactive/manual licenses
                 const icon = manageSubBtn.querySelector('i');

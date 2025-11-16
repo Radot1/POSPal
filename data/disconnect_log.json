@@ -1,0 +1,46 @@
+[
+  {
+    "timestamp": "2025-11-16T09:05:07.547985",
+    "email": "test@example.com",
+    "cleanup_summary": {
+      "local_files_cleared": true,
+      "trial_data_cleared": true,
+      "device_sessions_cleared": true,
+      "cloud_session_ended": true,
+      "license_cache_cleared": true
+    }
+  },
+  {
+    "timestamp": "2025-11-16T09:05:17.835702",
+    "email": "rate-limit-test@example.com",
+    "cleanup_summary": {
+      "local_files_cleared": false,
+      "trial_data_cleared": false,
+      "device_sessions_cleared": true,
+      "cloud_session_ended": false,
+      "license_cache_cleared": false
+    }
+  },
+  {
+    "timestamp": "2025-11-16T09:05:20.399793",
+    "email": "rate-limit-test@example.com",
+    "cleanup_summary": {
+      "local_files_cleared": false,
+      "trial_data_cleared": false,
+      "device_sessions_cleared": true,
+      "cloud_session_ended": false,
+      "license_cache_cleared": false
+    }
+  },
+  {
+    "timestamp": "2025-11-16T09:05:22.957450",
+    "email": "rate-limit-test@example.com",
+    "cleanup_summary": {
+      "local_files_cleared": false,
+      "trial_data_cleared": false,
+      "device_sessions_cleared": true,
+      "cloud_session_ended": false,
+      "license_cache_cleared": false
+    }
+  }
+]

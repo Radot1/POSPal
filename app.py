@@ -284,6 +284,11 @@ LICENSE_FILE = find_license_file()
 # Additional hardening: also store a copy of the trial info under ProgramData
 PROGRAM_DATA_DIR = os.path.join(os.environ.get('PROGRAMDATA', r'C:\\ProgramData'), 'POSPal')
 PROGRAM_TRIAL_FILE = os.path.join(PROGRAM_DATA_DIR, 'trial.json')
+TRIAL_DURATION_DAYS = 30
+ENABLE_REMOTE_TRIAL_SYNC = os.environ.get('POSPAL_ENABLE_REMOTE_TRIAL_SYNC', 'true').lower() == 'true'
+TRIAL_REGISTER_ENDPOINT = '/trial/register'
+TRIAL_STATUS_ENDPOINT = '/trial/status'
+TRIAL_SYNC_TIMEOUT = int(os.environ.get('POSPAL_TRIAL_SYNC_TIMEOUT', '8'))
 # Persistent publish marker bound to this machine (survives app folder deletion)
 PERSIST_DIR = PROGRAM_DATA_DIR
 PUBLISH_MARKER_FILE = os.path.join(PERSIST_DIR, 'published_site.json')
@@ -445,6 +450,34 @@ def _should_skip_cloud_validation() -> bool:
 SERVER_LICENSE_FILE = os.path.join(DATA_DIR, 'server_license.enc')
 SERVER_LICENSE_BACKUP = os.path.join(PROGRAM_DATA_DIR, 'server_license.enc')
 
+# Canonical backend license states shared with frontend
+LICENSE_STATE_TRIAL_ACTIVE = "trial_active"
+LICENSE_STATE_TRIAL_EXPIRED = "trial_expired"
+LICENSE_STATE_LICENSED_ACTIVE = "licensed_active"
+LICENSE_STATE_LICENSED_GRACE = "licensed_grace"
+LICENSE_STATE_LICENSED_RENEWAL_REQUIRED = "licensed_renewal_required"
+LICENSE_STATE_LICENSED_CANCELLED = "licensed_cancelled"
+LICENSE_STATE_LICENSE_MISSING = "license_missing"
+LICENSE_STATE_LICENSE_ERROR = "license_error"
+LICENSE_STATE_UNKNOWN = "license_unknown"
+
+LICENSE_RENEWAL_REQUIRED_STATUSES = {
+    "past_due",
+    "unpaid",
+    "incomplete",
+    "incomplete_expired",
+    "paused",
+    "in_grace_period",
+    "past_due_incomplete",
+}
+
+LICENSE_CANCELLED_STATUSES = {
+    "canceled",
+    "cancelled",
+    "canceled_delinquent",
+    "terminated",
+}
+
 # --- Migration Controller for Backend Systems ---
 # Environment variable to control migration rollout
 ENABLE_BACKEND_MIGRATION = os.environ.get('POSPAL_ENABLE_BACKEND_MIGRATION', 'true').lower() == 'true'
@@ -495,6 +528,7 @@ def get_license_status_safe(force_refresh=False, context="general"):
         if isinstance(unified_status, dict):
             unified_status['_migration_path'] = 'unified_only'
             unified_status['_context'] = context
+            unified_status.setdefault('license_state', _determine_license_state(unified_status))
 
         return unified_status
 
@@ -2194,6 +2228,191 @@ def _persist_trial_everywhere(earliest_first_run_date: str, signature: str):
     except Exception as e:
         app.logger.warning(f"Failed persisting trial to ProgramData: {e}")
 
+def _generate_trial_signature(first_run_date: str) -> str:
+    return hashlib.sha256(f"{first_run_date}{APP_SECRET_KEY}".encode()).hexdigest()
+
+def _get_trial_hardware_id() -> str | None:
+    try:
+        return get_enhanced_hardware_id()
+    except Exception as exc:
+        app.logger.warning(f"Unable to obtain hardware ID for remote trial sync: {exc}")
+        return None
+
+def _call_trial_worker(endpoint: str, payload: dict, timeout: int | None = None):
+    if not (ENABLE_REMOTE_TRIAL_SYNC and CLOUDFLARE_WORKER_URL):
+        return None
+    try:
+        return call_cloudflare_api(endpoint, payload, timeout=timeout or TRIAL_SYNC_TIMEOUT, max_retries=1)
+    except Exception as exc:
+        app.logger.warning(f"Trial worker call failed ({endpoint}): {exc}")
+        return None
+
+def _register_trial_with_cloud(hardware_id: str, proposed_first_run: str):
+    metadata = {
+        "appVersion": CURRENT_VERSION,
+        "hostname": socket.gethostname(),
+        "platform": sys.platform,
+        "notes": "auto-sync"
+    }
+    payload = {
+        "hardwareId": hardware_id,
+        "firstRunDate": proposed_first_run,
+        **metadata
+    }
+    return _call_trial_worker(TRIAL_REGISTER_ENDPOINT, payload)
+
+def _fetch_remote_trial_status(hardware_id: str, fallback_first_run: str | None = None):
+    payload = {
+        "hardwareId": hardware_id
+    }
+    if fallback_first_run:
+        payload["firstRunDate"] = fallback_first_run
+    return _call_trial_worker(TRIAL_STATUS_ENDPOINT, payload)
+
+def _calculate_trial_snapshot() -> dict | None:
+    """Return a normalized trial snapshot (days left, expiration) without mutating license state."""
+    try:
+        candidates = []
+        # Primary file
+        try:
+            if os.path.exists(TRIAL_INFO_FILE):
+                with open(TRIAL_INFO_FILE, 'r') as f:
+                    candidates.append(_validate_and_parse_trial(json.load(f)))
+        except Exception:
+            candidates.append(None)
+
+        # ProgramData copy
+        candidates.append(_validate_and_parse_trial(get_trial_from_programdata()))
+
+        valid_candidates = [c for c in candidates if c]
+        if not valid_candidates:
+            return None
+
+        earliest = min(valid_candidates, key=lambda c: c['date_obj'])
+        first_run = earliest['date_obj']
+        first_run_date = earliest['first_run_date']
+        signature = earliest['signature']
+
+        remote_status = None
+        if ENABLE_REMOTE_TRIAL_SYNC:
+            hardware_id = _get_trial_hardware_id()
+            if hardware_id:
+                remote_status = _fetch_remote_trial_status(hardware_id, first_run_date)
+                if isinstance(remote_status, dict):
+                    remote_first_run = remote_status.get('firstRunDate') or remote_status.get('first_run_date')
+                    if remote_first_run:
+                        try:
+                            remote_date_obj = datetime.strptime(remote_first_run, "%Y-%m-%d")
+                            if remote_date_obj < first_run:
+                                first_run = remote_date_obj
+                                first_run_date = remote_first_run
+                                signature = _generate_trial_signature(first_run_date)
+                                app.logger.info(f"Remote trial registry adjusted first run to {remote_first_run}")
+                        except ValueError:
+                            app.logger.warning(f"Remote trial returned invalid date: {remote_first_run}")
+
+        # Persist back to ensure all storages remain in sync
+        _persist_trial_everywhere(first_run_date, signature)
+
+        days_elapsed = (datetime.now() - first_run).days
+        days_left = max(0, TRIAL_DURATION_DAYS - days_elapsed)
+        expired = days_left <= 0
+
+        if remote_status:
+            remote_days = remote_status.get('daysLeft')
+            remote_expired = remote_status.get('expired')
+            remote_status_text = remote_status.get('status')
+            if isinstance(remote_days, (int, float)):
+                days_left = max(0, int(remote_days))
+            if remote_expired is True or remote_status_text in {'expired', 'blocked'}:
+                expired = True
+                days_left = 0
+
+        return {
+            "first_run_date": first_run_date,
+            "days_left": days_left,
+            "expired": expired,
+            "trial_active": not expired
+        }
+    except Exception as exc:
+        app.logger.error(f"Failed to calculate trial snapshot: {exc}")
+        return None
+
+
+def _determine_license_state(payload: dict | None, trial_snapshot: dict | None = None) -> str:
+    """Normalize backend payloads into canonical license states."""
+    if not isinstance(payload, dict):
+        return LICENSE_STATE_UNKNOWN
+
+    if trial_snapshot:
+        days_left = trial_snapshot.get("days_left")
+        if days_left is not None:
+            payload.setdefault("trial_days_left", days_left)
+            payload.setdefault("days_left", days_left)
+        if "expired" in trial_snapshot:
+            payload.setdefault("trial_expired", trial_snapshot["expired"])
+        if trial_snapshot.get("first_run_date"):
+            payload.setdefault("trial_first_run_date", trial_snapshot["first_run_date"])
+
+    status_field = str(payload.get("status") or "").lower()
+    subscription_status = str(payload.get("subscription_status") or payload.get("subscriptionStatus") or "").lower()
+    licensed = bool(payload.get("licensed"))
+    active = bool(payload.get("active"))
+    grace_flags = bool(payload.get("grace_period") or payload.get("grace_period_active"))
+    offline_flag = bool(payload.get("offline"))
+    connectivity = str(payload.get("connectivity_status") or "").lower()
+    if status_field == "grace_period":
+        grace_flags = True
+    if connectivity in {"offline", "offline_cached"}:
+        grace_flags = True
+
+    if licensed and active:
+        if grace_flags or offline_flag:
+            return LICENSE_STATE_LICENSED_GRACE
+        return LICENSE_STATE_LICENSED_ACTIVE
+
+    if licensed:
+        if subscription_status in LICENSE_CANCELLED_STATUSES:
+            return LICENSE_STATE_LICENSED_CANCELLED
+        if subscription_status in LICENSE_RENEWAL_REQUIRED_STATUSES or payload.get("subscription_expired"):
+            return LICENSE_STATE_LICENSED_RENEWAL_REQUIRED
+        if grace_flags:
+            return LICENSE_STATE_LICENSED_GRACE
+        # Licensed but inactive without a clearer reason -> treat as renewal required
+        return LICENSE_STATE_LICENSED_RENEWAL_REQUIRED
+
+    # When unified controller reports trial status explicitly
+    if status_field == "trial":
+        if payload.get("trial_expired"):
+            return LICENSE_STATE_TRIAL_EXPIRED
+        return LICENSE_STATE_TRIAL_ACTIVE
+    if status_field == "expired" and not licensed:
+        return LICENSE_STATE_TRIAL_EXPIRED
+
+    # Subscription level states even when currently unlicensed
+    if subscription_status in LICENSE_CANCELLED_STATUSES:
+        return LICENSE_STATE_LICENSED_CANCELLED
+    if subscription_status in LICENSE_RENEWAL_REQUIRED_STATUSES:
+        return LICENSE_STATE_LICENSED_RENEWAL_REQUIRED
+
+    # Trial fallbacks
+    trial_expired = payload.get("trial_expired")
+    trial_days_left = payload.get("trial_days_left")
+    if trial_days_left is None:
+        trial_days_left = payload.get("days_left")
+    if trial_expired is False or (trial_days_left is not None and trial_days_left > 0):
+        return LICENSE_STATE_TRIAL_ACTIVE
+    if trial_expired is True or (trial_days_left == 0 and trial_days_left is not None):
+        return LICENSE_STATE_TRIAL_EXPIRED
+
+    if payload.get("error") or payload.get("code") in {"SERVER_ERROR", "VALIDATION_FAILED"}:
+        return LICENSE_STATE_LICENSE_ERROR
+
+    if payload.get("source") in {"server_license_missing", "no_license", "trial_error"}:
+        return LICENSE_STATE_LICENSE_MISSING
+
+    return LICENSE_STATE_UNKNOWN
+
 def initialize_trial():
     """Initialize trial without allowing resets via reinstall.
 
@@ -2222,12 +2441,36 @@ def initialize_trial():
 
         if valid_candidates:
             earliest = min(valid_candidates, key=lambda c: c['date_obj'])
-            first_run_date = earliest['first_run_date']
-            signature = earliest['signature']
+            proposed_first_run = earliest['first_run_date']
         else:
-            first_run_date = datetime.now().strftime("%Y-%m-%d")
-            signature = hashlib.sha256(f"{first_run_date}{APP_SECRET_KEY}".encode()).hexdigest()
+            proposed_first_run = datetime.now().strftime("%Y-%m-%d")
 
+        if ENABLE_REMOTE_TRIAL_SYNC:
+            hardware_id = _get_trial_hardware_id()
+            if hardware_id:
+                remote_response = _register_trial_with_cloud(hardware_id, proposed_first_run)
+                remote_date = None
+                if isinstance(remote_response, dict):
+                    remote_date = remote_response.get('firstRunDate') or remote_response.get('first_run_date')
+                if remote_date:
+                    try:
+                        remote_candidate = {
+                            "first_run_date": remote_date,
+                            "signature": _generate_trial_signature(remote_date),
+                            "date_obj": datetime.strptime(remote_date, "%Y-%m-%d")
+                        }
+                        valid_candidates.append(remote_candidate)
+                        app.logger.info(f"Remote trial registry enforced start date: {remote_date}")
+                    except ValueError:
+                        app.logger.warning(f"Remote trial date invalid: {remote_date}")
+
+        if valid_candidates:
+            earliest = min(valid_candidates, key=lambda c: c['date_obj'])
+            first_run_date = earliest['first_run_date']
+        else:
+            first_run_date = proposed_first_run
+
+        signature = _generate_trial_signature(first_run_date)
         _persist_trial_everywhere(first_run_date, signature)
         app.logger.info("Trial initialized/synchronized across stores (no forward reset).")
     except Exception as e:
@@ -9345,7 +9588,8 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
     """Generate the canonical license status payload for /api/license/status."""
     server_license = load_server_license()
     if not server_license:
-        return {
+        trial_snapshot = _calculate_trial_snapshot()
+        payload = {
             "licensed": False,
             "active": False,
             "message": "No server license activated",
@@ -9353,18 +9597,28 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
             "source": "server_license_missing",
             "timestamp": datetime.now().isoformat()
         }
+        if trial_snapshot:
+            payload.update({
+                "trial_days_left": trial_snapshot.get("days_left"),
+                "trial_expired": trial_snapshot.get("expired"),
+                "trial_first_run_date": trial_snapshot.get("first_run_date"),
+            })
+        payload["license_state"] = _determine_license_state(payload, trial_snapshot)
+        return payload
 
     email = server_license.get('customer_email')
     unlock_token = server_license.get('unlock_token')
 
     if not email or not unlock_token:
-        return {
+        payload = {
             "licensed": False,
             "active": False,
             "error": "Server license credentials incomplete",
             "source": "server_license_incomplete",
             "timestamp": datetime.now().isoformat()
         }
+        payload["license_state"] = _determine_license_state(payload)
+        return payload
 
     hardware_id = get_enhanced_hardware_id()
 
@@ -9392,6 +9646,7 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
         payload["connectivity_status"] = "online_cached" if from_cache else "online"
         payload["grace_period"] = False
         payload["offline"] = False
+        payload["license_state"] = _determine_license_state(payload)
         return payload
 
     if license_data:
@@ -9406,6 +9661,7 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
             normalized["connectivity_status"] = "online_cached" if cloud_reachable else "offline_cached"
         if not cloud_reachable:
             normalized["offline"] = True
+        normalized["license_state"] = _determine_license_state(normalized)
         return normalized
 
     cached_payload = _get_cached_license_payload(email, "server_license_cached_direct")
@@ -9420,9 +9676,10 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
         if not normalized.get("connectivity_status"):
             normalized["connectivity_status"] = "offline_cached"
         normalized["offline"] = True
+        normalized["license_state"] = _determine_license_state(normalized)
         return normalized
 
-    return {
+    fallback_payload = {
         "licensed": False,
         "active": False,
         "error": error_msg or "License validation failed",
@@ -9431,6 +9688,8 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
         "timestamp": datetime.now().isoformat(),
         "connectivity_status": "online" if cloud_reachable else "offline"
     }
+    fallback_payload["license_state"] = _determine_license_state(fallback_payload)
+    return fallback_payload
 
 
 license_status_coordinator = LicenseStatusCoordinator(_compute_server_license_status)
