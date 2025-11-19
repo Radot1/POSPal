@@ -115,6 +115,30 @@ function getElementByIds(ids) {
     return null;
 }
 
+function normalizeLicenseStatusForDisplay(status) {
+    if (!status) return 'inactive';
+    const normalized = String(status).toLowerCase();
+
+    if (normalized === 'canceled') return 'cancelled';
+    if (normalized === 'licensed_active') return 'active';
+    if (normalized === 'licensed_cancelled') return 'cancelled';
+
+    if ([
+        'expired',
+        'inactive',
+        'past_due',
+        'past-due',
+        'unpaid',
+        'licensed_grace',
+        'licensed_renewal_required',
+        'renewal_required'
+    ].includes(normalized)) {
+        return 'inactive';
+    }
+
+    return normalized;
+}
+
 const ServerLicenseStatus = {
     _initialized: false,
     _status: null,
@@ -966,13 +990,21 @@ const StatusDisplayManager = {
             statusBadge: document.getElementById('license-status-badge'),
             footerStatus: document.getElementById('footer-trial-status'),
             subscriptionDetails: document.getElementById('subscription-details'),
+            planCard: document.getElementById('plan-card'),
+            nextPaymentCard: document.getElementById('next-payment-card'),
+            priceCard: document.getElementById('price-card'),
+            renewalCard: document.getElementById('renewal-card'),
+            trialDetails: document.getElementById('trial-details'),
             trialActions: document.getElementById('trial-actions'),
             renewalActions: document.getElementById('renewal-actions'),
+            portalActionCard: document.getElementById('portal-action-card'),
             nextBillingDate: document.getElementById('next-billing-date'),
             daysUntilRenewal: document.getElementById('days-until-renewal'),
             subscriptionStatusLabel: document.getElementById('subscription-status-display'),
-            portalButton: document.getElementById('quick-portal-btn'),
-            manageSubscriptionButton: document.getElementById('manage-subscription-btn')
+            portalActionBtn: document.getElementById('portal-action-btn'),
+            portalActionText: document.getElementById('portal-action-text'),
+            portalActionIcon: document.getElementById('portal-action-icon'),
+            portalActionDescription: document.getElementById('portal-action-description')
         };
     },
     
@@ -996,10 +1028,12 @@ const StatusDisplayManager = {
         this.toggleUIElements(
             statusConfig.showSubscription,
             statusConfig.showTrialActions,
-            statusConfig.showRenewalActions
+            statusConfig.showRenewalActions,
+            statusConfig.showTrialDetails
         );
         this.setPortalAccessEnabled(Boolean(isOnline));
         this.updateSupplementalFields(statusType);
+        this.configurePortalAction(statusType, { ...options, panelConfig: statusConfig });
         
         // Add visual feedback for important changes
         if (statusConfig.animate) {
@@ -1034,6 +1068,7 @@ const StatusDisplayManager = {
                         : { text: 'Subscription active', tone: 'positive' },
                     showSubscription: true,
                     showTrialActions: false,
+                    showTrialDetails: false,
                     showRenewalActions: false,
                     animate: true
                 };
@@ -1059,8 +1094,9 @@ const StatusDisplayManager = {
                     badge: `License ${statusText}`,
                     badgeClass: 'bg-orange-100 text-orange-800',
                     footer: { text: `Subscription ${statusText.toLowerCase()} - renewal required`, tone: 'warning' },
-                    showSubscription: true, // Show the subscription card with Manage Subscription button
-                    showTrialActions: false, // Hide trial/subscribe buttons
+                    showSubscription: true,
+                    showTrialActions: false,
+                    showTrialDetails: false,
                     showRenewalActions: true,
                     animate: true
                 };
@@ -1154,6 +1190,7 @@ const StatusDisplayManager = {
                     },
                     showSubscription: false,
                     showTrialActions: true,
+                    showTrialDetails: true,
                     showRenewalActions: false,
                     animate: true
                 };
@@ -1179,6 +1216,7 @@ const StatusDisplayManager = {
                     footer: { text: 'Validating license...', tone: 'neutral' },
                     showSubscription: false,
                     showTrialActions: false,
+                    showTrialDetails: false,
                     showRenewalActions: false,
                     animate: false
                 };
@@ -1270,11 +1308,16 @@ const StatusDisplayManager = {
         }
     },
     
-    toggleUIElements(showSubscription, showTrialActions, showRenewalActions) {
+    toggleUIElements(showSubscription, showTrialActions, showRenewalActions, showTrialDetails = false) {
         if (this.elements.subscriptionDetails) {
             const shouldShowSubscription = Boolean(showSubscription);
             this.elements.subscriptionDetails.classList.toggle('hidden', !shouldShowSubscription);
             this.elements.subscriptionDetails.style.display = shouldShowSubscription ? '' : 'none';
+        }
+        if (this.elements.trialDetails) {
+            const shouldShowTrialDetails = Boolean(showTrialDetails);
+            this.elements.trialDetails.classList.toggle('hidden', !shouldShowTrialDetails);
+            this.elements.trialDetails.style.display = shouldShowTrialDetails ? '' : 'none';
         }
         if (this.elements.trialActions) {
             const shouldShowTrial = Boolean(showTrialActions);
@@ -1335,50 +1378,108 @@ const StatusDisplayManager = {
     },
 
     setPortalAccessEnabled(isEnabled) {
-        const buttonSet = new Set();
-        const fallbackPortal = document.getElementById('quick-portal-btn');
-        const fallbackManage = document.getElementById('manage-subscription-btn');
+        if (!this.elements) this.init();
+        const button = this.elements.portalActionBtn || document.getElementById('portal-action-btn');
+        if (!button) return;
 
-        const registerButton = (btn) => {
-            if (btn) {
-                buttonSet.add(btn);
-            }
-        };
-
-        registerButton(this.elements && this.elements.portalButton ? this.elements.portalButton : fallbackPortal);
-        registerButton(this.elements && this.elements.manageSubscriptionButton ? this.elements.manageSubscriptionButton : fallbackManage);
-        document
-            .querySelectorAll('[data-portal-action="true"]')
-            .forEach(btn => registerButton(btn));
-
-        const buttons = Array.from(buttonSet);
+        if (!button.dataset.originalTitle) {
+            button.dataset.originalTitle = button.getAttribute('title') || '';
+        }
 
         const disabledTitle = translate('ui.license.offlineManageHint', 'Reconnect to manage your subscription');
+        const shouldDisable = !isEnabled;
 
-        buttons.forEach((btn) => {
-            if (!btn.dataset.originalTitle) {
-                btn.dataset.originalTitle = btn.getAttribute('title') || '';
-            }
-
-            const alwaysEnabled = btn.dataset.portalAlwaysEnabled === 'true';
-            const shouldDisable = !isEnabled && !alwaysEnabled;
-
-            if (shouldDisable) {
-                btn.disabled = true;
-                btn.classList.add('opacity-50', 'pointer-events-none');
-                btn.setAttribute('aria-disabled', 'true');
-                btn.setAttribute('title', disabledTitle);
+        if (shouldDisable) {
+            button.disabled = true;
+            button.classList.add('opacity-60', 'cursor-not-allowed');
+            button.setAttribute('aria-disabled', 'true');
+            button.setAttribute('title', disabledTitle);
+        } else {
+            button.disabled = false;
+            button.classList.remove('opacity-60', 'cursor-not-allowed');
+            button.removeAttribute('aria-disabled');
+            if (button.dataset.originalTitle) {
+                button.setAttribute('title', button.dataset.originalTitle);
             } else {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'pointer-events-none');
-                btn.removeAttribute('aria-disabled');
-                if (btn.dataset.originalTitle !== undefined && btn.dataset.originalTitle !== '') {
-                    btn.setAttribute('title', btn.dataset.originalTitle);
-                } else {
-                    btn.removeAttribute('title');
-                }
+                button.removeAttribute('title');
             }
-        });
+        }
+    },
+
+    configurePortalAction(statusType, options = {}) {
+        if (!this.elements) this.init();
+        const card = this.elements.portalActionCard || document.getElementById('portal-action-card');
+        const btn = this.elements.portalActionBtn || document.getElementById('portal-action-btn');
+        if (!btn) {
+            if (card) {
+                card.classList.add('hidden');
+            }
+            return;
+        }
+
+        const textEl = this.elements.portalActionText || document.getElementById('portal-action-text');
+        const iconEl = this.elements.portalActionIcon || document.getElementById('portal-action-icon');
+        const descEl = this.elements.portalActionDescription || document.getElementById('portal-action-description');
+        const panelConfig = options.panelConfig || {};
+        const licenseState = (options.licenseState || '').toLowerCase();
+
+        const isTrialState =
+            statusType === 'trial' ||
+            statusType === 'trial_expired' ||
+            licenseState === LICENSE_STATES.TRIAL_ACTIVE ||
+            licenseState === LICENSE_STATES.TRIAL_EXPIRED;
+
+        const showSubscriptionPanel = Boolean(panelConfig.showSubscription);
+        const shouldHide = isTrialState || panelConfig.showRenewalActions || panelConfig.showTrialActions || !showSubscriptionPanel;
+
+        if (shouldHide) {
+            if (card) card.classList.add('hidden');
+            btn.classList.add('hidden');
+            if (descEl) descEl.classList.add('hidden');
+            return;
+        }
+
+        if (card) card.classList.remove('hidden');
+        btn.classList.remove('hidden');
+        if (descEl) descEl.classList.remove('hidden');
+
+        let variant = 'primary';
+        let label = 'Open Billing Portal';
+        let iconClass = 'fas fa-external-link-alt';
+        let description = 'Cancel, update payment method, or view billing history.';
+
+        if (licenseState === LICENSE_STATES.LICENSED_RENEWAL_REQUIRED || statusType === 'inactive' || statusType === 'cancelled') {
+            variant = 'warning';
+            label = 'Renew Subscription';
+            iconClass = 'fas fa-history';
+            description = 'Reconnect billing to keep POSPal unlocked.';
+        } else if (licenseState === LICENSE_STATES.LICENSED_GRACE) {
+            variant = 'info';
+            label = 'Review Billing Portal';
+            iconClass = 'fas fa-plug';
+            description = 'Confirm your payment method so service stays online.';
+        }
+
+        const baseClasses = 'w-full px-6 py-3 rounded-lg text-base font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors';
+        const variantClasses = {
+            primary: 'bg-indigo-600 text-white hover:bg-indigo-700',
+            warning: 'bg-orange-600 text-white hover:bg-orange-700',
+            info: 'bg-blue-600 text-white hover:bg-blue-700'
+        };
+
+        btn.className = `${baseClasses} ${variantClasses[variant] || variantClasses.primary}`;
+
+        if (options.isOnline === false) {
+            btn.classList.add('opacity-60', 'cursor-not-allowed');
+            btn.disabled = true;
+        } else {
+            btn.classList.remove('opacity-60', 'cursor-not-allowed');
+            btn.disabled = false;
+        }
+
+        if (textEl) textEl.textContent = label;
+        if (iconEl) iconEl.className = iconClass;
+        if (descEl) descEl.textContent = description;
     },
     
     animateStatusChange() {
@@ -2200,7 +2301,8 @@ const FrontendLicenseManager = {
                     daysSince: daysOffline,
                     gracePeriod: true,
                     graceDaysLeft: graceDaysLeft,
-                    isOnline: false
+                    isOnline: false,
+                    licenseState: normalizedLicenseState
                 });
             });
 
@@ -2249,10 +2351,10 @@ const FrontendLicenseManager = {
             this.throttledUIUpdate(() => {
                 StatusDisplayManager.updateLicenseStatus('active', {
                     customerName: serverLicense.customer_name,
-                    isOnline: true
+                    isOnline: true,
+                    licenseState: normalizedLicenseState
                 });
                 this.applyServerBillingDetails(serverLicense);
-                this.showPortalButtons({ showManageButton: false });
             });
 
             console.log('Server license validation complete');
@@ -2276,10 +2378,10 @@ const FrontendLicenseManager = {
             this.throttledUIUpdate(() => {
                 StatusDisplayManager.updateLicenseStatus('inactive', {
                     customerName: serverLicense.customer_name,
-                    isOnline: isServerOnline
+                    isOnline: isServerOnline,
+                    licenseState: normalizedLicenseState
                 });
                 this.applyServerBillingDetails(serverLicense);
-                this.showPortalButtons();
             });
             return this.currentValidationState;
         }
@@ -2299,10 +2401,10 @@ const FrontendLicenseManager = {
             this.throttledUIUpdate(() => {
                 StatusDisplayManager.updateLicenseStatus('cancelled', {
                     customerName: serverLicense.customer_name,
-                    isOnline: isServerOnline
+                    isOnline: isServerOnline,
+                    licenseState: normalizedLicenseState
                 });
                 this.applyServerBillingDetails(serverLicense);
-                this.showPortalButtons();
             });
             return this.currentValidationState;
         }
@@ -2338,8 +2440,7 @@ const FrontendLicenseManager = {
                 timestamp: Date.now()
             };
             this.throttledUIUpdate(() => {
-                StatusDisplayManager.updateLicenseStatus('warning', { remainingDays: 0 });
-                this.hidePortalButtons();
+                StatusDisplayManager.updateLicenseStatus('warning', { remainingDays: 0, licenseState: normalizedLicenseState });
             });
             return this.currentValidationState;
         }
@@ -2479,7 +2580,8 @@ const FrontendLicenseManager = {
         this.throttledUIUpdate(() => {
             StatusDisplayManager.updateLicenseStatus('active', {
                 isOnline: this.cache.isOnline,
-                customerName: licenseData.customerName || licenseData.customerEmail
+                customerName: licenseData.customerName || licenseData.customerEmail,
+                licenseState: licenseData.licenseStatus || LICENSE_STATES.LICENSED_ACTIVE
             });
 
             // Show connectivity status indicator
@@ -2489,9 +2591,6 @@ const FrontendLicenseManager = {
 
             // Update billing date display
             this.updateBillingDateDisplay(licenseData);
-
-            // Show portal access buttons
-            this.showPortalButtons({ showManageButton: false });
 
             // Update license status badge if it exists
             const statusBadge = document.getElementById('license-status-badge');
@@ -2513,8 +2612,10 @@ const FrontendLicenseManager = {
         };
         
         this.throttledUIUpdate(() => {
-            StatusDisplayManager.updateLicenseStatus('trial', { daysLeft });
-            this.hidePortalButtons();
+            StatusDisplayManager.updateLicenseStatus('trial', {
+                daysLeft,
+                licenseState: LICENSE_STATES.TRIAL_ACTIVE
+            });
         });
     },
     
@@ -2527,8 +2628,9 @@ const FrontendLicenseManager = {
         };
         
         this.throttledUIUpdate(() => {
-            StatusDisplayManager.updateLicenseStatus('trial_expired');
-            this.hidePortalButtons();
+            StatusDisplayManager.updateLicenseStatus('trial_expired', {
+                licenseState: LICENSE_STATES.TRIAL_EXPIRED
+            });
         });
     },
     
@@ -2542,7 +2644,11 @@ const FrontendLicenseManager = {
         };
         
         this.throttledUIUpdate(() => {
-            StatusDisplayManager.updateLicenseStatus('offline', { daysSince, isOnline: false });
+            StatusDisplayManager.updateLicenseStatus('offline', {
+                daysSince,
+                isOnline: false,
+                licenseState: this.currentValidationState && this.currentValidationState.licenseState
+            });
         });
     },
 
@@ -2598,8 +2704,17 @@ const FrontendLicenseManager = {
     updateBillingDateDisplay(licenseData) {
         console.log('Updating billing date display with data:', licenseData);
 
-        // Update next payment date
+        const normalizedStatus = normalizeLicenseStatusForDisplay(licenseData.licenseStatus);
+        const planCard = this.elements ? this.elements.planCard : document.getElementById('plan-card');
+        const nextPaymentCard = this.elements ? this.elements.nextPaymentCard : document.getElementById('next-payment-card');
+        const priceCard = this.elements ? this.elements.priceCard : document.getElementById('price-card');
+        const renewalCard = this.elements ? this.elements.renewalCard : document.getElementById('renewal-card');
+        const statusDisplay = document.getElementById('subscription-status-display');
         const nextBillingDate = document.getElementById('next-billing-date');
+        const daysUntilRenewal = document.getElementById('days-until-renewal');
+        const priceElement = document.getElementById('subscription-price');
+
+        // Update next payment date
         if (nextBillingDate) {
             if (licenseData.nextBillingDate) {
                 try {
@@ -2637,7 +2752,6 @@ const FrontendLicenseManager = {
         }
 
         // Update subscription price if available
-        const priceElement = document.getElementById('subscription-price');
         if (priceElement && licenseData.subscriptionPrice) {
             const currency = licenseData.subscriptionCurrency || 'EUR';
             const price = parseFloat(licenseData.subscriptionPrice);
@@ -2702,24 +2816,68 @@ const FrontendLicenseManager = {
             }
 
             // Update subscription status display based on actual status
-            const statusDisplay = document.getElementById('subscription-status-display');
             if (statusDisplay) {
-                const status = licenseData.licenseStatus || 'unknown';
+                const status = normalizedStatus || 'unknown';
                 statusDisplay.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+            }
 
-                // Update styling based on status
-                const parentDiv = statusDisplay.closest('div');
-                if (parentDiv) {
-                    if (status === 'active') {
-                        parentDiv.className = 'bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-center';
-                        statusDisplay.className = 'text-lg font-bold text-emerald-800';
-                    } else if (status === 'inactive' || status === 'cancelled') {
-                        parentDiv.className = 'bg-orange-50 p-4 rounded-lg border border-orange-200 text-center';
-                        statusDisplay.className = 'text-lg font-bold text-orange-800';
-                    } else {
-                        parentDiv.className = 'bg-gray-50 p-4 rounded-lg border border-gray-200 text-center';
-                        statusDisplay.className = 'text-lg font-bold text-gray-800';
-                    }
+            if (planCard && statusDisplay) {
+                const baseClasses = 'p-4 rounded-xl border text-center';
+                if (normalizedStatus === 'active') {
+                    planCard.className = `${baseClasses} bg-emerald-50 border-emerald-200`;
+                    statusDisplay.className = 'text-lg font-bold text-emerald-800';
+                } else if (normalizedStatus === 'grace') {
+                    planCard.className = `${baseClasses} bg-yellow-50 border-yellow-200`;
+                    statusDisplay.className = 'text-lg font-bold text-yellow-800';
+                } else if (normalizedStatus === 'inactive' || normalizedStatus === 'cancelled') {
+                    planCard.className = `${baseClasses} bg-orange-50 border-orange-200`;
+                    statusDisplay.className = 'text-lg font-bold text-orange-800';
+                } else {
+                    planCard.className = `${baseClasses} bg-gray-50 border-gray-200`;
+                    statusDisplay.className = 'text-lg font-bold text-gray-800';
+                }
+            }
+
+            const nextDateExists = Boolean(licenseData.nextBillingDate);
+            if (nextPaymentCard && nextBillingDate) {
+                const baseClasses = 'p-4 rounded-xl border text-center';
+                if (!nextDateExists) {
+                    nextPaymentCard.className = `${baseClasses} bg-gray-50 border-gray-200`;
+                    nextBillingDate.className = 'text-lg font-bold text-gray-700';
+                } else if (daysUntilRenewal && daysUntilRenewal.textContent === 'Overdue') {
+                    nextPaymentCard.className = `${baseClasses} bg-orange-50 border-orange-200`;
+                    nextBillingDate.className = 'text-lg font-bold text-orange-800';
+                } else {
+                    nextPaymentCard.className = `${baseClasses} bg-blue-50 border-blue-200`;
+                    nextBillingDate.className = 'text-lg font-bold text-blue-800';
+                }
+            }
+
+            if (renewalCard && daysUntilRenewal) {
+                const baseClasses = 'p-4 rounded-xl border text-center';
+                if (daysUntilRenewal.textContent === 'Overdue') {
+                    renewalCard.className = `${baseClasses} bg-orange-50 border-orange-200`;
+                    daysUntilRenewal.className = 'text-lg font-bold text-orange-800';
+                } else if (daysUntilRenewal.textContent && daysUntilRenewal.textContent !== 'Unknown') {
+                    renewalCard.className = `${baseClasses} bg-purple-50 border-purple-200`;
+                    daysUntilRenewal.className = 'text-lg font-bold text-purple-800';
+                } else {
+                    renewalCard.className = `${baseClasses} bg-gray-50 border-gray-200`;
+                    daysUntilRenewal.className = 'text-lg font-bold text-gray-700';
+                }
+            }
+
+            if (priceCard && priceElement) {
+                const baseClasses = 'p-4 rounded-xl border text-center';
+                if (normalizedStatus === 'active' || normalizedStatus === 'grace') {
+                    priceCard.className = `${baseClasses} bg-green-50 border-green-200`;
+                    priceElement.className = 'text-lg font-bold text-green-800';
+                } else if (normalizedStatus === 'inactive' || normalizedStatus === 'cancelled') {
+                    priceCard.className = `${baseClasses} bg-gray-50 border-gray-200`;
+                    priceElement.className = 'text-lg font-bold text-gray-700';
+                } else {
+                    priceCard.className = `${baseClasses} bg-gray-50 border-gray-200`;
+                    priceElement.className = 'text-lg font-bold text-gray-700';
                 }
             }
         }
@@ -2740,89 +2898,6 @@ const FrontendLicenseManager = {
             lastValidated: serverLicense.validated_at
         };
         this.updateBillingDateDisplay(billingPayload);
-    },
-    
-    showPortalButtons(options = {}) {
-        const {
-            showQuickButton = true,
-            showManageButton = true
-        } = options;
-        const quickPortalBtn = document.getElementById('quick-portal-btn');
-        const manageSubBtn = document.getElementById('manage-subscription-btn');
-        // Note: footer-portal-btn removed - only using quick access button in license modal
-        if (this.elements) {
-            this.elements.portalButton = quickPortalBtn;
-            this.elements.manageSubscriptionButton = manageSubBtn;
-        }
-
-        if (quickPortalBtn) {
-            quickPortalBtn.classList.toggle('hidden', !showQuickButton);
-            if (showQuickButton) {
-                quickPortalBtn.classList.remove('hidden');
-            }
-        }
-        if (manageSubBtn) {
-            manageSubBtn.classList.toggle('hidden', !showManageButton);
-            if (showManageButton) {
-                manageSubBtn.classList.remove('hidden');
-            }
-        }
-
-        // Update button text based on license status
-        const licenseData = LicenseStorage.getLicenseData();
-        const subscriptionId = localStorage.getItem('pospal_subscription_id');
-        const licenseStatus = licenseData.licenseStatus || localStorage.getItem('pospal_license_status');
-
-        const isManualSubscription = subscriptionId && subscriptionId.includes('manual');
-        const isInactive = licenseStatus && (licenseStatus === 'inactive' || licenseStatus === 'cancelled');
-
-        if (manageSubBtn && showManageButton) {
-            if (isManualSubscription || isInactive) {
-                // Change button to "Reactivate Subscription" for inactive/manual licenses
-                const icon = manageSubBtn.querySelector('i');
-                const text = manageSubBtn.childNodes[manageSubBtn.childNodes.length - 1];
-
-                if (icon) icon.className = 'fas fa-credit-card mr-3';
-                if (text && text.nodeType === Node.TEXT_NODE) {
-                    text.textContent = 'Reactivate Subscription';
-                } else {
-                    // Fallback if structure is different
-                    manageSubBtn.innerHTML = '<i class="fas fa-credit-card mr-3"></i>Reactivate Subscription';
-                }
-
-                // Update description text
-                const descText = manageSubBtn.nextElementSibling;
-                if (descText && descText.tagName === 'P') {
-                    descText.textContent = 'Pay now to reactivate your subscription and unlock all features';
-                }
-            } else {
-                // Active subscription - show normal "Manage Subscription" button
-                const icon = manageSubBtn.querySelector('i');
-                const text = manageSubBtn.childNodes[manageSubBtn.childNodes.length - 1];
-
-                if (icon) icon.className = 'fas fa-cog mr-3';
-                if (text && text.nodeType === Node.TEXT_NODE) {
-                    text.textContent = 'Manage Subscription';
-                } else {
-                    manageSubBtn.innerHTML = '<i class="fas fa-cog mr-3"></i>Manage Subscription';
-                }
-
-                // Update description text
-                const descText = manageSubBtn.nextElementSibling;
-                if (descText && descText.tagName === 'P') {
-                    descText.textContent = 'Cancel, update payment method, or view billing history';
-                }
-            }
-        }
-    },
-    
-    hidePortalButtons() {
-        const quickPortalBtn = document.getElementById('quick-portal-btn');
-        const manageSubBtn = document.getElementById('manage-subscription-btn');
-        // Note: footer-portal-btn removed - only using quick access button in license modal
-
-        if (quickPortalBtn) quickPortalBtn.classList.add('hidden');
-        if (manageSubBtn) manageSubBtn.classList.add('hidden');
     },
     
     // Force validation (for manual refresh)
@@ -10477,6 +10552,7 @@ async function loadLicenseInfo() {
                         unlockToken: true,  // Set to truthy value so existing checks work
                         customerEmail: serverLicense.email,
                         customerName: serverLicense.customer_name,
+                        licenseState: serverLicense.license_state,
                         licenseStatus: serverLicense.subscription_status || 'active',
                         nextBillingDate: serverLicense.next_billing_date,
                         subscriptionPrice: serverLicense.subscription_price,
@@ -10494,6 +10570,7 @@ async function loadLicenseInfo() {
                         unlockToken: true,
                         customerEmail: serverLicense.email,
                         customerName: serverLicense.customer_name,
+                        licenseState: serverLicense.license_state,
                         licenseStatus: 'offline_grace',
                         nextBillingDate: serverLicense.next_billing_date,
                         subscriptionPrice: serverLicense.subscription_price,
@@ -10619,9 +10696,11 @@ async function loadLicenseInfo() {
             console.log(`License found (status: ${licenseData.licenseStatus}), updating billing display...`);
 
             // Update the status display based on license status
+            const canonicalState = licenseData.licenseState || licenseData.licenseStatus;
             const statusPayload = {
                 customerName: licenseData.customerName,
-                isOnline: licenseData.isOnline !== false
+                isOnline: licenseData.isOnline !== false,
+                licenseState: canonicalState
             };
 
             const managerOffline = typeof FrontendLicenseManager !== 'undefined'
@@ -10652,7 +10731,7 @@ async function loadLicenseInfo() {
 
             const statusKey = (licenseData.isGraceMode || forcedOffline)
                 ? 'offline'
-                : (licenseData.licenseStatus || 'inactive');
+                : normalizeLicenseStatusForDisplay(licenseData.licenseStatus);
             StatusDisplayManager.updateLicenseStatus(statusKey, statusPayload);
 
             if (statusKey === 'offline') {
@@ -10662,13 +10741,9 @@ async function loadLicenseInfo() {
                     detailsElement.classList.add('hidden');
                     detailsElement.style.display = 'none';
                 }
-                FrontendLicenseManager.hidePortalButtons();
             } else {
                 // Use the enhanced updateBillingDateDisplay function
                 FrontendLicenseManager.updateBillingDateDisplay(licenseData);
-
-                // Show portal buttons (they can manage/renew even if inactive)
-                FrontendLicenseManager.showPortalButtons();
             }
 
         } else {
@@ -12484,7 +12559,10 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
             // hideOfflineIndicator(); // Removed invasive popup
             hideProgressiveWarning();
             showConnectivityStatus(true, 'active');
-            StatusDisplayManager.updateLicenseStatus('active', { isOnline: true });
+            StatusDisplayManager.updateLicenseStatus('active', {
+                isOnline: true,
+                licenseState: LICENSE_STATES.LICENSED_ACTIVE
+            });
             
             return true;
         } else {
@@ -12494,7 +12572,10 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
             
             // Show online but license issue
             showConnectivityStatus(true, 'invalid');
-            StatusDisplayManager.updateLicenseStatus('inactive', { isOnline: true });
+            StatusDisplayManager.updateLicenseStatus('inactive', {
+                isOnline: true,
+                licenseState: LICENSE_STATES.LICENSED_RENEWAL_REQUIRED
+            });
             
             if (result.error && result.error.includes('Subscription is not active')) {
                 showUnlockRedirect('subscription');
@@ -12510,7 +12591,10 @@ async function attemptServerValidation(customerEmail, unlockToken, timeout = 100
         
         // Show offline status
         showConnectivityStatus(false);
-        StatusDisplayManager.updateLicenseStatus('offline', { isOnline: false });
+        StatusDisplayManager.updateLicenseStatus('offline', {
+            isOnline: false,
+            licenseState: LICENSE_STATES.LICENSE_ERROR
+        });
         
         return false; // Assume offline
     }
@@ -12529,7 +12613,10 @@ function handleOfflineMode() {
     
     if (!isInOfflineGracePeriod()) {
         // Grace period expired - show trial mode
-        StatusDisplayManager.updateLicenseStatus('trial', { isOnline: false });
+        StatusDisplayManager.updateLicenseStatus('trial', {
+            isOnline: false,
+            licenseState: LICENSE_STATES.TRIAL_ACTIVE
+        });
         showTrialModeNotification();
     } else {
         // Still in grace period - update status accordingly
@@ -12541,10 +12628,16 @@ function handleOfflineMode() {
         
         if (daysSince > normalGraceDays) {
             // In warning period
-            StatusDisplayManager.updateLicenseStatus('warning', { isOnline: false });
+            StatusDisplayManager.updateLicenseStatus('warning', {
+                isOnline: false,
+                licenseState: LICENSE_STATES.LICENSE_ERROR
+            });
         } else {
             // Normal grace period
-            StatusDisplayManager.updateLicenseStatus('offline', { isOnline: false });
+            StatusDisplayManager.updateLicenseStatus('offline', {
+                isOnline: false,
+                licenseState: LICENSE_STATES.LICENSE_ERROR
+            });
         }
     }
 }

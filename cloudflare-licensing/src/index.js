@@ -35,7 +35,8 @@ import {
   getImmediateReactivationEmailTemplate,
   getRenewalReminderEmailTemplate,
   getMachineSwitchEmailTemplate,
-  getLicenseDisconnectionEmailTemplate
+  getLicenseDisconnectionEmailTemplate,
+  getLicenseRecoveryEmailTemplate
 } from './email-templates.js';
 
 /**
@@ -2613,7 +2614,7 @@ async function handleRecoverLicense(request, env) {
 
     // Send recovery email with unlock token
     try {
-      const { subject, html } = getWelcomeEmailTemplate(
+      const { subject, html } = getLicenseRecoveryEmailTemplate(
         customer.name || 'Customer',
         customer.unlock_token,
         customer.email
@@ -2630,8 +2631,8 @@ async function handleRecoverLicense(request, env) {
         body: JSON.stringify({
           from: 'POSPal <noreply@pospal.gr>',
           to: [customer.email],
-          subject: 'Your POSPal License Key',
-          html: html,
+          subject,
+          html,
         }),
       });
 
