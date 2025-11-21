@@ -116,6 +116,9 @@ export default {
       default:
         return createResponse({ error: 'Not found' }, 404);
     }
+  },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runSubscriptionReconciliation(env));
   }
 };
 
@@ -2663,6 +2666,114 @@ async function handleRecoverLicense(request, env) {
   } catch (error) {
     console.error('License recovery error:', error);
     return createResponse({ error: 'Failed to process recovery request' }, 500);
+  }
+}
+
+const RECON_DEFAULT_LIMIT = 10;
+
+async function runSubscriptionReconciliation(env) {
+  const enabledFlag = (env.SUBSCRIPTION_RECONCILIATION_ENABLED || 'true').toString().toLowerCase();
+  if (enabledFlag === 'false' || enabledFlag === '0' || enabledFlag === 'off') {
+    return;
+  }
+
+  const batchOverride = parseInt(env.SUBSCRIPTION_RECONCILIATION_BATCH || '', 10);
+  const batchLimit = Number.isFinite(batchOverride)
+    ? Math.max(1, batchOverride)
+    : RECON_DEFAULT_LIMIT;
+
+  try {
+    const result = await env.DB.prepare(`
+      SELECT id, email, name, subscription_id, subscription_status, next_billing_date
+      FROM customers
+      WHERE subscription_id IS NOT NULL
+        AND subscription_id != ''
+        AND (
+          subscription_status != 'active'
+          OR (
+            subscription_status = 'active'
+            AND next_billing_date IS NOT NULL
+            AND datetime(next_billing_date) < datetime('now')
+          )
+        )
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `).bind(batchLimit).all();
+
+    const candidates = (result && result.results) || [];
+    if (!candidates.length) {
+      console.log('[Reconcile] No reconciliation candidates detected');
+      return;
+    }
+
+    const stripe = createStripeHelper(env);
+    let checked = 0;
+    let updated = 0;
+
+    for (const customer of candidates) {
+      checked++;
+      if (!customer.subscription_id) continue;
+
+      const nextBillingEpoch = customer.next_billing_date ? Date.parse(customer.next_billing_date) : NaN;
+      const hasStaleBillingDate = Boolean(
+        customer.subscription_status === 'active'
+        && Number.isFinite(nextBillingEpoch)
+        && nextBillingEpoch < Date.now()
+      );
+
+      try {
+        const subscription = await stripe.get(`/subscriptions/${customer.subscription_id}`);
+        if (subscription?.error) {
+          console.warn(`[Reconcile] Stripe lookup failed for ${customer.subscription_id}`, subscription.error);
+          continue;
+        }
+
+        if (subscription?.status !== 'active') {
+          continue;
+        }
+
+        const currentStart = subscription.current_period_start
+          ? new Date(subscription.current_period_start * 1000).toISOString()
+          : null;
+        const currentEnd = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000).toISOString()
+          : null;
+        const price = subscription.items?.data?.[0]?.price;
+        const amount = price?.unit_amount ?? null;
+        const currency = price?.currency ?? null;
+
+        await env.DB.prepare(`
+          UPDATE customers
+          SET subscription_status = 'active',
+              current_period_start = COALESCE(?, current_period_start),
+              current_period_end = COALESCE(?, current_period_end),
+              next_billing_date = COALESCE(?, next_billing_date),
+              subscription_amount = COALESCE(?, subscription_amount),
+              subscription_currency = COALESCE(?, subscription_currency),
+              last_seen = datetime('now')
+          WHERE id = ?
+        `).bind(currentStart, currentEnd, currentEnd, amount, currency, customer.id).run();
+
+        const auditAction = hasStaleBillingDate
+          ? 'subscription_reconciled_stale_dates'
+          : 'subscription_reconciled';
+
+        await logAuditEvent(env.DB, customer.id, auditAction, {
+          subscriptionId: customer.subscription_id,
+          previousStatus: customer.subscription_status,
+          source: 'scheduled_reconciliation',
+          staleBillingDate: hasStaleBillingDate
+        });
+
+        updated++;
+      } catch (stripeError) {
+        console.error(`[Reconcile] Failed to reconcile subscription ${customer.subscription_id}:`, stripeError);
+      }
+    }
+
+    console.log(`[Reconcile] Checked ${checked} subscriptions, updated ${updated}`);
+  } catch (error) {
+    console.error('[Reconcile] Subscription reconciliation job failed:', error);
   }
 }
 

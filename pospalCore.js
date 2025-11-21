@@ -33,6 +33,17 @@ const LICENSE_STATES = {
     LICENSE_ERROR: 'license_error'
 };
 
+const LICENSE_STATE_STATUS_MAP = {
+    [LICENSE_STATES.LICENSED_ACTIVE]: 'active',
+    [LICENSE_STATES.LICENSED_GRACE]: 'offline',
+    [LICENSE_STATES.LICENSED_RENEWAL_REQUIRED]: 'inactive',
+    [LICENSE_STATES.LICENSED_CANCELLED]: 'cancelled',
+    [LICENSE_STATES.TRIAL_ACTIVE]: 'trial',
+    [LICENSE_STATES.TRIAL_EXPIRED]: 'trial_expired',
+    [LICENSE_STATES.LICENSE_ERROR]: 'warning',
+    [LICENSE_STATES.LICENSE_MISSING]: 'inactive'
+};
+
 function isLikelyNetworkError(error) {
     if (!error) return false;
     const message = String(error.message || error).toLowerCase();
@@ -115,28 +126,54 @@ function getElementByIds(ids) {
     return null;
 }
 
-function normalizeLicenseStatusForDisplay(status) {
+function normalizeLicenseStatusForDisplay(status, licenseState) {
+    const normalizedState = typeof licenseState === 'string' ? licenseState.toLowerCase() : '';
+    if (normalizedState && LICENSE_STATE_STATUS_MAP[normalizedState]) {
+        return LICENSE_STATE_STATUS_MAP[normalizedState];
+    }
+    return normalizeLegacyStatusValue(status || normalizedState);
+}
+
+function normalizeLegacyStatusValue(status) {
     if (!status) return 'inactive';
     const normalized = String(status).toLowerCase();
 
-    if (normalized === 'canceled') return 'cancelled';
-    if (normalized === 'licensed_active') return 'active';
-    if (normalized === 'licensed_cancelled') return 'cancelled';
-
-    if ([
-        'expired',
-        'inactive',
-        'past_due',
-        'past-due',
-        'unpaid',
-        'licensed_grace',
-        'licensed_renewal_required',
-        'renewal_required'
-    ].includes(normalized)) {
-        return 'inactive';
+    switch (normalized) {
+        case 'canceled':
+            return 'cancelled';
+        case 'licensed_active':
+            return 'active';
+        case 'licensed_cancelled':
+            return 'cancelled';
+        case 'licensed_grace':
+        case 'offline_grace':
+            return 'offline';
+        case 'licensed_renewal_required':
+        case 'expired':
+        case 'inactive':
+        case 'past_due':
+        case 'past-due':
+        case 'unpaid':
+        case 'incomplete':
+        case 'incomplete_expired':
+        case 'paused':
+        case 'past_due_incomplete':
+        case 'manual':
+        case 'renewal_required':
+            return 'inactive';
+        case 'trial_active':
+            return 'trial';
+        case 'trial_expired':
+            return 'trial_expired';
+        case 'license_error':
+        case 'license_unknown':
+        case 'unknown':
+            return 'warning';
+        case 'license_missing':
+            return 'inactive';
+        default:
+            return normalized;
     }
-
-    return normalized;
 }
 
 const ServerLicenseStatus = {
@@ -2577,12 +2614,12 @@ const FrontendLicenseManager = {
         };
 
         // Prevent UI flicker by throttling updates
-        this.throttledUIUpdate(() => {
-            StatusDisplayManager.updateLicenseStatus('active', {
-                isOnline: this.cache.isOnline,
-                customerName: licenseData.customerName || licenseData.customerEmail,
-                licenseState: licenseData.licenseStatus || LICENSE_STATES.LICENSED_ACTIVE
-            });
+            this.throttledUIUpdate(() => {
+                StatusDisplayManager.updateLicenseStatus('active', {
+                    isOnline: this.cache.isOnline,
+                    customerName: licenseData.customerName || licenseData.customerEmail,
+                    licenseState: licenseData.licenseState || LICENSE_STATES.LICENSED_ACTIVE
+                });
 
             // Show connectivity status indicator
             if (this.cache.isOnline) {
@@ -2704,7 +2741,8 @@ const FrontendLicenseManager = {
     updateBillingDateDisplay(licenseData) {
         console.log('Updating billing date display with data:', licenseData);
 
-        const normalizedStatus = normalizeLicenseStatusForDisplay(licenseData.licenseStatus);
+        const normalizedStatus = licenseData.displayStatus
+            || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState);
         const planCard = this.elements ? this.elements.planCard : document.getElementById('plan-card');
         const nextPaymentCard = this.elements ? this.elements.nextPaymentCard : document.getElementById('next-payment-card');
         const priceCard = this.elements ? this.elements.priceCard : document.getElementById('price-card');
@@ -2761,8 +2799,8 @@ const FrontendLicenseManager = {
 
         // Update footer status badge based on license status and days remaining
         const footerStatus = document.getElementById('footer-trial-status');
-        if (footerStatus && licenseData.licenseStatus) {
-            const status = licenseData.licenseStatus;
+        if (footerStatus && normalizedStatus) {
+            const status = normalizedStatus;
 
             // Calculate days left for active subscriptions
             let daysLeft = null;
@@ -2959,7 +2997,13 @@ function showActiveLicenseStatus() {
     // This function is now handled internally by FrontendLicenseManager
     // but we maintain the signature for compatibility
     const licenseData = LicenseStorage.getLicenseData();
-    if (licenseData.unlockToken && licenseData.customerEmail && licenseData.licenseStatus === 'active') {
+    if (!licenseData) return;
+
+    const canonicalState = licenseData.licenseState || licenseData.licenseStatus;
+    const displayStatus = licenseData.displayStatus
+        || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, canonicalState);
+
+    if (licenseData.unlockToken && licenseData.customerEmail && displayStatus === 'active') {
         FrontendLicenseManager.updateUIForActiveStatus(licenseData);
     }
 }
@@ -10645,28 +10689,40 @@ async function loadLicenseInfo() {
 
         console.log('License data for display:', licenseData);
 
+        let canonicalState = null;
+        let displayStatus = null;
+        if (licenseData) {
+            canonicalState = licenseData.licenseState || licenseData.licenseStatus;
+            displayStatus = licenseData.displayStatus
+                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, canonicalState);
+            licenseData.displayStatus = displayStatus;
+        }
+
         // Update license status badge
         const statusBadge = document.getElementById('license-status-badge');
         if (statusBadge) {
             if (licenseData && licenseData.unlockToken) {
-                // Has a license - show actual status
-                if (licenseData.licenseStatus === 'offline_grace') {
+                const badgeStatus = displayStatus || 'inactive';
+                if (badgeStatus === 'offline') {
                     const daysLeftText = typeof licenseData.graceDaysLeft === 'number'
                         ? ` (${licenseData.graceDaysLeft} days left)`
                         : '';
                     statusBadge.textContent = `Grace Mode - Offline${daysLeftText}`;
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
-                } else if (licenseData.licenseStatus === 'active') {
+                } else if (badgeStatus === 'active') {
                     statusBadge.textContent = 'Active License';
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800';
-                } else if (licenseData.licenseStatus === 'inactive') {
+                } else if (badgeStatus === 'inactive') {
                     statusBadge.textContent = 'Inactive - Renew to Activate';
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800';
-                } else if (licenseData.licenseStatus === 'cancelled') {
+                } else if (badgeStatus === 'cancelled') {
                     statusBadge.textContent = 'Cancelled - Resubscribe';
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800';
+                } else if (badgeStatus === 'warning') {
+                    statusBadge.textContent = 'License Warning - Verify Billing';
+                    statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800';
                 } else {
-                    statusBadge.textContent = `License: ${licenseData.licenseStatus}`;
+                    statusBadge.textContent = `License: ${badgeStatus}`;
                     statusBadge.className = 'px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800';
                 }
             } else {
@@ -10696,11 +10752,11 @@ async function loadLicenseInfo() {
             console.log(`License found (status: ${licenseData.licenseStatus}), updating billing display...`);
 
             // Update the status display based on license status
-            const canonicalState = licenseData.licenseState || licenseData.licenseStatus;
             const statusPayload = {
                 customerName: licenseData.customerName,
                 isOnline: licenseData.isOnline !== false,
-                licenseState: canonicalState
+                licenseState: canonicalState,
+                displayStatus: displayStatus
             };
 
             const managerOffline = typeof FrontendLicenseManager !== 'undefined'
@@ -10729,9 +10785,11 @@ async function loadLicenseInfo() {
                 statusPayload.isOnline = false;
             }
 
+            const resolvedStatus = licenseData.displayStatus
+                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, canonicalState);
             const statusKey = (licenseData.isGraceMode || forcedOffline)
                 ? 'offline'
-                : normalizeLicenseStatusForDisplay(licenseData.licenseStatus);
+                : (resolvedStatus || 'inactive');
             StatusDisplayManager.updateLicenseStatus(statusKey, statusPayload);
 
             if (statusKey === 'offline') {
@@ -11700,11 +11758,16 @@ async function openCustomerPortal() {
         // Check if subscription is inactive or manual - redirect to checkout for reactivation
         const licenseData = LicenseStorage.getLicenseData();
         const subscriptionId = localStorage.getItem('pospal_subscription_id');
-        const licenseStatus = licenseData.licenseStatus || localStorage.getItem('pospal_license_status');
+        const effectiveStatus = licenseData
+            ? (licenseData.displayStatus
+                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState))
+            : null;
+        const cachedStatus = effectiveStatus
+            || normalizeLicenseStatusForDisplay(localStorage.getItem('pospal_license_status'));
 
         // Detect manual/test subscriptions or inactive status
         const isManualSubscription = subscriptionId && subscriptionId.includes('manual');
-        const isInactive = licenseStatus && (licenseStatus === 'inactive' || licenseStatus === 'cancelled');
+        const isInactive = cachedStatus && (cachedStatus === 'inactive' || cachedStatus === 'cancelled');
 
         if (isManualSubscription || isInactive) {
             console.log(`Detected ${isManualSubscription ? 'manual' : 'inactive'} subscription - redirecting to checkout for reactivation`);
