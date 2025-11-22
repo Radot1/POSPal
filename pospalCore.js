@@ -10628,6 +10628,38 @@ async function loadLicenseInfo() {
                     };
                     console.log('Server license running in grace mode - offline status reflected in UI data');
                 }
+
+                // Surface inactive/cancelled licenses so UI doesn't fall back to "No License"
+                const licenseStateValue = typeof serverLicense.license_state === 'string'
+                    ? serverLicense.license_state.toLowerCase()
+                    : '';
+                const subscriptionStatus = serverLicense.subscription_status || serverLicense.status;
+                const statusHint = typeof subscriptionStatus === 'string' ? subscriptionStatus.toLowerCase() : '';
+                const hasLicensedState = licenseStateValue.startsWith('licensed_');
+                const hasServerLicense = hasLicensedState || serverLicense.licensed || (statusHint && !statusHint.includes('trial'));
+
+                if (!licenseData && hasServerLicense) {
+                    const derivedStatus = subscriptionStatus
+                        || serverLicense.license_state
+                        || (serverLicense.active ? 'active' : 'inactive');
+                    licenseData = {
+                        unlockToken: true,
+                        customerEmail: serverLicense.email,
+                        customerName: serverLicense.customer_name,
+                        licenseState: serverLicense.license_state,
+                        licenseStatus: derivedStatus,
+                        nextBillingDate: serverLicense.next_billing_date,
+                        subscriptionPrice: serverLicense.subscription_price,
+                        subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+                        lastValidated: serverLicense.validated_at,
+                        graceDaysLeft: serverLicense.grace_days_left,
+                        daysOffline: serverLicense.days_offline,
+                        isGraceMode: false,
+                        isOnline: connectivityIndicatesOnline,
+                        connectivityStatus
+                    };
+                    console.log('Server license present but inactive - using data for display.');
+                }
             } else {
                 console.warn('Server license status check failed:', response.status);
             }

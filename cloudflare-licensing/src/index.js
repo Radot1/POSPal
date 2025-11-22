@@ -36,7 +36,9 @@ import {
   getRenewalReminderEmailTemplate,
   getMachineSwitchEmailTemplate,
   getLicenseDisconnectionEmailTemplate,
-  getLicenseRecoveryEmailTemplate
+  getLicenseRecoveryEmailTemplate,
+  getRenewalProcessedEmailTemplate,
+  getSubscriptionCancelledEmailTemplate
 } from './email-templates.js';
 
 /**
@@ -267,7 +269,7 @@ async function handleUnifiedStandardValidation(requestData, env, startTime) {
       
       // Send machine switch notification if needed
       if (machineChanged) {
-        await sendMachineSwitchEmail(env, customer.id, customer.email, customer.name || 'Customer');
+        await sendMachineSwitchEmail(env, customer.id, customer.email, customer.name || 'Customer', device.deviceInfo || null);
       }
     } else {
       // Just update validation timestamp
@@ -1295,6 +1297,16 @@ async function handlePaymentSucceeded(event, env) {
     // Send reactivation email only if account was previously inactive
     if (wasInactive) {
       await sendImmediateReactivationEmail(env, customer.id, customer.email, customer.name || 'Customer');
+    } else {
+      await sendRenewalProcessedEmail(
+        env,
+        customer.id,
+        customer.email,
+        customer.name || 'Customer',
+        pricingData.subscription_amount,
+        pricingData.subscription_currency,
+        billingData.current_period_end
+      );
     }
     
     console.log(`Payment succeeded for ${customer.email}${wasInactive ? ' - IMMEDIATELY REACTIVATED' : ' - RENEWED'}`);
@@ -1314,6 +1326,14 @@ async function handlePaymentFailed(event, env) {
   const invoice = event.data.object;
   const subscriptionId = invoice.subscription;
   const customerEmail = invoice.customer_email;
+  const invoiceDetails = {
+    amountDueCents: invoice.amount_due || null,
+    currency: invoice.currency || 'eur',
+    hostedInvoiceUrl: invoice.hosted_invoice_url || null,
+    dueDate: invoice.next_payment_attempt
+      ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+      : (invoice.due_date ? new Date(invoice.due_date * 1000).toISOString() : null)
+  };
   
   if (!subscriptionId) {
     return createResponse({ received: true });
@@ -1344,8 +1364,8 @@ async function handlePaymentFailed(event, env) {
       suspendedAt: new Date().toISOString()
     });
     
-    // Send immediate suspension email
-    await sendImmediateSuspensionEmail(env, customer.id, customerEmail || customer.email, customer.name || 'Customer');
+    // Send immediate suspension email with invoice context for clarity
+    await sendImmediateSuspensionEmail(env, customer.id, customerEmail || customer.email, customer.name || 'Customer', invoiceDetails);
     
     console.log(`Payment failed for ${customer.email} - IMMEDIATELY SUSPENDED (no grace period)`);
     return createResponse({ success: true });
@@ -1362,7 +1382,7 @@ async function handlePaymentFailed(event, env) {
 async function handleSubscriptionCancelled(event, env) {
   const subscription = event.data.object;
   const subscriptionId = subscription.id;
-  
+
   try {
     // Update customer status to cancelled
     const stmt = env.DB.prepare(`
@@ -1370,12 +1390,30 @@ async function handleSubscriptionCancelled(event, env) {
       SET subscription_status = 'cancelled'
       WHERE subscription_id = ?
     `);
-    
+
     await stmt.bind(subscriptionId).run();
-    
+
+    // Fetch customer to notify about cancellation
+    const customer = await env.DB.prepare(`
+      SELECT id, email, name
+      FROM customers
+      WHERE subscription_id = ?
+      LIMIT 1
+    `).bind(subscriptionId).first();
+
+    if (customer && customer.email) {
+      await sendSubscriptionCancelledEmail(
+        env,
+        customer.id,
+        customer.email,
+        customer.name || 'Customer',
+        subscription
+      );
+    }
+
     console.log(`Subscription cancelled: ${subscriptionId}`);
     return createResponse({ success: true });
-    
+
   } catch (error) {
     console.error('Cancellation handling error:', error);
     return createResponse({ error: 'Failed to process cancellation' }, 500);
@@ -1688,9 +1726,9 @@ async function sendPaymentFailureEmail(env, customerId, email, name) {
 /**
  * Send immediate suspension email - NO GRACE PERIOD POLICY
  */
-async function sendImmediateSuspensionEmail(env, customerId, email, name) {
+async function sendImmediateSuspensionEmail(env, customerId, email, name, invoiceDetails = {}) {
   try {
-    const { subject, html } = getImmediateSuspensionEmailTemplate(name);
+    const { subject, html } = getImmediateSuspensionEmailTemplate(name, invoiceDetails);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'immediate_suspension', email, subject);
     
@@ -1760,11 +1798,85 @@ async function sendImmediateReactivationEmail(env, customerId, email, name) {
 }
 
 /**
+ * Send renewal processed receipt (for on-time renewals)
+ */
+async function sendRenewalProcessedEmail(env, customerId, email, name, amountCents = null, currency = 'eur', periodEnd = null) {
+  try {
+    const { subject, html } = getRenewalProcessedEmailTemplate(name, amountCents, currency, periodEnd);
+
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'renewal_processed', email, subject);
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal Billing <billing@pospal.gr>',
+        to: [email],
+        subject: subject,
+        html: html,
+      }),
+    });
+
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`Renewal processed email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send renewal processed email:`, error);
+    }
+
+  } catch (error) {
+    console.error('Renewal processed email error:', error);
+  }
+}
+
+/**
+ * Send renewal reminder ahead of billing date
+ */
+async function sendRenewalReminderEmail(env, customerId, email, name, daysLeft) {
+  try {
+    const { subject, html } = getRenewalReminderEmailTemplate(name, daysLeft);
+
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'renewal_reminder', email, subject);
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal Billing <billing@pospal.gr>',
+        to: [email],
+        subject,
+        html,
+      }),
+    });
+
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`Renewal reminder email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send renewal reminder email:`, error);
+    }
+  } catch (error) {
+    console.error('Renewal reminder email error:', error);
+  }
+}
+
+/**
  * Send machine switch notification email
  */
-async function sendMachineSwitchEmail(env, customerId, email, name) {
+async function sendMachineSwitchEmail(env, customerId, email, name, deviceInfo = null) {
   try {
-    const { subject, html } = getMachineSwitchEmailTemplate(name, 'New Computer');
+    const deviceContext = deviceInfo || { hostname: 'New Computer' };
+    const { subject, html } = getMachineSwitchEmailTemplate(name, deviceContext);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'machine_switch', email, subject);
     
@@ -1799,9 +1911,9 @@ async function sendMachineSwitchEmail(env, customerId, email, name) {
 /**
  * Send license disconnection confirmation email
  */
-async function sendLicenseDisconnectionEmail(env, customerId, email, name, unlockToken) {
+async function sendLicenseDisconnectionEmail(env, customerId, email, name, unlockToken, deviceInfo = null) {
   try {
-    const { subject, html } = getLicenseDisconnectionEmailTemplate(name, unlockToken, email);
+    const { subject, html } = getLicenseDisconnectionEmailTemplate(name, unlockToken, email, deviceInfo || {});
 
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'license_disconnection', email, subject);
 
@@ -1972,7 +2084,7 @@ async function handleSessionEnd(request, env) {
 
     // Get session and customer info BEFORE ending session (for email)
     const session = await env.DB.prepare(`
-      SELECT s.customer_id, c.email, c.name, c.unlock_token
+      SELECT s.customer_id, s.device_info, c.email, c.name, c.unlock_token
       FROM active_sessions s
       JOIN customers c ON s.customer_id = c.id
       WHERE s.session_id = ? AND s.status = 'active'
@@ -1987,12 +2099,20 @@ async function handleSessionEnd(request, env) {
 
     // Send email notification if requested and session was found
     if (sendEmail && session) {
+      let parsedDeviceInfo = null;
+      try {
+        parsedDeviceInfo = session.device_info ? JSON.parse(session.device_info) : null;
+      } catch (parseError) {
+        console.warn('Failed to parse device_info for disconnection email:', parseError);
+      }
+
       await sendLicenseDisconnectionEmail(
         env,
         session.customer_id,
         session.email,
         session.name || 'Customer',
-        session.unlock_token
+        session.unlock_token,
+        parsedDeviceInfo
       );
     }
 
@@ -2673,6 +2793,49 @@ async function handleRecoverLicense(request, env) {
   }
 }
 
+/**
+ * Send subscription cancellation email
+ */
+async function sendSubscriptionCancelledEmail(env, customerId, email, name, subscription) {
+  try {
+    const periodEnd = subscription?.current_period_end
+      ? new Date(subscription.current_period_end * 1000).toISOString()
+      : null;
+    const { subject, html } = getSubscriptionCancelledEmailTemplate(
+      name,
+      subscription?.id || '',
+      periodEnd
+    );
+
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'subscription_cancelled', email, subject);
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal Billing <billing@pospal.gr>',
+        to: [email],
+        subject,
+        html,
+      }),
+    });
+
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`Subscription cancelled email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send subscription cancelled email:`, error);
+    }
+  } catch (error) {
+    console.error('Subscription cancelled email error:', error);
+  }
+}
+
 const RECON_DEFAULT_LIMIT = 10;
 
 async function runSubscriptionReconciliation(env) {
@@ -2779,9 +2942,59 @@ async function runSubscriptionReconciliation(env) {
   } catch (error) {
     console.error('[Reconcile] Subscription reconciliation job failed:', error);
   }
+
+  // Send proactive renewal reminders for active subscribers approaching billing date
+  try {
+    await sendUpcomingRenewalReminders(env);
+  } catch (reminderError) {
+    console.error('[Reconcile] Failed to send renewal reminders:', reminderError);
+  }
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+async function sendUpcomingRenewalReminders(env) {
+  const windowDaysRaw = parseInt(env.RENEWAL_REMINDER_WINDOW_DAYS || '5', 10);
+  const windowDays = Number.isFinite(windowDaysRaw) && windowDaysRaw > 0 ? windowDaysRaw : 5;
+  const windowExpr = `+${windowDays} days`;
+
+  const result = await env.DB.prepare(`
+    SELECT id, email, name, next_billing_date
+    FROM customers
+    WHERE subscription_status = 'active'
+      AND next_billing_date IS NOT NULL
+      AND datetime(next_billing_date) > datetime('now')
+      AND datetime(next_billing_date) <= datetime('now', ?)
+    LIMIT 100
+  `).bind(windowExpr).all();
+
+  const candidates = (result && result.results) || [];
+  if (!candidates.length) {
+    return;
+  }
+
+  for (const customer of candidates) {
+    // Dedupe: if reminder sent in last 30 days, skip
+    const alreadySent = await env.DB.prepare(`
+      SELECT 1 FROM email_log
+      WHERE customer_id = ? AND email_type = 'renewal_reminder'
+        AND created_at >= datetime('now', '-30 days')
+      LIMIT 1
+    `).bind(customer.id).first();
+
+    if (alreadySent) {
+      continue;
+    }
+
+    const nextBilling = customer.next_billing_date ? Date.parse(customer.next_billing_date) : null;
+    if (!Number.isFinite(nextBilling) || nextBilling <= Date.now()) {
+      continue;
+    }
+
+    const daysLeft = Math.max(1, Math.ceil((nextBilling - Date.now()) / MS_PER_DAY));
+    await sendRenewalReminderEmail(env, customer.id, customer.email, customer.name || 'Customer', daysLeft);
+  }
+}
 
 function getTrialDurationDays(env) {
   const raw = parseInt(env.TRIAL_DURATION_DAYS || '30', 10);
