@@ -1436,9 +1436,11 @@ async function handleLicenseValidation(request, env) {
 
       return createValidationResponse({
         valid: true,
+        active: false,
         customerName: customer.name || customer.email.split('@')[0],
         customerId: customer.id,
         subscriptionInfo: detailedStatus,
+        subscriptionStatus: detailedStatus.status || customer.subscription_status,
         machineChanged: false,
         subscriptionWarning: 'Subscription is not active. Some features may be restricted.',
         performance: {
@@ -1498,9 +1500,11 @@ async function handleLicenseValidation(request, env) {
     
     return createValidationResponse({
       valid: true,
+      active: true,
       customerName: customer.name || customer.email.split('@')[0],
       customerId: customer.id,
       subscriptionInfo: detailedStatus,
+      subscriptionStatus: detailedStatus.status || customer.subscription_status,
       machineChanged,
       performance: {
         responseTime: Date.now() - startTime,

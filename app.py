@@ -330,6 +330,22 @@ LICENSE_STATUS_CACHE_TTL_SECONDS = 30  # TTL for cached /api/license/status resp
 # Track recent cloud validation failures to avoid repeated blocking calls when offline
 _last_cloud_failure = {"timestamp": None, "error": None}
 
+# --- Helpers shared across license normalization/validation ---
+def _period_has_elapsed(period_end_value):
+    """Return True if a provided ISO date/time is in the past."""
+    if not period_end_value:
+        return False
+    try:
+        value_str = str(period_end_value).strip()
+        dt = datetime.fromisoformat(value_str.replace('Z', '+00:00')) if isinstance(value_str, str) else None
+        if not dt:
+            return False
+        now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+        return dt < now
+    except Exception:
+        return False
+
+# --- Graceful cloud validation backoff state ---
 # Ensure we never run more than one outbound cloud validation at a time
 _cloud_validation_lock = threading.Lock()
 
@@ -679,8 +695,14 @@ def call_cloudflare_api(endpoint, data, timeout=15, max_retries=3):
                 return None
             
             elif response.status_code in [400, 401, 403, 404]:  # Client errors - don't retry
+                # Return parsed error payload so caller can act on subscription state (e.g., inactive)
+                try:
+                    error_payload = response.json()
+                except json.JSONDecodeError:
+                    error_payload = {"error": {"message": response.text}}
+                error_payload["_http_status"] = response.status_code
                 app.logger.error(f"Cloudflare API client error {response.status_code} for {endpoint}: {response.text[:500]}")
-                return None
+                return error_payload
             
             else:
                 app.logger.error(f"Cloudflare API unexpected status {response.status_code} for {endpoint}: {response.text[:500]}")
@@ -9559,16 +9581,30 @@ def _normalize_license_status_payload(email: str | None,
         subscription_price = price
         subscription_currency = subscription_currency or currency
 
+    subscription_status = payload.get('subscription_status') or subscription_info.get('status')
+    current_period_end = payload.get('current_period_end') or subscription_info.get('currentPeriodEnd')
+
+    # Derive an accurate active flag that respects cancellation/past-due states and period expiry
+    active_flag = payload.get('active')
+    if active_flag is None:
+        active_flag = payload.get('valid', False)
+
+    normalized_status = str(subscription_status).lower() if subscription_status else ''
+    if normalized_status in LICENSE_CANCELLED_STATUSES or normalized_status in LICENSE_RENEWAL_REQUIRED_STATUSES:
+        active_flag = False
+    if _period_has_elapsed(current_period_end):
+        active_flag = False
+
     result.update({
         "licensed": payload.get('licensed', payload.get('valid', True)),
-        "active": payload.get('active', payload.get('valid', False)),
+        "active": bool(active_flag),
         "email": email_value,
         "customer_name": payload.get('customer_name') or payload.get('customerName'),
-        "subscription_status": payload.get('subscription_status') or subscription_info.get('status'),
+        "subscription_status": subscription_status,
         "subscription_price": subscription_price,
         "subscription_currency": subscription_currency,
         "next_billing_date": payload.get('next_billing_date') or subscription_info.get('nextBillingDate'),
-        "current_period_end": payload.get('current_period_end') or subscription_info.get('currentPeriodEnd'),
+        "current_period_end": current_period_end,
         "grace_period": payload.get('grace_period', False),
         "grace_days_left": payload.get('grace_days_left'),
         "days_offline": payload.get('days_offline'),
@@ -9639,7 +9675,6 @@ def _compute_server_license_status(force_refresh: bool = False) -> dict | None:
             server_license,
             source="server_license_cache" if from_cache else "server_license_cloud"
         )
-        payload["active"] = license_data.get('valid', True)
         if not payload.get("validated_at"):
             payload["validated_at"] = license_data.get('validated_at') or datetime.now().isoformat()
         payload["_cache_hit"] = from_cache
@@ -10084,23 +10119,44 @@ def _validate_license_with_cloud(
         except ValueError:
             return None
 
+    def _cached_license_expired(cache_info):
+        """Detect if cached license/subscription appears expired or cancelled."""
+        if not cache_info:
+            return False
+        license_data = cache_info.get('license_data') or {}
+        subscription_info = license_data.get('subscription_info') or {}
+        status = (license_data.get('subscription_status') or subscription_info.get('status') or '').lower()
+        if status in LICENSE_CANCELLED_STATUSES or status in LICENSE_RENEWAL_REQUIRED_STATUSES:
+            return True
+        current_period_end = license_data.get('current_period_end') or subscription_info.get('currentPeriodEnd')
+        return _period_has_elapsed(current_period_end)
+
     cache_info = cache_data or _load_license_cache()
     if not force_refresh:
         age_seconds = _cache_age_seconds(cache_info)
         if age_seconds is not None and age_seconds < CLOUD_VALIDATION_CACHE_SECONDS:
             license_data = cache_info.get('license_data')
             if license_data:
-                app.logger.info(
-                    "Skipping cloud validation - cached license confirmation "
-                    f"{age_seconds:.1f}s old (threshold {CLOUD_VALIDATION_CACHE_SECONDS}s)"
-                )
-                return True, dict(license_data), None, True, True
+                if _cached_license_expired(cache_info):
+                    app.logger.info(
+                        "Cached license appears expired/cancelled; forcing cloud validation despite cache age "
+                        f"({age_seconds:.1f}s old)"
+                    )
+                else:
+                    app.logger.info(
+                        "Skipping cloud validation - cached license confirmation "
+                        f"{age_seconds:.1f}s old (threshold {CLOUD_VALIDATION_CACHE_SECONDS}s)"
+                    )
+                    return True, dict(license_data), None, True, True
 
     lock_acquired = _cloud_validation_lock.acquire(blocking=False)
     if not lock_acquired:
         if not force_refresh and cache_info and cache_info.get('license_data'):
-            app.logger.info("Cloud validation already in progress - returning cached license data")
-            return True, dict(cache_info['license_data']), None, True, True
+            if _cached_license_expired(cache_info):
+                app.logger.info("Cloud validation in progress but cached license expired/cancelled - waiting for fresh validation")
+            else:
+                app.logger.info("Cloud validation already in progress - returning cached license data")
+                return True, dict(cache_info['license_data']), None, True, True
         # Wait for the in-flight validation to finish before re-checking freshness
         _cloud_validation_lock.acquire()
         lock_acquired = True
@@ -10112,11 +10168,16 @@ def _validate_license_with_cloud(
             if age_seconds is not None and age_seconds < CLOUD_VALIDATION_CACHE_SECONDS:
                 license_data = cache_info.get('license_data')
                 if license_data:
-                    app.logger.info(
-                        "Skipping cloud validation after lock acquisition - cached license confirmation "
-                        f"{age_seconds:.1f}s old"
-                    )
-                    return True, dict(license_data), None, True, True
+                    if _cached_license_expired(cache_info):
+                        app.logger.info(
+                            "Cached license appears expired/cancelled after lock acquisition - forcing cloud validation"
+                        )
+                    else:
+                        app.logger.info(
+                            "Skipping cloud validation after lock acquisition - cached license confirmation "
+                            f"{age_seconds:.1f}s old"
+                        )
+                        return True, dict(license_data), None, True, True
 
         app.logger.info(f"Attempting cloud license validation for {customer_email[:5]}*** with {timeout}s timeout")
         

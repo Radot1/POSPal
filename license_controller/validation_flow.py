@@ -51,10 +51,9 @@ class ValidationFlow:
         if cache_data:
             cloud_state = self._attempt_cloud_validation(cache_data)
             cloud_validation_attempted = True
-            
-            if cloud_state and cloud_state.is_valid():
-                self.logger.info("Cloud validation successful")
-                # Update cache with fresh validation
+
+            if cloud_state:
+                # Update cache even for inactive subs so stale "active" cache is replaced
                 self._update_cache_from_state(cloud_state)
                 return cloud_state
         
@@ -139,6 +138,31 @@ class ValidationFlow:
                     state.status = LicenseStatus.ACTIVE
                 
                 return state
+            elif cloud_license_data:
+                # Cloud responded but subscription is inactive/cancelled
+                subscription_info = cloud_license_data.get('subscriptionInfo') \
+                    or cloud_license_data.get('subscription') \
+                    or cloud_license_data.get('subscription_info') \
+                    or {}
+
+                state = LicenseState()
+                state.licensed = True
+                state.active = False
+                state.subscription = True
+                state.subscription_id = subscription_info.get('subscriptionId') or subscription_info.get('id')
+                state.subscription_status = subscription_info.get('status') or 'inactive'
+                state.valid_until = subscription_info.get('currentPeriodEnd') or subscription_info.get('nextBillingDate')
+                state.status = LicenseStatus.EXPIRED
+                state.source = ValidationSource.CLOUD_VALIDATION
+                state.cloud_validation_attempted = True
+                state.cloud_validation_successful = False
+                state.last_validation = datetime.now()
+                state.error_message = error_msg or 'Subscription inactive'
+                state.metadata = {
+                    "cloud_error": error_msg,
+                    "subscriptionInfo": subscription_info
+                }
+                return state
             else:
                 self.logger.warning(f"Cloud validation failed: {error_msg}")
                 return None
@@ -222,12 +246,8 @@ class ValidationFlow:
                 # Enhanced error logging for troubleshooting
                 self.logger.warning(f"Unified cloud validation failed for {customer_email[:5]}***: {error_code} - {error_msg}")
                 
-                # Check if error is retryable
-                is_retryable = error_info.get('retryable', False)
-                if is_retryable and error_info.get('category') == 'system':
-                    error_msg = f"Temporary service issue: {error_msg}"
-                
-                return False, None, error_msg
+                # Return full response so caller can act on subscription info (inactive/cancelled)
+                return False, response, error_msg
                 
         except Exception as e:
             error_msg = f"Unified cloud validation exception: {str(e)}"
