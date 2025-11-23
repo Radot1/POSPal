@@ -10559,6 +10559,7 @@ async function loadLicenseInfo() {
         // Fetch license status directly from server (single source of truth)
         console.log('Fetching license status from server...');
         let licenseData = null;
+        let serverStatusPayload = null;
 
         try {
             const response = await fetch('/api/license/status', {
@@ -10568,6 +10569,7 @@ async function loadLicenseInfo() {
 
             if (response.ok) {
                 const serverLicense = await response.json();
+                serverStatusPayload = serverLicense;
                 console.log('Server license data:', serverLicense);
 
                 const connectivityStatus = serverLicense.connectivity_status || 'unknown';
@@ -10839,11 +10841,33 @@ async function loadLicenseInfo() {
         } else {
             console.log('No license found, showing default state');
 
-            // Clear footer status badge when no license exists
+            // Surface trial status in footer if server provided it
             const footerStatus = document.getElementById('footer-trial-status');
             if (footerStatus) {
-                footerStatus.textContent = '';
-                footerStatus.className = '';
+                const trialDays = serverStatusPayload && typeof serverStatusPayload.trial_days_left === 'number'
+                    ? serverStatusPayload.trial_days_left
+                    : (serverStatusPayload && typeof serverStatusPayload.days_left === 'number'
+                        ? serverStatusPayload.days_left
+                        : null);
+                const trialExpired = serverStatusPayload && typeof serverStatusPayload.trial_expired === 'boolean'
+                    ? serverStatusPayload.trial_expired
+                    : (trialDays !== null ? trialDays <= 0 : null);
+
+                if (trialDays !== null || trialExpired !== null) {
+                    if (trialExpired) {
+                        footerStatus.textContent = 'Trial expired - subscription required';
+                        footerStatus.className = 'font-medium text-sm text-red-600';
+                    } else if (trialDays !== null && trialDays > 0) {
+                        footerStatus.textContent = `Trial mode - ${trialDays} day${trialDays === 1 ? '' : 's'} remaining`;
+                        footerStatus.className = 'font-medium text-sm text-blue-600';
+                    } else {
+                        footerStatus.textContent = 'Trial status unavailable';
+                        footerStatus.className = 'font-medium text-sm text-slate-500';
+                    }
+                } else if (!footerStatus.textContent) {
+                    footerStatus.textContent = 'No license information available';
+                    footerStatus.className = 'font-medium text-sm text-slate-500';
+                }
             }
 
             // Hide subscription details and show loading message
@@ -11062,8 +11086,31 @@ let disconnectCountdownInterval = null;
  * Populates with current license data from localStorage
  */
 function showDisconnectLicenseModal() {
-    // Get current license data from localStorage
-    const licenseData = LicenseStorage.getLicenseData();
+    // Fetch current license info from server (authoritative)
+    const licenseData = {
+        customerEmail: null,
+        customerName: null
+    };
+
+    try {
+        // Use synchronous invocation style here to keep modal responsive
+        const maybePromise = fetch('/api/license/status')
+            .then(res => res.ok ? res.json() : null)
+            .catch(() => null);
+        // Intentionally not awaited with async/await to keep function signature simple
+        Promise.resolve(maybePromise).then(serverStatus => {
+            if (serverStatus) {
+                licenseData.customerEmail = serverStatus.email || null;
+                licenseData.customerName = serverStatus.customer_name || null;
+                const emailElementAsync = document.getElementById('disconnect-modal-email');
+                if (emailElementAsync) {
+                    emailElementAsync.textContent = licenseData.customerEmail || 'Not found';
+                }
+            }
+        });
+    } catch (err) {
+        console.warn('Could not prefetch license status for disconnect modal', err);
+    }
 
     // Populate modal with current email
     const emailElement = document.getElementById('disconnect-modal-email');
@@ -11077,7 +11124,8 @@ function showDisconnectLicenseModal() {
         // Try to get device name from various sources
         const deviceName = licenseData.deviceName ||
                           sessionStorage.getItem('pospal_device_name') ||
-                          window.navigator.userAgent.match(/Windows/) ? 'Windows PC' : 'This Device';
+                          sessionStorage.getItem('pospal_current_session_id') ||
+                          (window.navigator.userAgent.match(/Windows/) ? 'Windows PC' : 'This Device');
         deviceElement.textContent = deviceName;
     }
 
@@ -11139,14 +11187,33 @@ async function confirmDisconnectLicense() {
     }
 
     try {
-        // Get license data from localStorage
-        const licenseData = LicenseStorage.getLicenseData();
-
-        if (!licenseData.customerEmail || !licenseData.unlockToken) {
-            showToast('No active license found to disconnect', 'error');
-            closeDisconnectLicenseModal();
-            return;
+        // Pause heartbeat so we don't revive the session mid-disconnect
+        if (TimerManager && typeof TimerManager.clear === 'function') {
+            TimerManager.clear('heartbeat');
         }
+
+        // Resolve email and token (server is source of truth; these are hints)
+        let customerEmail = null;
+        try {
+            const statusResp = await fetch('/api/license/status');
+            if (statusResp.ok) {
+                const statusData = await statusResp.json();
+                customerEmail = statusData.email || statusData.customer_email || null;
+            }
+        } catch (statusErr) {
+            console.warn('Could not fetch server license status for disconnect', statusErr);
+        }
+
+        // Fallback to cached local values if server did not return an email
+        if (!customerEmail) {
+            customerEmail = localStorage.getItem('pospal_customer_email');
+        }
+
+        // Unlock token is optional for backend when server license is present; send if we have it
+        const cachedUnlockToken = localStorage.getItem('pospal_unlock_token');
+
+        // Get current session id (used to end Cloudflare active_sessions row)
+        const cachedSessionId = currentSessionId || sessionStorage.getItem('pospal_current_session_id');
 
         // Get management password from config
         let managementPassword = '9999'; // Default password
@@ -11167,9 +11234,10 @@ async function confirmDisconnectLicense() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                email: licenseData.customerEmail,
-                unlock_token: licenseData.unlockToken,
-                confirm_password: managementPassword
+                email: customerEmail,
+                unlock_token: cachedUnlockToken,
+                confirm_password: managementPassword,
+                session_id: cachedSessionId
             })
         });
 
@@ -11200,11 +11268,20 @@ async function confirmDisconnectLicense() {
         const result = await response.json();
 
         if (result.success || response.status === 200) {
-            // Clear localStorage using existing function
+            // Clear caches/local storage to ensure UI reflects trial state
             LicenseStorage.clearLicenseData();
+            localStorage.removeItem('pospal_unlock_token');
+            localStorage.removeItem('pospal_customer_email');
+            localStorage.removeItem('pospal_customer_name');
+            localStorage.removeItem('pospal_license_status');
+            localStorage.removeItem('pospal_license_validated');
+            localStorage.removeItem('pospal_cached_status');
+            localStorage.removeItem('pospal_last_validation_check');
+            localStorage.removeItem('pospal_last_successful_validation');
 
             // Also clear session storage
             sessionStorage.removeItem('pospal_session_id');
+            sessionStorage.removeItem('pospal_current_session_id');
 
             // Close warning modal
             closeDisconnectLicenseModal();
@@ -11229,7 +11306,16 @@ async function confirmDisconnectLicense() {
 
             // Still clear local storage
             LicenseStorage.clearLicenseData();
+            localStorage.removeItem('pospal_unlock_token');
+            localStorage.removeItem('pospal_customer_email');
+            localStorage.removeItem('pospal_customer_name');
+            localStorage.removeItem('pospal_license_status');
+            localStorage.removeItem('pospal_license_validated');
+            localStorage.removeItem('pospal_cached_status');
+            localStorage.removeItem('pospal_last_validation_check');
+            localStorage.removeItem('pospal_last_successful_validation');
             sessionStorage.removeItem('pospal_session_id');
+            sessionStorage.removeItem('pospal_current_session_id');
 
             // Show success modal
             showDisconnectSuccessModal(result.unlock_token);
@@ -11269,6 +11355,8 @@ function showDisconnectSuccessModal(unlockToken) {
     }
 
     // Show modal
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
     modal.style.display = 'flex';
 
     // Start countdown timer (30 seconds)
@@ -12819,6 +12907,21 @@ async function startSession() {
             
             if (result.success) {
                 console.log('Session started successfully:', currentSessionId);
+                // Persist session id for backend disconnect endpoint
+                try {
+                    sessionStorage.setItem('pospal_current_session_id', currentSessionId);
+                    await fetch('/api/session/cache', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: currentSessionId,
+                            email: customerEmail,
+                            device_name: deviceInfo?.hostname || deviceInfo?.platform || 'Unknown Device'
+                        })
+                    });
+                } catch (cacheErr) {
+                    console.warn('Failed to cache session metadata:', cacheErr);
+                }
                 startHeartbeat();
                 localStorage.setItem('pospal_last_online_check', Date.now().toString());
                 return true;
@@ -13025,6 +13128,7 @@ async function endSession() {
         TimerManager.clear('heartbeat');
         
         currentSessionId = null;
+        sessionStorage.removeItem('pospal_current_session_id');
         
     } catch (error) {
         console.error('End session error:', error);
@@ -13063,6 +13167,20 @@ async function takeoverSession() {
         
         if (result.success) {
             console.log('Session takeover successful:', currentSessionId);
+            try {
+                sessionStorage.setItem('pospal_current_session_id', currentSessionId);
+                await fetch('/api/session/cache', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        email: customerEmail,
+                        device_name: deviceInfo?.hostname || deviceInfo?.platform || 'Unknown Device'
+                    })
+                });
+            } catch (cacheErr) {
+                console.warn('Failed to cache session metadata:', cacheErr);
+            }
             startHeartbeat();
             return true;
         } else {

@@ -38,7 +38,8 @@ import {
   getLicenseDisconnectionEmailTemplate,
   getLicenseRecoveryEmailTemplate,
   getRenewalProcessedEmailTemplate,
-  getSubscriptionCancelledEmailTemplate
+  getSubscriptionCancelledEmailTemplate,
+  getCancellationReversalEmailTemplate
 } from './email-templates.js';
 
 /**
@@ -97,6 +98,8 @@ export default {
         return handleSessionHeartbeat(request, env);
       case '/session/end':
         return handleSessionEnd(request, env);
+      case '/session/disconnect-email':
+        return handleSessionDisconnectEmail(request, env);
       case '/session/takeover':
         return handleSessionTakeover(request, env);
       case '/create-checkout-session':
@@ -109,6 +112,8 @@ export default {
         return handleTrialRegister(request, env);
       case '/trial/status':
         return handleTrialStatus(request, env);
+      case '/license/activation-email':
+        return handleActivationEmail(request, env);
       case '/check-duplicate':
         return handleCheckDuplicate(request, env);
       case '/recover-license':
@@ -934,6 +939,9 @@ async function handleStripeWebhook(request, env) {
         case 'customer.subscription.deleted':
           result = await handleSubscriptionCancelled(event, env);
           break;
+        case 'customer.subscription.updated':
+          result = await handleSubscriptionUpdated(event, env);
+          break;
         case 'payment_method.attached':
           result = await handlePaymentMethodAttached(event, env);
           break;
@@ -1421,6 +1429,125 @@ async function handleSubscriptionCancelled(event, env) {
 }
 
 /**
+ * Handle subscription updates (detect cancellations via Stripe portal)
+ */
+async function handleSubscriptionUpdated(event, env) {
+  const subscription = event.data.object;
+  const subscriptionId = subscription.id;
+  const previous = event.data.previous_attributes || {};
+
+  const statusChangedToCanceled = subscription.status === 'canceled' &&
+    previous?.status !== 'canceled';
+  const cancelAtPeriodEndNow = subscription.cancel_at_period_end === true;
+  const cancelAtPeriodEndPreviously = previous?.cancel_at_period_end === true;
+  const cancelAtPeriodEndChanged = cancelAtPeriodEndNow && !cancelAtPeriodEndPreviously;
+
+  const cancellationReversed =
+    !cancelAtPeriodEndNow &&
+    cancelAtPeriodEndPreviously;
+
+  const statusRevertedToActive =
+    subscription.status === 'active' &&
+    previous?.status === 'canceled';
+
+  const shouldNotifyCancellation = statusChangedToCanceled || cancelAtPeriodEndChanged;
+  const shouldNotifyReversal = cancellationReversed || statusRevertedToActive;
+
+  const currentPeriodEndIso = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000).toISOString()
+    : null;
+  const currentPeriodStartIso = subscription.current_period_start
+    ? new Date(subscription.current_period_start * 1000).toISOString()
+    : null;
+
+  try {
+    const customer = await env.DB.prepare(`
+      SELECT id, email, name, subscription_status
+      FROM customers
+      WHERE subscription_id = ?
+      LIMIT 1
+    `).bind(subscriptionId).first();
+
+    if (!customer) {
+      console.error(`Customer not found for subscription update: ${subscriptionId}`);
+      return createResponse({ success: true });
+    }
+
+    const previousStatus = customer.subscription_status;
+
+    // Always keep billing dates fresh
+    await env.DB.prepare(`
+      UPDATE customers
+      SET current_period_start = COALESCE(?, current_period_start),
+          current_period_end = COALESCE(?, current_period_end),
+          next_billing_date = COALESCE(?, next_billing_date)
+      WHERE id = ?
+    `).bind(
+      currentPeriodStartIso,
+      currentPeriodEndIso,
+      currentPeriodEndIso,
+      customer.id
+    ).run();
+
+    if (statusChangedToCanceled) {
+      await env.DB.prepare(`
+        UPDATE customers
+        SET subscription_status = 'cancelled',
+            last_seen = datetime('now')
+        WHERE id = ?
+      `).bind(customer.id).run();
+    }
+
+    if (shouldNotifyCancellation) {
+      await logAuditEvent(env.DB, customer.id, statusChangedToCanceled
+        ? 'subscription_cancelled_immediate'
+        : 'subscription_cancelled_scheduled', {
+        subscriptionId,
+        cancelAtPeriodEnd: cancelAtPeriodEndNow,
+        statusChangedToCanceled,
+        previousStatus
+      });
+
+      await sendSubscriptionCancelledEmail(
+        env,
+        customer.id,
+        customer.email,
+        customer.name || 'Customer',
+        subscription
+      );
+    }
+
+    if (shouldNotifyReversal) {
+      await logAuditEvent(env.DB, customer.id, 'subscription_cancellation_reversed', {
+        subscriptionId,
+        previousStatus,
+        cancelAtPeriodEndPreviously,
+        cancelAtPeriodEndNow
+      });
+
+      await sendCancellationReversalEmail(
+        env,
+        customer.id,
+        customer.email,
+        customer.name || 'Customer',
+        currentPeriodEndIso
+      );
+    }
+
+    return createResponse({
+      success: true,
+      cancellationNotified: shouldNotifyCancellation,
+      cancellationReversalNotified: shouldNotifyReversal,
+      customer_id: customer.id
+    });
+
+  } catch (error) {
+    console.error('Subscription update handling error:', error);
+    return createResponse({ error: 'Failed to process subscription update' }, 500);
+  }
+}
+
+/**
  * Handle license validation requests (Enhanced for hybrid cloud-first validation)
  */
 async function handleLicenseValidation(request, env) {
@@ -1871,6 +1998,54 @@ async function sendRenewalReminderEmail(env, customerId, email, name, daysLeft) 
 }
 
 /**
+ * Send cancellation reversal (portal renewal) email
+ */
+async function sendCancellationReversalEmail(env, customerId, email, name, periodEnd = null) {
+  try {
+    const existing = await env.DB.prepare(`
+      SELECT 1 FROM email_log
+      WHERE customer_id = ?
+        AND email_type = 'cancellation_reversal'
+        AND created_at >= datetime('now', '-30 days')
+      LIMIT 1
+    `).bind(customerId).first();
+
+    if (existing) {
+      console.log(`Cancellation reversal email already sent recently to ${email}, skipping`);
+      return;
+    }
+
+    const { subject, html } = getCancellationReversalEmailTemplate(name, periodEnd);
+    const emailLogId = await logEmailDelivery(env.DB, customerId, 'cancellation_reversal', email, subject);
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal Billing <billing@pospal.gr>',
+        to: [email],
+        subject,
+        html,
+      }),
+    });
+
+    if (response.ok) {
+      await updateEmailStatus(env.DB, emailLogId, 'delivered');
+      console.log(`Cancellation reversal email sent to ${email}`);
+    } else {
+      const error = await response.text();
+      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
+      console.error(`Failed to send cancellation reversal email:`, error);
+    }
+  } catch (error) {
+    console.error('Cancellation reversal email error:', error);
+  }
+}
+
+/**
  * Send machine switch notification email
  */
 async function sendMachineSwitchEmail(env, customerId, email, name, deviceInfo = null) {
@@ -2126,6 +2301,121 @@ async function handleSessionEnd(request, env) {
     return createResponse({
       success: false,
       error: 'Failed to end session'
+    }, 500);
+  }
+}
+
+/**
+ * Send disconnect email directly when no active session exists
+ */
+async function handleSessionDisconnectEmail(request, env) {
+  try {
+    const payload = await request.json();
+    const email = (payload.email || '').trim().toLowerCase();
+    const providedToken = (payload.unlock_token || payload.unlockToken || '').trim();
+    const deviceInfo = payload.device_info || payload.deviceInfo || null;
+
+    if (!email) {
+      return createResponse({
+        success: false,
+        error: 'Missing email'
+      }, 400);
+    }
+
+    const customer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE lower(email) = ?
+    `).bind(email).first();
+
+    if (!customer) {
+      return createResponse({
+        success: false,
+        error: 'Customer not found'
+      }, 404);
+    }
+
+    if (providedToken && customer.unlock_token !== providedToken) {
+      return createResponse({
+        success: false,
+        error: 'Unlock token mismatch'
+      }, 403);
+    }
+
+    await sendLicenseDisconnectionEmail(
+      env,
+      customer.id,
+      customer.email,
+      customer.name || 'Customer',
+      customer.unlock_token,
+      deviceInfo
+    );
+
+    await logAuditEvent(env.DB, customer.id, 'SESSION_DISCONNECT_EMAIL', {
+      deviceInfo: deviceInfo || {},
+      triggeredFrom: 'server_fallback'
+    });
+
+    return createResponse({ success: true });
+  } catch (error) {
+    console.error('Disconnect email handler error:', error);
+    return createResponse({
+      success: false,
+      error: 'Failed to send disconnect email'
+    }, 500);
+  }
+}
+
+/**
+ * Send activation (welcome) email when server-side activation occurs
+ */
+async function handleActivationEmail(request, env) {
+  try {
+    const payload = await request.json();
+    const email = (payload.email || '').trim().toLowerCase();
+    const providedToken = (payload.unlock_token || payload.unlockToken || '').trim();
+
+    if (!email || !providedToken) {
+      return createResponse({
+        success: false,
+        error: 'Missing email or unlock token'
+      }, 400);
+    }
+
+    const customer = await env.DB.prepare(`
+      SELECT * FROM customers WHERE lower(email) = ?
+    `).bind(email).first();
+
+    if (!customer) {
+      return createResponse({
+        success: false,
+        error: 'Customer not found'
+      }, 404);
+    }
+
+    if (customer.unlock_token !== providedToken) {
+      return createResponse({
+        success: false,
+        error: 'Unlock token mismatch'
+      }, 403);
+    }
+
+    await sendWelcomeEmail(
+      env,
+      customer.id,
+      customer.email,
+      customer.name || 'Customer',
+      customer.unlock_token
+    );
+
+    await logAuditEvent(env.DB, customer.id, 'MANUAL_ACTIVATION_EMAIL', {
+      triggeredFrom: 'server_activation'
+    });
+
+    return createResponse({ success: true });
+  } catch (error) {
+    console.error('Activation email handler error:', error);
+    return createResponse({
+      success: false,
+      error: 'Failed to send activation email'
     }, 500);
   }
 }
@@ -2798,6 +3088,19 @@ async function handleRecoverLicense(request, env) {
  */
 async function sendSubscriptionCancelledEmail(env, customerId, email, name, subscription) {
   try {
+    const existing = await env.DB.prepare(`
+      SELECT 1 FROM email_log
+      WHERE customer_id = ?
+        AND email_type = 'subscription_cancelled'
+        AND created_at >= datetime('now', '-30 days')
+      LIMIT 1
+    `).bind(customerId).first();
+
+    if (existing) {
+      console.log(`Subscription cancelled email already sent recently to ${email}, skipping`);
+      return;
+    }
+
     const periodEnd = subscription?.current_period_end
       ? new Date(subscription.current_period_end * 1000).toISOString()
       : null;

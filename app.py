@@ -326,6 +326,7 @@ CLOUD_VALIDATION_TIMEOUT = 3  # Seconds to wait for cloud validation response
 CLOUD_FAILURE_BACKOFF_SECONDS = 60  # How long to skip cloud validation after a failure
 CLOUD_VALIDATION_CACHE_SECONDS = 30  # Minimum seconds between cloud calls when local cache is still fresh
 LICENSE_STATUS_CACHE_TTL_SECONDS = 30  # TTL for cached /api/license/status responses
+LAST_SESSION_FILE = os.path.join(DATA_DIR, 'last_session.json')  # Tracks latest cloud session for disconnect
 
 # Track recent cloud validation failures to avoid repeated blocking calls when offline
 _last_cloud_failure = {"timestamp": None, "error": None}
@@ -1778,6 +1779,49 @@ def cleanup_inactive_sessions():
     
     return active_sessions
 
+# --- Session cache helpers (used for license disconnect) ---
+def save_last_session(session_id: str, email: str | None = None, device_name: str | None = None) -> bool:
+    """Persist the most recent cloud session so disconnect can end it."""
+    try:
+        if not session_id or not isinstance(session_id, str):
+            return False
+
+        payload = {
+            "session_id": session_id.strip(),
+            "email": (email or "").strip() or None,
+            "device_name": (device_name or "").strip() or None,
+            "updated_at": datetime.now().isoformat()
+        }
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(LAST_SESSION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, indent=2)
+        return True
+    except Exception as e:
+        app.logger.error(f"Failed to save last session: {e}")
+        return False
+
+def load_last_session() -> dict | None:
+    """Load the most recent cloud session metadata for disconnect."""
+    try:
+        if not os.path.exists(LAST_SESSION_FILE):
+            return None
+        with open(LAST_SESSION_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            return None
+    except Exception as e:
+        app.logger.error(f"Failed to load last session: {e}")
+        return None
+
+def clear_last_session():
+    """Clear cached session metadata after disconnect."""
+    try:
+        if os.path.exists(LAST_SESSION_FILE):
+            os.remove(LAST_SESSION_FILE)
+    except Exception as e:
+        app.logger.error(f"Failed to clear last session file: {e}")
+
 
 def is_version_newer(latest_version, current_version):
     """
@@ -2290,6 +2334,31 @@ def _fetch_remote_trial_status(hardware_id: str, fallback_first_run: str | None 
     if fallback_first_run:
         payload["firstRunDate"] = fallback_first_run
     return _call_trial_worker(TRIAL_STATUS_ENDPOINT, payload)
+
+def _persist_remote_trial_status(remote_status: dict | None):
+    """Persist remote trial status into local stores to prevent trial resets."""
+    try:
+        if not remote_status or not isinstance(remote_status, dict):
+            return False
+
+        remote_first_run = remote_status.get('firstRunDate') or remote_status.get('first_run_date')
+        if not remote_first_run:
+            return False
+
+        # Normalize and persist earliest first_run_date we know about
+        try:
+            datetime.strptime(remote_first_run, "%Y-%m-%d")
+        except ValueError:
+            app.logger.warning(f"Remote trial date invalid: {remote_first_run}")
+            return False
+
+        signature = _generate_trial_signature(remote_first_run)
+        _persist_trial_everywhere(remote_first_run, signature)
+        app.logger.info(f"Remote trial status persisted locally (first_run_date={remote_first_run})")
+        return True
+    except Exception as exc:
+        app.logger.error(f"Failed to persist remote trial status: {exc}")
+        return False
 
 def _calculate_trial_snapshot() -> dict | None:
     """Return a normalized trial snapshot (days left, expiration) without mutating license state."""
@@ -8854,6 +8923,12 @@ def get_current_device_session_id():
         str or None: Session ID if found, None otherwise
     """
     try:
+        # Prefer explicitly cached session (set by frontend)
+        cached = load_last_session()
+        if cached and cached.get('session_id'):
+            app.logger.info(f"Using cached session id for disconnect: {cached.get('session_id')}")
+            return cached.get('session_id')
+
         state = load_centralized_state()
         device_sessions = state.get('device_sessions', {})
 
@@ -8881,12 +8956,12 @@ def end_cloud_session(email, unlock_token, session_id):
         session_id: Device session ID
 
     Returns:
-        tuple: (bool, str) - (success, error_message)
+        tuple: (bool, str, bool) - (success, error_message, email_sent)
     """
     try:
         if not session_id:
             app.logger.warning("No session ID provided for cloud session end")
-            return False, "No session ID available"
+            return False, "No session ID available", False
 
         # Call existing Cloudflare /session/end endpoint
         payload = {
@@ -8899,14 +8974,39 @@ def end_cloud_session(email, unlock_token, session_id):
 
         if response and response.get('success'):
             app.logger.info(f"Cloud session ended successfully: {session_id}")
-            return True, ""
+            return True, "", bool(response.get('emailSent'))
         else:
             error_msg = response.get('error', 'Unknown error') if response else 'API call failed'
             app.logger.warning(f"Cloud session end failed: {error_msg}")
-            return False, error_msg
+            return False, error_msg, False
 
     except Exception as e:
         app.logger.error(f"Error ending cloud session: {e}")
+        return False, str(e), False
+
+def send_disconnect_email_direct(email, unlock_token, device_name=None):
+    """
+    Fallback email notification when session end cannot trigger Resend email.
+    """
+    try:
+        payload = {
+            "email": email,
+            "unlock_token": unlock_token,
+            "device_info": {}
+        }
+        if device_name:
+            payload["device_info"]["deviceName"] = device_name
+
+        response = call_cloudflare_api('/session/disconnect-email', payload, timeout=10)
+        if response and response.get('success'):
+            app.logger.info(f"Disconnect email sent directly via Cloudflare for {email}")
+            return True, ""
+        else:
+            error_msg = response.get('error', 'Unknown error') if response else 'API call failed'
+            app.logger.warning(f"Disconnect email fallback failed: {error_msg}")
+            return False, error_msg
+    except Exception as e:
+        app.logger.error(f"Disconnect email fallback error: {e}")
         return False, str(e)
 
 def clear_local_device_sessions():
@@ -9066,6 +9166,25 @@ def log_disconnect_event(email, cleanup_summary):
     except Exception as e:
         app.logger.error(f"Error logging disconnect event: {e}")
 
+@app.route('/api/session/cache', methods=['POST'])
+def cache_session_metadata():
+    """Persist latest session id so disconnect can end the correct session."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        session_id = sanitize_string_input(data.get('session_id', ''), 256)
+        email = sanitize_string_input(data.get('email', ''), 254) if data.get('email') else None
+        device_name = sanitize_string_input(data.get('device_name', ''), 128) if data.get('device_name') else None
+
+        if not session_id:
+            return jsonify({"success": False, "error": "session_id is required"}), 400
+
+        if save_last_session(session_id, email, device_name):
+            return jsonify({"success": True})
+        return jsonify({"success": False, "error": "Failed to cache session"}), 500
+    except Exception as e:
+        app.logger.error(f"Failed to cache session metadata: {e}")
+        return jsonify({"success": False, "error": "Internal error"}), 500
+
 @app.route('/api/disconnect-license', methods=['POST'])
 def disconnect_license():
     """
@@ -9086,7 +9205,7 @@ def disconnect_license():
         JSON response with cleanup summary and unlock token
     """
     try:
-        # Rate limiting
+        # Rate limiting (IP)
         client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR', '127.0.0.1'))
         if not check_rate_limit(client_ip, 'disconnect-license', max_requests=5, window_seconds=300):
             app.logger.warning(f"Rate limit exceeded for disconnect-license from {client_ip}")
@@ -9095,7 +9214,7 @@ def disconnect_license():
                 "code": "RATE_LIMIT"
             }), 429
 
-        # Parse and validate request
+        # Parse request
         try:
             data = request.get_json()
             if not data or not isinstance(data, dict):
@@ -9109,14 +9228,28 @@ def disconnect_license():
                 "code": "INVALID_JSON"
             }), 400
 
-        # Validate required fields
+        # Extract fields (email/unlock_token optional if server license is present)
         email = data.get('email')
         unlock_token = data.get('unlock_token')
         confirm_password = data.get('confirm_password')
+        session_id_from_client = data.get('session_id')
 
-        if not email or not unlock_token or not confirm_password:
+        # Load server license as source of truth for credentials
+        server_license = load_server_license()
+        if server_license:
+            email = email or server_license.get('customer_email')
+            unlock_token = unlock_token or server_license.get('unlock_token')
+
+        # Validate mandatory fields
+        if not confirm_password:
             return jsonify({
-                "error": "Missing required fields: email, unlock_token, confirm_password",
+                "error": "Missing required field: confirm_password",
+                "code": "MISSING_FIELDS"
+            }), 400
+
+        if not email or not unlock_token:
+            return jsonify({
+                "error": "Missing required fields: email/unlock_token not found on request or server",
                 "code": "MISSING_FIELDS"
             }), 400
 
@@ -9124,6 +9257,7 @@ def disconnect_license():
         email = sanitize_string_input(email, 254)
         unlock_token = sanitize_string_input(unlock_token, 512)
         confirm_password = sanitize_string_input(confirm_password, 100)
+        session_id_from_client = sanitize_string_input(session_id_from_client, 256) if session_id_from_client else None
 
         # Validate email format
         if not validate_email(email):
@@ -9159,25 +9293,32 @@ def disconnect_license():
 
         app.logger.info(f"Starting license disconnect for: {email}")
 
+        session_metadata = load_last_session() or {}
         # Initialize cleanup summary
         cleanup_summary = {
             "local_files_cleared": False,
             "trial_data_cleared": False,
             "device_sessions_cleared": False,
             "cloud_session_ended": False,
-            "license_cache_cleared": False
+            "license_cache_cleared": False,
+            "server_license_removed": False,
+            "session_cache_cleared": False,
+            "trial_resynced": False,
+            "disconnect_email_sent": False
         }
         warnings = []
+        email_notification_sent = False
 
         # Step 1: Get current device session ID
-        session_id = get_current_device_session_id()
+        session_id = session_id_from_client or session_metadata.get('session_id') or get_current_device_session_id()
         if not session_id:
             warnings.append("No active device session found to end")
 
         # Step 2: End cloud session (if online)
         if session_id:
-            cloud_success, cloud_error = end_cloud_session(email, unlock_token, session_id)
+            cloud_success, cloud_error, cloud_email_sent = end_cloud_session(email, unlock_token, session_id)
             cleanup_summary["cloud_session_ended"] = cloud_success
+            email_notification_sent = cloud_email_sent
             if not cloud_success:
                 warnings.append(f"Cloud session end failed: {cloud_error}. Session will auto-expire in 2 minutes.")
         else:
@@ -9197,11 +9338,70 @@ def disconnect_license():
         if not trial_success and len(cleared_trial_files) == 0:
             warnings.append("Failed to clear trial data")
 
+        # Re-sync trial status from Cloudflare to prevent unintended trial reset
+        trial_synced = False
+        try:
+            hardware_id = _get_trial_hardware_id()
+            if hardware_id:
+                remote_trial = _fetch_remote_trial_status(hardware_id)
+                if _persist_remote_trial_status(remote_trial):
+                    trial_synced = True
+                elif isinstance(remote_trial, dict) and remote_trial.get('expired'):
+                    # If remote says expired but no date, mark sync as done to avoid re-creating local trial
+                    trial_synced = True
+            else:
+                app.logger.warning("No hardware ID available for trial sync after disconnect")
+        except Exception as sync_exc:
+            app.logger.warning(f"Trial resync after disconnect failed: {sync_exc}")
+
+        cleanup_summary["trial_resynced"] = trial_synced
+
+        if email_notification_sent:
+            cleanup_summary["disconnect_email_sent"] = True
+        else:
+            fallback_device_name = session_metadata.get('device_name') or session_metadata.get('deviceName')
+            fallback_success, fallback_error = send_disconnect_email_direct(email, unlock_token, fallback_device_name)
+            cleanup_summary["disconnect_email_sent"] = fallback_success
+            if fallback_success:
+                email_notification_sent = True
+            else:
+                warnings.append(f"Failed to send disconnect email: {fallback_error}")
+
         # Clear device sessions
         sessions_success, sessions_error = clear_local_device_sessions()
         cleanup_summary["device_sessions_cleared"] = sessions_success
         if not sessions_success:
             warnings.append(f"Failed to clear device sessions: {sessions_error}")
+
+        # Clear cached session metadata
+        try:
+            clear_last_session()
+            cleanup_summary["session_cache_cleared"] = True
+        except Exception:
+            warnings.append("Failed to clear cached session metadata")
+
+        # Remove server license so status flips to trial/unlicensed
+        server_removed = delete_server_license()
+        cleanup_summary["server_license_removed"] = server_removed
+        if not server_removed:
+            warnings.append("Server license file not removed (may already be absent)")
+        # Invalidate cached license status after major state changes
+        try:
+            license_status_coordinator.invalidate()
+        except Exception:
+            pass
+        # Clear unified license controller cache so trial/expired state is re-evaluated immediately
+        try:
+            if 'license_integration' in globals() and license_integration and getattr(license_integration, 'license_controller', None):
+                lc = license_integration.license_controller
+                if hasattr(lc, '_controller_lock'):
+                    with lc._controller_lock:
+                        lc._current_state = None
+                        lc._last_validation_time = 0
+                if hasattr(lc, 'clear_license_cache'):
+                    lc.clear_license_cache()
+        except Exception as cache_exc:
+            app.logger.warning(f"Failed to clear unified license cache after disconnect: {cache_exc}")
 
         # Overall local files status
         cleanup_summary["local_files_cleared"] = (
@@ -9385,6 +9585,15 @@ def activate_server_license():
         _save_license_cache(license_data)
 
         app.logger.info(f"Server license activated successfully for: {email[:5]}***")
+
+        # Best-effort activation email via Cloudflare (Resend)
+        try:
+            call_cloudflare_api('/license/activation-email', {
+                "email": email,
+                "unlock_token": unlock_token
+            }, timeout=8, max_retries=1)
+        except Exception as email_exc:
+            app.logger.warning(f"Activation email dispatch failed (non-blocking): {email_exc}")
 
         # Return success with license info
         subscription_info = license_data.get('subscriptionInfo', {})

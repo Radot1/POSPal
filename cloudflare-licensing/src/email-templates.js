@@ -542,3 +542,45 @@ export function getSubscriptionCancelledEmailTemplate(customerName, subscription
 
   return { subject, html };
 }
+
+/**
+ * Cancellation reversal / renewal confirmation via portal
+ */
+export function getCancellationReversalEmailTemplate(customerName, periodEnd = null) {
+  const subject = 'POSPal Subscription Reactivated';
+  const periodEndText = periodEnd ? new Date(periodEnd).toDateString() : 'your current billing period';
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; border-bottom: 2px solid #16a34a; padding-bottom: 20px; margin-bottom: 30px;">
+        <h1 style="color: #16a34a; margin: 0;">Welcome Back to POSPal</h1>
+        <p style="color: #6b7280; margin: 5px 0 0 0;">Your subscription is active again</p>
+      </div>
+
+      <p style="color: #374151;">Hi ${customerName}, we’ve cancelled the pending end-of-period cancellation and restored full access to POSPal.</p>
+
+      <div style="background: #f0fdf4; border: 1px solid #16a34a; border-radius: 8px; padding: 15px; margin: 20px 0;">
+        <ul style="color: #15803d; margin: 0; padding-left: 20px; line-height: 1.6;">
+          <li><strong>Status:</strong> licensed_active</li>
+          <li><strong>Current period ends:</strong> ${periodEndText}</li>
+          <li><strong>Next charge:</strong> Will process automatically on the next billing date</li>
+        </ul>
+      </div>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="https://billing.stripe.com/p/login/customer_portal"
+           style="background: #16a34a; color: white; padding: 14px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+          Manage Subscription
+        </a>
+      </div>
+
+      <p style="color: #6b7280;">If you didn’t request this change, reply to this email so we can help.</p>
+
+      <div style="text-align: center; border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 30px;">
+        <p style="color: #9ca3af; font-size: 14px; margin: 0;">POSPal Billing · pospal.gr</p>
+      </div>
+    </div>
+  `;
+
+  return { subject, html };
+}
