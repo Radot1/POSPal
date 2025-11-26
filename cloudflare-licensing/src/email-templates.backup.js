@@ -65,38 +65,29 @@ function renderEmailTemplate(title, summaryLines = [], detailItems = [], extraCo
   } = normalizedOptions;
 
   const palette = perfectPalette[intent] || perfectPalette.neutral;
-  const badgeBlock = badgeText
-    ? `<div style="text-align: center; margin-bottom: 14px;">
-         <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: ${palette.badgeText}; background: ${palette.badgeBg}; border: 1px solid ${palette.badgeBorder}; border-radius: 999px; padding: 8px 14px;">
-           ${badgeText}
-           <img src="${pospalIconDataUri}" alt="POSPal" style="width: 18px; height: 18px; border-radius: 6px; border: 1px solid #e5e7eb;" />
-         </span>
-       </div>`
-    : '';
-
   const safeSummary = summaryLines
     .filter(Boolean)
-    .map(line => `<p style="color: #374151; margin: 0 0 16px 0; font-size: 16px;">${line}</p>`)
+    .map(line => `<p style="color: #374151; margin: 0 0 12px 0;">${line}</p>`)
     .join('');
-  const summarySection = safeSummary ? `<div style="margin: 0 0 12px 0;">${safeSummary}</div>` : '';
+  const summarySection = safeSummary ? `<div style="margin-top: 20px;">${safeSummary}</div>` : '';
 
   const validDetails = (detailItems || []).filter(item => item && item.value !== undefined && item.value !== null && item.value !== '');
   const detailSection = validDetails.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 20px 0; border: 1px solid #e5e7eb; border-radius: 18px; overflow: hidden;">
+    ? `<div style="margin-top: 24px; border: 1px solid #e5e7eb; border-radius: 18px; padding: 18px 20px;">
         ${validDetails.map((item, index) => `
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: ${index < validDetails.length - 1 ? '1px solid #f3f4f6' : 'none'}; color: #6b7280; font-size: 14px;">${item.label}</td>
-            <td style="padding: 12px 16px; border-bottom: ${index < validDetails.length - 1 ? '1px solid #f3f4f6' : 'none'}; color: #111827; font-weight: 600; text-align: right; font-size: 14px;">${item.value}</td>
-          </tr>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 10px 0; ${index < validDetails.length - 1 ? 'border-bottom: 1px solid #f3f4f6;' : ''}">
+            <span style="color: #6b7280;">${item.label}</span>
+            <span style="color: #111827; font-weight: 600; text-align: right;">${item.value}</span>
+          </div>
         `).join('')}
-      </table>`
+      </div>`
     : '';
 
   const highlightBlock = highlightValue
-    ? `<div style="margin: 0 0 24px 0; border: 1px solid ${palette.highlightBorder}; background: ${palette.highlightBg}; border-radius: 18px; padding: 18px 20px;">
+    ? `<div style="margin-top: 24px; border: 1px solid ${palette.highlightBorder}; background: ${palette.highlightBg}; border-radius: 18px; padding: 18px 20px;">
         ${highlightLabel ? `<p style="margin: 0 0 6px 0; color: ${palette.highlightLabel}; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;">${highlightLabel}</p>` : ''}
-        <p style="margin: 0; font-size: 26px; font-weight: 700; color: ${palette.highlightValue};">${highlightValue}</p>
-        ${highlightSupportingText ? `<p style="margin: 10px 0 0 0; color: #374151; font-size: 15px;">${highlightSupportingText}</p>` : ''}
+        <p style="margin: 0; font-size: 26px; font-weight: 600; color: ${palette.highlightValue};">${highlightValue}</p>
+        ${highlightSupportingText ? `<p style="margin: 10px 0 0 0; color: #374151;">${highlightSupportingText}</p>` : ''}
       </div>`
     : '';
 
@@ -104,50 +95,34 @@ function renderEmailTemplate(title, summaryLines = [], detailItems = [], extraCo
     ? extraContent.filter(Boolean).join('')
     : (extraContent || '');
 
-  const supportFooterContent = footerContent === null
-    ? `<p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
-         <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
-         <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>`
+  const supportFooter = footerContent === null
+    ? `<div style="margin-top: 24px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
+         <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
+         <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're ready to help.</p>
+         <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
+       </div>`
     : footerContent;
 
-  const footerSection = supportFooterContent
-    ? `<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
-         <tr>
-           <td>
-             ${supportFooterContent}
-           </td>
-         </tr>
-       </table>`
-    : '';
-
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
-      <tr>
-        <td align="center" style="padding: 56px 24px 56px 24px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
-            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
-          </table>
-          <table role="presentation" width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
-            <tr>
-              <td style="padding: 40px 32px;">
-                ${badgeBlock}
-                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0; text-align: center;">${title}</h1>
-                ${subtitle ? `<p style="color: #6b7280; margin: 12px 0 0 0; text-align: center;">${subtitle}</p>` : ''}
-                <div style="width: 100%; height: 1px; background: #e5e7eb; margin: 24px 0 24px 0;"></div>
-                ${highlightBlock}
-                ${summarySection}
-                ${detailSection}
-                ${normalizedExtraContent}
-              </td>
-            </tr>
-          </table>
-          ${footerSection}
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
-            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
+    <div style="font-family: ${fontStack}; background: #f5f5f5; padding: 24px 16px;">
+      <div style="max-width: 560px; margin: 0 auto;">
+        <div style="background: #ffffff; border-radius: 24px; padding: 36px 28px; box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08); border-top: 4px solid ${palette.accent};">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: ${palette.badgeText}; background: ${palette.badgeBg}; border: 1px solid ${palette.badgeBorder}; border-radius: 999px; padding: 6px 14px;">
+              ${badgeText}
+            </span>
+            <img src="${pospalIconDataUri}" alt="POSPal" style="width: 32px; height: 32px; border-radius: 10px; border: 1px solid #e5e7eb;" />
+          </div>
+          <h1 style="font-size: 30px; line-height: 1.2; color: #0f172a; margin: 0;">${title}</h1>
+          ${subtitle ? `<p style="color: #6b7280; margin: 12px 0 0 0;">${subtitle}</p>` : ''}
+          ${highlightBlock}
+          ${summarySection}
+          ${detailSection}
+          ${normalizedExtraContent}
+        </div>
+        ${supportFooter || ''}
+      </div>
+    </div>
   `;
 }
 
@@ -166,17 +141,10 @@ function renderTokenBlock(unlockToken, note = 'Works on one computer at a time.'
   `;
 }
 
-function renderSubscriptionIdLine(subscriptionId) {
-  if (!subscriptionId) {
-    return '';
-  }
-  return `<p style="color: #9ca3af; margin: 24px 0 0 0; font-size: 14px;">Subscription ID: <span style="color: #111827;">${subscriptionId}</span></p>`;
-}
-
 /**
  * Welcome email with unlock token (sent after payment)
  */
-export function getWelcomeEmailTemplate(customerName, unlockToken, customerEmail, subscriptionId = '') {
+export function getWelcomeEmailTemplate(customerName, unlockToken, customerEmail) {
   const subject = 'Your POSPal License Details';
   const summaryLines = [
     `Hi ${customerName}, your POSPal subscription is active and ready to use.`,
@@ -188,7 +156,7 @@ export function getWelcomeEmailTemplate(customerName, unlockToken, customerEmail
   ];
   const tokenBlock = renderTokenBlock(unlockToken);
   
-  const html = renderEmailTemplate('License Ready', summaryLines, detailItems, [tokenBlock, renderSubscriptionIdLine(subscriptionId)], {
+  const html = renderEmailTemplate('License Ready', summaryLines, detailItems, tokenBlock, {
     intent: 'success',
     highlightLabel: 'Status',
     highlightValue: 'Active license',
@@ -201,7 +169,7 @@ export function getWelcomeEmailTemplate(customerName, unlockToken, customerEmail
 /**
  * Immediate suspension email template - NO GRACE PERIOD POLICY
  */
-export function getImmediateSuspensionEmailTemplate(customerName, invoiceDetails = {}, subscriptionId = '') {
+export function getImmediateSuspensionEmailTemplate(customerName, invoiceDetails = {}) {
   const subject = 'Payment Failed - POSPal Access Paused';
   const { amountDueCents, currency, dueDate, hostedInvoiceUrl } = invoiceDetails || {};
   const amountLine = Number.isFinite(amountDueCents)
@@ -224,7 +192,7 @@ export function getImmediateSuspensionEmailTemplate(customerName, invoiceDetails
        </div>`
     : '';
   
-  const html = renderEmailTemplate('Access Paused', summaryLines, detailItems, [invoiceLinkBlock, renderSubscriptionIdLine(subscriptionId)], {
+  const html = renderEmailTemplate('Access Paused', summaryLines, detailItems, invoiceLinkBlock, {
     intent: 'critical',
     highlightLabel: 'Status',
     highlightValue: 'Access paused',
@@ -239,17 +207,17 @@ export function getImmediateSuspensionEmailTemplate(customerName, invoiceDetails
  * DEPRECATED: Old payment failure email template with grace period language
  * This is replaced by getImmediateSuspensionEmailTemplate for the no-grace-period policy
  */
-export function getPaymentFailureEmailTemplate(customerName, subscriptionId = '') {
+export function getPaymentFailureEmailTemplate(customerName) {
   // This function is kept for backward compatibility but should not be used
   // Use getImmediateSuspensionEmailTemplate instead
   console.warn('DEPRECATED: Use getImmediateSuspensionEmailTemplate instead of getPaymentFailureEmailTemplate');
-  return getImmediateSuspensionEmailTemplate(customerName, {}, subscriptionId);
+  return getImmediateSuspensionEmailTemplate(customerName);
 }
 
 /**
  * Renewal reminder email template
  */
-export function getRenewalReminderEmailTemplate(customerName, daysLeft, subscriptionId = '') {
+export function getRenewalReminderEmailTemplate(customerName, daysLeft) {
   const subject = `POSPal Renewal - ${daysLeft} days remaining`;
   const daysLabel = daysLeft === 1 ? '1 day' : `${daysLeft} days`;
   const summaryLines = [
@@ -261,7 +229,7 @@ export function getRenewalReminderEmailTemplate(customerName, daysLeft, subscrip
     { label: 'Status', value: 'active' }
   ];
   
-  const html = renderEmailTemplate('Renewal Reminder', summaryLines, detailItems, renderSubscriptionIdLine(subscriptionId), {
+  const html = renderEmailTemplate('Renewal Reminder', summaryLines, detailItems, '', {
     intent: 'warning',
     highlightLabel: 'Renews in',
     highlightValue: daysLabel,
@@ -275,7 +243,7 @@ export function getRenewalReminderEmailTemplate(customerName, daysLeft, subscrip
 /**
  * Immediate reactivation email template - NO GRACE PERIOD POLICY
  */
-export function getImmediateReactivationEmailTemplate(customerName, subscriptionId = '') {
+export function getImmediateReactivationEmailTemplate(customerName) {
   const subject = 'POSPal Reactivated';
   const summaryLines = [
     `Hi ${customerName}, your payment cleared and POSPal is active again.`
@@ -285,7 +253,7 @@ export function getImmediateReactivationEmailTemplate(customerName, subscription
     { label: 'Next steps', value: 'no action needed' }
   ];
   
-  const html = renderEmailTemplate('Access Restored', summaryLines, detailItems, renderSubscriptionIdLine(subscriptionId), {
+  const html = renderEmailTemplate('Access Restored', summaryLines, detailItems, '', {
     intent: 'success',
     highlightLabel: 'Status',
     highlightValue: 'Access restored',
@@ -299,7 +267,7 @@ export function getImmediateReactivationEmailTemplate(customerName, subscription
 /**
  * Renewal processed receipt (for on-time renewals)
  */
-export function getRenewalProcessedEmailTemplate(customerName, amountCents = null, currency = 'eur', periodEnd = null, subscriptionId = '') {
+export function getRenewalProcessedEmailTemplate(customerName, amountCents = null, currency = 'eur', periodEnd = null) {
   const subject = 'POSPal Renewal Confirmed';
   const amountLine = Number.isFinite(amountCents)
     ? `${(amountCents / 100).toFixed(2)} ${String(currency || '').toUpperCase()}`
@@ -316,7 +284,7 @@ export function getRenewalProcessedEmailTemplate(customerName, amountCents = nul
   ];
 
   const highlightValue = amountLine === 'your plan' ? 'Plan renewed' : amountLine;
-  const html = renderEmailTemplate('Renewal Confirmed', summaryLines, detailItems, renderSubscriptionIdLine(subscriptionId), {
+  const html = renderEmailTemplate('Renewal Confirmed', summaryLines, detailItems, '', {
     intent: 'success',
     highlightLabel: 'Charge',
     highlightValue,
@@ -329,7 +297,7 @@ export function getRenewalProcessedEmailTemplate(customerName, amountCents = nul
 /**
  * License key recovery email template
  */
-export function getLicenseRecoveryEmailTemplate(customerName, unlockToken, customerEmail, subscriptionId = '') {
+export function getLicenseRecoveryEmailTemplate(customerName, unlockToken, customerEmail) {
   const subject = 'Your POSPal Unlock Token';
   
   const summaryLines = [
@@ -341,7 +309,7 @@ export function getLicenseRecoveryEmailTemplate(customerName, unlockToken, custo
   ];
   const tokenBlock = renderTokenBlock(unlockToken, 'Use this token to reinstall POSPal on your authorized device.');
   
-  const html = renderEmailTemplate('License Recovery', summaryLines, detailItems, [tokenBlock, renderSubscriptionIdLine(subscriptionId)], {
+  const html = renderEmailTemplate('License Recovery', summaryLines, detailItems, tokenBlock, {
     highlightLabel: 'Account',
     highlightValue: customerEmail,
     highlightSupportingText: 'The unlock token below works on one computer at a time.',
@@ -354,7 +322,7 @@ export function getLicenseRecoveryEmailTemplate(customerName, unlockToken, custo
 /**
  * Machine switch notification email
  */
-export function getMachineSwitchEmailTemplate(customerName, newMachineInfo = null, subscriptionId = '') {
+export function getMachineSwitchEmailTemplate(customerName, newMachineInfo = null) {
   const subject = 'POSPal - Computer Changed';
   const deviceDetail = newMachineInfo && typeof newMachineInfo === 'object'
     ? (newMachineInfo.hostname || newMachineInfo.current || newMachineInfo.deviceName || null)
@@ -373,7 +341,7 @@ export function getMachineSwitchEmailTemplate(customerName, newMachineInfo = nul
     </div>
   `;
   
-  const html = renderEmailTemplate('Computer Changed', summaryLines, detailItems, [extra, renderSubscriptionIdLine(subscriptionId)], {
+  const html = renderEmailTemplate('Computer Changed', summaryLines, detailItems, extra, {
     intent: 'warning',
     highlightLabel: 'Status',
     highlightValue: deviceDetail ? `License moved to ${deviceDetail}` : 'License moved to a new device',
@@ -385,7 +353,7 @@ export function getMachineSwitchEmailTemplate(customerName, newMachineInfo = nul
 /**
  * License disconnection confirmation email template
  */
-export function getLicenseDisconnectionEmailTemplate(customerName, unlockToken, customerEmail, deviceInfo = {}, subscriptionId = '') {
+export function getLicenseDisconnectionEmailTemplate(customerName, unlockToken, customerEmail, deviceInfo = {}) {
   const subject = 'POSPal License Disconnected from Device';
   const deviceDetail = deviceInfo && typeof deviceInfo === 'object'
     ? (deviceInfo.hostname || deviceInfo.current || deviceInfo.deviceName || null)
@@ -400,7 +368,7 @@ export function getLicenseDisconnectionEmailTemplate(customerName, unlockToken, 
   ];
   const tokenBlock = renderTokenBlock(unlockToken, "If you didn't request this, contact support@pospal.gr.");
 
-  const html = renderEmailTemplate('License Disconnected', summaryLines, detailItems, [tokenBlock, renderSubscriptionIdLine(subscriptionId)], {
+  const html = renderEmailTemplate('License Disconnected', summaryLines, detailItems, tokenBlock, {
     highlightLabel: 'Status',
     highlightValue: 'Ready to activate elsewhere',
     highlightSupportingText: 'Use the token below to connect POSPal on your next device.',
@@ -418,7 +386,9 @@ export function getSubscriptionCancelledEmailTemplate(customerName, subscription
     ? new Date(periodEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : 'the end of your current billing period';
   const greetingName = customerName || 'there';
-  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
+  const subscriptionLine = subscriptionId
+    ? `<p style="color: #9ca3af; margin: 24px 0 0 0; font-size: 14px;">Subscription ID: <span style="color: #111827;">${subscriptionId}</span></p>`
+    : '';
 
   const html = `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
@@ -473,57 +443,24 @@ export function getSubscriptionCancelledEmailTemplate(customerName, subscription
 /**
  * Cancellation reversal / renewal confirmation via portal
  */
-export function getCancellationReversalEmailTemplate(customerName, periodEnd = null, subscriptionId = '') {
+export function getCancellationReversalEmailTemplate(customerName, periodEnd = null) {
   const subject = 'POSPal Subscription Reactivated';
-  const greetingName = customerName || 'there';
-  const statusValue = 'Active';
-  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
+  const periodEndText = periodEnd ? new Date(periodEnd).toDateString() : 'your current billing period';
 
-  const html = `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
-      <tr>
-        <td align="center" style="padding: 56px 24px 56px 24px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
-            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
-          </table>
-          <table role="presentation" width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px;">
-            <tr>
-              <td style="padding: 0;">
-                <div style="background: #ffffff; border-radius: 32px; padding: 40px 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
-                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0 0 16px; text-align: center;">
-                  Your subscription<br/>is active again
-                </h1>
-                <div style="width: 100%; height: 1px; background: #e5e7eb; margin-bottom: 32px;"></div>
+  const summaryLines = [
+    `Hi ${customerName}, the pending cancellation was removed and POSPal stays active.`
+  ];
+  const detailItems = [
+    { label: 'Status', value: 'licensed_active' },
+    { label: 'Current period ends', value: periodEndText }
+  ];
 
-                <p style="color: #111827; font-size: 16px; margin: 0 0 24px; font-weight: 600;">Hi ${greetingName}, your subscription status is</p>
-                <div style="border-radius: 18px; border: 1px solid #d1fae5; background: #ecfdf5; padding: 20px 20px; margin-bottom: 28px;">
-                  <p style="font-size: 26px; font-weight: 600; margin: 0; color: #064e3b;">${statusValue}</p>
-                </div>
-
-                <p style="color: #374151; margin: 0 0 18px;">Welcome back to POSPal, and thank you for staying with us. Your subscription is fully active again.</p>
-                <p style="color: #374151; margin: 0 0 18px;">If you ever feel like taking a break, navigate to POSPal’s in app licensing settings at any time.</p>
-                <p style="color: #374151; margin: 0;">Have questions or need a hand? Email <a href="mailto:support@pospal.gr" style="color: #0ea5e9; text-decoration: none;">support@pospal.gr</a> and we’ll help right away.</p>
-                ${subscriptionLine}
-                </div>
-              </td>
-            </tr>
-          </table>
-
-          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
-            <tr>
-              <td>
-                <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
-                <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
-                <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
-              </td>
-            </tr>
-          </table>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
-            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  `;
+  const html = renderEmailTemplate('Subscription Reactivated', summaryLines, detailItems, '', {
+    intent: 'success',
+    highlightLabel: 'Status',
+    highlightValue: 'Subscription active',
+    highlightSupportingText: `POSPal remains active through ${periodEndText}.`,
+    badgeText: 'Billing Update'
+  });
   return { subject, html };
 }

@@ -1530,7 +1530,8 @@ async function handleSubscriptionUpdated(event, env) {
         customer.id,
         customer.email,
         customer.name || 'Customer',
-        currentPeriodEndIso
+        currentPeriodEndIso,
+        subscriptionId
       );
     }
 
@@ -1774,11 +1775,54 @@ async function handleInstantValidation(request, env) {
  */
 
 /**
+ * Prevent sending duplicate emails within a short window
+ */
+async function wasEmailSentRecently(db, customerId, emailType, windowSeconds = 15) {
+  if (!customerId || !emailType) return false;
+  try {
+    const recent = await db.prepare(`
+      SELECT 1 FROM email_log
+      WHERE customer_id = ?
+        AND email_type = ?
+        AND created_at >= datetime('now', ?)
+      LIMIT 1
+    `).bind(customerId, emailType, `-${windowSeconds} seconds`).first();
+    return Boolean(recent);
+  } catch (error) {
+    console.error('Recent email check failed:', error);
+    return false;
+  }
+}
+
+async function getCustomerSubscriptionId(db, customerId) {
+  if (!customerId) {
+    return '';
+  }
+  try {
+    const row = await db.prepare(`
+      SELECT subscription_id
+      FROM customers
+      WHERE id = ?
+      LIMIT 1
+    `).bind(customerId).first();
+    return row?.subscription_id || '';
+  } catch (error) {
+    console.error(`Failed to fetch subscription ID for customer ${customerId}:`, error);
+    return '';
+  }
+}
+
+/**
  * Send welcome email with unlock token
  */
 async function sendWelcomeEmail(env, customerId, email, name, unlockToken) {
   try {
-    const { subject, html } = getWelcomeEmailTemplate(name, unlockToken, email);
+    if (await wasEmailSentRecently(env.DB, customerId, 'welcome')) {
+      console.log(`Welcome email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getWelcomeEmailTemplate(name, unlockToken, email, subscriptionId);
     
     // Log email attempt
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'welcome', email, subject);
@@ -1791,7 +1835,7 @@ async function sendWelcomeEmail(env, customerId, email, name, unlockToken) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal <noreply@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -1818,7 +1862,12 @@ async function sendWelcomeEmail(env, customerId, email, name, unlockToken) {
  */
 async function sendPaymentFailureEmail(env, customerId, email, name) {
   try {
-    const { subject, html } = getPaymentFailureEmailTemplate(name);
+    if (await wasEmailSentRecently(env.DB, customerId, 'payment_failed')) {
+      console.log(`Payment failure email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getPaymentFailureEmailTemplate(name, subscriptionId);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'payment_failed', email, subject);
     
@@ -1829,7 +1878,7 @@ async function sendPaymentFailureEmail(env, customerId, email, name) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Billing <billing@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -1855,7 +1904,12 @@ async function sendPaymentFailureEmail(env, customerId, email, name) {
  */
 async function sendImmediateSuspensionEmail(env, customerId, email, name, invoiceDetails = {}) {
   try {
-    const { subject, html } = getImmediateSuspensionEmailTemplate(name, invoiceDetails);
+    if (await wasEmailSentRecently(env.DB, customerId, 'immediate_suspension')) {
+      console.log(`Immediate suspension email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getImmediateSuspensionEmailTemplate(name, invoiceDetails, subscriptionId);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'immediate_suspension', email, subject);
     
@@ -1866,7 +1920,7 @@ async function sendImmediateSuspensionEmail(env, customerId, email, name, invoic
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Billing <billing@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -1892,7 +1946,12 @@ async function sendImmediateSuspensionEmail(env, customerId, email, name, invoic
  */
 async function sendImmediateReactivationEmail(env, customerId, email, name) {
   try {
-    const { subject, html } = getImmediateReactivationEmailTemplate(name);
+    if (await wasEmailSentRecently(env.DB, customerId, 'immediate_reactivation')) {
+      console.log(`Immediate reactivation email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getImmediateReactivationEmailTemplate(name, subscriptionId);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'immediate_reactivation', email, subject);
     
@@ -1903,7 +1962,7 @@ async function sendImmediateReactivationEmail(env, customerId, email, name) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal <noreply@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -1929,7 +1988,12 @@ async function sendImmediateReactivationEmail(env, customerId, email, name) {
  */
 async function sendRenewalProcessedEmail(env, customerId, email, name, amountCents = null, currency = 'eur', periodEnd = null) {
   try {
-    const { subject, html } = getRenewalProcessedEmailTemplate(name, amountCents, currency, periodEnd);
+    if (await wasEmailSentRecently(env.DB, customerId, 'renewal_processed')) {
+      console.log(`Renewal processed email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getRenewalProcessedEmailTemplate(name, amountCents, currency, periodEnd, subscriptionId);
 
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'renewal_processed', email, subject);
 
@@ -1940,7 +2004,7 @@ async function sendRenewalProcessedEmail(env, customerId, email, name, amountCen
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Billing <billing@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -1966,7 +2030,12 @@ async function sendRenewalProcessedEmail(env, customerId, email, name, amountCen
  */
 async function sendRenewalReminderEmail(env, customerId, email, name, daysLeft) {
   try {
-    const { subject, html } = getRenewalReminderEmailTemplate(name, daysLeft);
+    if (await wasEmailSentRecently(env.DB, customerId, 'renewal_reminder')) {
+      console.log(`Renewal reminder recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getRenewalReminderEmailTemplate(name, daysLeft, subscriptionId);
 
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'renewal_reminder', email, subject);
 
@@ -1977,7 +2046,7 @@ async function sendRenewalReminderEmail(env, customerId, email, name, daysLeft) 
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Billing <billing@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject,
         html,
@@ -2000,22 +2069,14 @@ async function sendRenewalReminderEmail(env, customerId, email, name, daysLeft) 
 /**
  * Send cancellation reversal (portal renewal) email
  */
-async function sendCancellationReversalEmail(env, customerId, email, name, periodEnd = null) {
+async function sendCancellationReversalEmail(env, customerId, email, name, periodEnd = null, subscriptionIdOverride = '') {
   try {
-    const existing = await env.DB.prepare(`
-      SELECT 1 FROM email_log
-      WHERE customer_id = ?
-        AND email_type = 'cancellation_reversal'
-        AND created_at >= datetime('now', '-30 days')
-      LIMIT 1
-    `).bind(customerId).first();
-
-    if (existing) {
-      console.log(`Cancellation reversal email already sent recently to ${email}, skipping`);
+    if (await wasEmailSentRecently(env.DB, customerId, 'cancellation_reversal')) {
+      console.log(`Cancellation reversal email recently sent to ${email}, skipping duplicate`);
       return;
     }
-
-    const { subject, html } = getCancellationReversalEmailTemplate(name, periodEnd);
+    const subscriptionId = subscriptionIdOverride || await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getCancellationReversalEmailTemplate(name, periodEnd, subscriptionId);
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'cancellation_reversal', email, subject);
 
     const response = await fetch('https://api.resend.com/emails', {
@@ -2025,7 +2086,7 @@ async function sendCancellationReversalEmail(env, customerId, email, name, perio
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Billing <billing@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject,
         html,
@@ -2050,8 +2111,13 @@ async function sendCancellationReversalEmail(env, customerId, email, name, perio
  */
 async function sendMachineSwitchEmail(env, customerId, email, name, deviceInfo = null) {
   try {
+    if (await wasEmailSentRecently(env.DB, customerId, 'machine_switch')) {
+      console.log(`Machine switch email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
     const deviceContext = deviceInfo || { hostname: 'New Computer' };
-    const { subject, html } = getMachineSwitchEmailTemplate(name, deviceContext);
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getMachineSwitchEmailTemplate(name, deviceContext, subscriptionId);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'machine_switch', email, subject);
     
@@ -2062,7 +2128,7 @@ async function sendMachineSwitchEmail(env, customerId, email, name, deviceInfo =
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Security <security@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -2088,7 +2154,12 @@ async function sendMachineSwitchEmail(env, customerId, email, name, deviceInfo =
  */
 async function sendLicenseDisconnectionEmail(env, customerId, email, name, unlockToken, deviceInfo = null) {
   try {
-    const { subject, html } = getLicenseDisconnectionEmailTemplate(name, unlockToken, email, deviceInfo || {});
+    if (await wasEmailSentRecently(env.DB, customerId, 'license_disconnection')) {
+      console.log(`License disconnection email recently sent to ${email}, skipping duplicate`);
+      return;
+    }
+    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
+    const { subject, html } = getLicenseDisconnectionEmailTemplate(name, unlockToken, email, deviceInfo || {}, subscriptionId);
 
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'license_disconnection', email, subject);
 
@@ -2099,7 +2170,7 @@ async function sendLicenseDisconnectionEmail(env, customerId, email, name, unloc
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal License Management <noreply@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject: subject,
         html: html,
@@ -3018,7 +3089,7 @@ async function handleRecoverLicense(request, env) {
 
     // Look up customer by email
     const customer = await env.DB.prepare(`
-      SELECT id, email, name, unlock_token, subscription_status FROM customers WHERE email = ?
+      SELECT id, email, name, unlock_token, subscription_status, subscription_id FROM customers WHERE email = ?
     `).bind(email.toLowerCase()).first();
 
     if (!customer) {
@@ -3031,13 +3102,22 @@ async function handleRecoverLicense(request, env) {
 
     // Send recovery email with unlock token
     try {
+      if (await wasEmailSentRecently(env.DB, customer.id, 'license_recovery')) {
+        console.log(`License recovery email recently sent to ${customer.email}, skipping duplicate`);
+        return createResponse({
+          success: true,
+          message: 'If this email exists in our system, you will receive your license key shortly.'
+        });
+      }
+      const subscriptionId = customer.subscription_id || await getCustomerSubscriptionId(env.DB, customer.id);
       const { subject, html } = getLicenseRecoveryEmailTemplate(
         customer.name || 'Customer',
         customer.unlock_token,
-        customer.email
+        customer.email,
+        subscriptionId
       );
 
-      const emailLogId = await logEmailDelivery(env.DB, customer.id, 'license_recovery', customer.email, 'License Key Recovery');
+      const emailLogId = await logEmailDelivery(env.DB, customer.id, 'license_recovery', customer.email, subject);
 
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -3046,7 +3126,7 @@ async function handleRecoverLicense(request, env) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'POSPal <noreply@pospal.gr>',
+          from: 'POSPal Team <noreply@pospal.gr>',
           to: [customer.email],
           subject,
           html,
@@ -3088,25 +3168,32 @@ async function handleRecoverLicense(request, env) {
  */
 async function sendSubscriptionCancelledEmail(env, customerId, email, name, subscription) {
   try {
-    const existing = await env.DB.prepare(`
-      SELECT 1 FROM email_log
-      WHERE customer_id = ?
-        AND email_type = 'subscription_cancelled'
-        AND created_at >= datetime('now', '-30 days')
-      LIMIT 1
-    `).bind(customerId).first();
-
-    if (existing) {
-      console.log(`Subscription cancelled email already sent recently to ${email}, skipping`);
+    if (await wasEmailSentRecently(env.DB, customerId, 'subscription_cancelled')) {
+      console.log(`Subscription cancelled email recently sent to ${email}, skipping duplicate`);
       return;
     }
-
-    const periodEnd = subscription?.current_period_end
+    // Prefer Stripe's timestamp; fall back to cached DB value so we always show a concrete date.
+    let periodEnd = subscription?.current_period_end
       ? new Date(subscription.current_period_end * 1000).toISOString()
       : null;
+    if (!periodEnd && customerId) {
+      const row = await env.DB.prepare(`
+        SELECT current_period_end
+        FROM customers
+        WHERE id = ?
+        LIMIT 1
+      `).bind(customerId).first();
+      if (row?.current_period_end) {
+        periodEnd = row.current_period_end;
+      }
+    }
+    let subscriptionIdForTemplate = subscription?.id || '';
+    if (!subscriptionIdForTemplate) {
+      subscriptionIdForTemplate = await getCustomerSubscriptionId(env.DB, customerId);
+    }
     const { subject, html } = getSubscriptionCancelledEmailTemplate(
       name,
-      subscription?.id || '',
+      subscriptionIdForTemplate,
       periodEnd
     );
 
@@ -3119,7 +3206,7 @@ async function sendSubscriptionCancelledEmail(env, customerId, email, name, subs
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'POSPal Billing <billing@pospal.gr>',
+        from: 'POSPal Team <noreply@pospal.gr>',
         to: [email],
         subject,
         html,
@@ -3277,18 +3364,6 @@ async function sendUpcomingRenewalReminders(env) {
   }
 
   for (const customer of candidates) {
-    // Dedupe: if reminder sent in last 30 days, skip
-    const alreadySent = await env.DB.prepare(`
-      SELECT 1 FROM email_log
-      WHERE customer_id = ? AND email_type = 'renewal_reminder'
-        AND created_at >= datetime('now', '-30 days')
-      LIMIT 1
-    `).bind(customer.id).first();
-
-    if (alreadySent) {
-      continue;
-    }
-
     const nextBilling = customer.next_billing_date ? Date.parse(customer.next_billing_date) : null;
     if (!Number.isFinite(nextBilling) || nextBilling <= Date.now()) {
       continue;
