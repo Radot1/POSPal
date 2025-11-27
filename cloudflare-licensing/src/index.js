@@ -862,6 +862,33 @@ async function handleTestWebhook(request, env) {
         return await handlePaymentMethodAttached(event, env);
       case 'setup_intent.succeeded':
         return await handleSetupIntentSucceeded(event, env);
+      case 'test.immediate_reactivation': {
+        const data = event.data || {};
+        const lookupEmail = data.email;
+        const lookupSubscription = data.subscriptionId;
+        if (!lookupEmail && !lookupSubscription) {
+          return createResponse({ error: 'Provide email or subscriptionId for test reactivation' }, 400);
+        }
+        const customer = lookupSubscription
+          ? await env.DB.prepare(`
+              SELECT id, email, name FROM customers WHERE subscription_id = ? LIMIT 1
+            `).bind(lookupSubscription).first()
+          : await env.DB.prepare(`
+              SELECT id, email, name FROM customers WHERE lower(email) = lower(?) LIMIT 1
+            `).bind(lookupEmail).first();
+        if (!customer) {
+          return createResponse({ error: 'Customer not found for reactivation test' }, 404);
+        }
+        const periodEnd = data.periodEnd || null;
+        await sendImmediateReactivationEmail(
+          env,
+          customer.id,
+          customer.email,
+          customer.name || 'Customer',
+          periodEnd
+        );
+        return createResponse({ success: true, test: true, type: 'immediate_reactivation' });
+      }
       default:
         console.log(`Unhandled test event type: ${event.type}`);
         return createResponse({ received: true, test: true });
@@ -1304,7 +1331,13 @@ async function handlePaymentSucceeded(event, env) {
     
     // Send reactivation email only if account was previously inactive
     if (wasInactive) {
-      await sendImmediateReactivationEmail(env, customer.id, customer.email, customer.name || 'Customer');
+      await sendImmediateReactivationEmail(
+        env,
+        customer.id,
+        customer.email,
+        customer.name || 'Customer',
+        billingData.current_period_end
+      );
     } else {
       await sendRenewalProcessedEmail(
         env,
@@ -1944,14 +1977,14 @@ async function sendImmediateSuspensionEmail(env, customerId, email, name, invoic
 /**
  * Send immediate reactivation email - NO GRACE PERIOD POLICY
  */
-async function sendImmediateReactivationEmail(env, customerId, email, name) {
+async function sendImmediateReactivationEmail(env, customerId, email, name, periodEnd = null) {
   try {
     if (await wasEmailSentRecently(env.DB, customerId, 'immediate_reactivation')) {
       console.log(`Immediate reactivation email recently sent to ${email}, skipping duplicate`);
       return;
     }
     const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
-    const { subject, html } = getImmediateReactivationEmailTemplate(name, subscriptionId);
+    const { subject, html } = getImmediateReactivationEmailTemplate(name, subscriptionId, periodEnd);
     
     const emailLogId = await logEmailDelivery(env.DB, customerId, 'immediate_reactivation', email, subject);
     
