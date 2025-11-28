@@ -147,21 +147,41 @@ class ValidationFlow:
 
                 state = LicenseState()
                 state.licensed = True
-                state.active = False
                 state.subscription = True
                 state.subscription_id = subscription_info.get('subscriptionId') or subscription_info.get('id')
                 state.subscription_status = subscription_info.get('status') or 'inactive'
                 state.valid_until = subscription_info.get('currentPeriodEnd') or subscription_info.get('nextBillingDate')
-                state.status = LicenseStatus.EXPIRED
                 state.source = ValidationSource.CLOUD_VALIDATION
                 state.cloud_validation_attempted = True
                 state.cloud_validation_successful = False
                 state.last_validation = datetime.now()
-                state.error_message = error_msg or 'Subscription inactive'
-                state.metadata = {
-                    "cloud_error": error_msg,
-                    "subscriptionInfo": subscription_info
-                }
+
+                expiry_date = None
+                if state.valid_until:
+                    try:
+                        expiry_date = datetime.fromisoformat(state.valid_until.replace('Z', '+00:00'))
+                    except Exception:
+                        expiry_date = None
+
+                if expiry_date and expiry_date > datetime.now():
+                    # Honor already-paid period even if Stripe marked the subscription inactive
+                    state.active = True
+                    state.status = LicenseStatus.ACTIVE
+                    state.metadata = {
+                        "pending_cancellation": True,
+                        "pending_cancellation_date": state.valid_until,
+                        "pending_cancellation_reason": error_msg or 'Subscription scheduled to end',
+                        "subscriptionInfo": subscription_info
+                    }
+                else:
+                    state.active = False
+                    state.status = LicenseStatus.EXPIRED
+                    state.error_message = error_msg or 'Subscription inactive'
+                    state.metadata = {
+                        "cloud_error": error_msg,
+                        "subscriptionInfo": subscription_info
+                    }
+
                 return state
             else:
                 self.logger.warning(f"Cloud validation failed: {error_msg}")

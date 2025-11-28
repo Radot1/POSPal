@@ -316,23 +316,56 @@ export function getPaymentFailureEmailTemplate(customerName, subscriptionId = ''
 export function getRenewalReminderEmailTemplate(customerName, daysLeft, subscriptionId = '') {
   const subject = `POSPal Renewal - ${daysLeft} days remaining`;
   const daysLabel = daysLeft === 1 ? '1 day' : `${daysLeft} days`;
-  const summaryLines = [
-    `Hi ${customerName}, your POSPal subscription renews in ${daysLeft} days.`
-  ];
-  const detailItems = [
-    { label: 'Plan', value: 'POSPal Pro Monthly' },
-    { label: 'Renewal window', value: `${daysLeft} days remaining` },
-    { label: 'Status', value: 'active' }
-  ];
-  
-  const html = renderEmailTemplate('Renewal Reminder', summaryLines, detailItems, renderSubscriptionIdLine(subscriptionId), {
-    intent: 'warning',
-    highlightLabel: 'Renews in',
-    highlightValue: daysLabel,
-    highlightSupportingText: 'Your plan will auto-renew unless you make changes before the date above.',
-    badgeText: 'Billing Reminder'
-  });
-  
+  const greetingName = customerName || 'there';
+  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
+
+  const html = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
+      <tr>
+        <td align="center" style="padding: 56px 24px 56px 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px;">
+            <tr>
+              <td style="padding: 0;">
+                <div style="background: #ffffff; border-radius: 32px; padding: 40px 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
+                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0 0 16px; text-align: center;">
+                  Renewal reminder
+                </h1>
+                <div style="width: 100%; height: 1px; background: #e5e7eb; margin-bottom: 32px;"></div>
+
+                <p style="color: #111827; font-size: 16px; margin: 0 0 24px; font-weight: 600;">Hi ${greetingName}, your subscription renews soon.</p>
+                <div style="border-radius: 18px; border: 1px solid #fcd34d; background: #fffbeb; padding: 20px 20px; margin-bottom: 28px;">
+                  <p style="font-size: 26px; font-weight: 600; margin: 0; color: #92400e;">Renews in ${daysLabel}</p>
+                </div>
+
+                <p style="color: #374151; margin: 0 0 18px;">No action is needed unless you plan to pause. Billing will run automatically at the end of this window.</p>
+                <p style="color: #374151; margin: 0 0 24px;">Want to make changes? Open POSPal and head to <strong>Settings → Licensing</strong> before renewal day.</p>
+
+                ${subscriptionLine}
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
+            <tr>
+              <td>
+                <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
+                <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
+                <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
+              </td>
+            </tr>
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
+
   return { subject, html };
 }
 
@@ -416,28 +449,65 @@ export function getImmediateReactivationEmailTemplate(customerName, subscription
  */
 export function getRenewalProcessedEmailTemplate(customerName, amountCents = null, currency = 'eur', periodEnd = null, subscriptionId = '') {
   const subject = 'POSPal Renewal Confirmed';
+  const greetingName = customerName || 'there';
   const amountLine = Number.isFinite(amountCents)
     ? `${(amountCents / 100).toFixed(2)} ${String(currency || '').toUpperCase()}`
-    : 'your plan';
-  const renewalDate = periodEnd ? new Date(periodEnd).toDateString() : null;
+    : 'Plan renewed';
+  const periodEndText = periodEnd
+    ? new Date(periodEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : null;
+  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
+  const periodSentence = periodEndText
+    ? `<p style="color: #374151; margin: 0 0 18px;">Your current period runs through <strong>${periodEndText}</strong>.</p>`
+    : '';
 
-  const summaryLines = [
-    `Hi ${customerName}, your POSPal subscription renewed successfully.`
-  ];
-  const detailItems = [
-    { label: 'Plan charge', value: amountLine },
-    renewalDate ? { label: 'Current period ends', value: renewalDate } : null,
-    { label: 'Status', value: 'licensed_active' }
-  ];
+  const html = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
+      <tr>
+        <td align="center" style="padding: 56px 24px 56px 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px;">
+            <tr>
+              <td style="padding: 0;">
+                <div style="background: #ffffff; border-radius: 32px; padding: 40px 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
+                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0 0 16px; text-align: center;">
+                  Renewal confirmed
+                </h1>
+                <div style="width: 100%; height: 1px; background: #e5e7eb; margin-bottom: 32px;"></div>
 
-  const highlightValue = amountLine === 'your plan' ? 'Plan renewed' : amountLine;
-  const html = renderEmailTemplate('Renewal Confirmed', summaryLines, detailItems, renderSubscriptionIdLine(subscriptionId), {
-    intent: 'success',
-    highlightLabel: 'Charge',
-    highlightValue,
-    highlightSupportingText: renewalDate ? `Current period ends ${renewalDate}.` : 'Your subscription stays active.',
-    badgeText: 'Billing Update'
-  });
+                <p style="color: #111827; font-size: 16px; margin: 0 0 24px; font-weight: 600;">Hi ${greetingName}, your POSPal subscription renewed successfully.</p>
+                <div style="border-radius: 18px; border: 1px solid #a7f3d0; background: #ecfdf5; padding: 20px 20px; margin-bottom: 28px;">
+                  <p style="font-size: 26px; font-weight: 600; margin: 0; color: #047857;">${amountLine}</p>
+                </div>
+
+                <p style="color: #374151; margin: 0 0 18px;">No action needed—POSPal stays active, and your menus, reports, and data carry on uninterrupted.</p>
+                <p style="color: #374151; margin: 0 0 24px;">Want to review billing? Open POSPal and head to <strong>Settings → Licensing</strong>.</p>
+
+                ${periodSentence}
+                ${subscriptionLine}
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
+            <tr>
+              <td>
+                <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
+                <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
+                <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
+              </td>
+            </tr>
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
   return { subject, html };
 }
 
@@ -446,22 +516,54 @@ export function getRenewalProcessedEmailTemplate(customerName, amountCents = nul
  */
 export function getLicenseRecoveryEmailTemplate(customerName, unlockToken, customerEmail, subscriptionId = '') {
   const subject = 'Your POSPal Unlock Token';
-  
-  const summaryLines = [
-    `Hi ${customerName}, here is the unlock token linked to ${customerEmail}.`
-  ];
-  const detailItems = [
-    { label: 'Account email', value: customerEmail },
-    { label: 'Note', value: 'token works on one computer at a time' }
-  ];
+  const greetingName = customerName || 'there';
+  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
   const tokenBlock = renderTokenBlock(unlockToken, 'Use this token to reinstall POSPal on your authorized device.');
   
-  const html = renderEmailTemplate('License Recovery', summaryLines, detailItems, [tokenBlock, renderSubscriptionIdLine(subscriptionId)], {
-    highlightLabel: 'Account',
-    highlightValue: customerEmail,
-    highlightSupportingText: 'The unlock token below works on one computer at a time.',
-    badgeText: 'License Recovery'
-  });
+  const html = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
+      <tr>
+        <td align="center" style="padding: 56px 24px 56px 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px;">
+            <tr>
+              <td style="padding: 0;">
+                <div style="background: #ffffff; border-radius: 32px; padding: 40px 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
+                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0 0 16px; text-align: center;">
+                  License recovery
+                </h1>
+                <div style="width: 100%; height: 1px; background: #e5e7eb; margin-bottom: 32px;"></div>
+
+                <p style="color: #111827; font-size: 16px; margin: 0 0 24px; font-weight: 600;">Hi ${greetingName}, here’s the unlock token linked to ${customerEmail}.</p>
+                <div style="border-radius: 18px; border: 1px solid #d1fae5; background: #ecfdf5; padding: 20px 20px; margin-bottom: 28px;">
+                  <p style="font-size: 26px; font-weight: 600; margin: 0; color: #065f46;">Use on one computer at a time</p>
+                </div>
+
+                ${tokenBlock}
+                ${subscriptionLine}
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
+            <tr>
+              <td>
+                <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
+                <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
+                <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
+              </td>
+            </tr>
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
   
   return { subject, html };
 }
@@ -471,30 +573,55 @@ export function getLicenseRecoveryEmailTemplate(customerName, unlockToken, custo
  */
 export function getMachineSwitchEmailTemplate(customerName, newMachineInfo = null, subscriptionId = '') {
   const subject = 'POSPal - Computer Changed';
-  const deviceDetail = newMachineInfo && typeof newMachineInfo === 'object'
-    ? (newMachineInfo.hostname || newMachineInfo.current || newMachineInfo.deviceName || null)
-    : null;
-  
-  const summaryLines = [
-    `Hi ${customerName}, your POSPal license is now active on a different computer${deviceDetail ? ` (${deviceDetail})` : ''}.`
-  ];
-  const detailItems = [
-    { label: 'Status', value: 'license moved to new device' },
-    deviceDetail ? { label: 'Device info', value: deviceDetail } : null
-  ];
-  const extra = `
-    <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 14px; margin-top: 12px;">
-      <p style="color: #b91c1c; margin: 0;">If you didn't authorize this change, contact support@pospal.gr.</p>
-    </div>
+  const greetingName = customerName || 'there';
+  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
+
+  const html = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
+      <tr>
+        <td align="center" style="padding: 56px 24px 56px 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px;">
+            <tr>
+              <td style="padding: 0;">
+                <div style="background: #ffffff; border-radius: 32px; padding: 40px 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
+                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0 0 16px; text-align: center;">
+                  License moved to a new computer
+                </h1>
+                <div style="width: 100%; height: 1px; background: #e5e7eb; margin-bottom: 32px;"></div>
+
+                <p style="color: #111827; font-size: 16px; margin: 0 0 24px; font-weight: 600;">Hi ${greetingName}, your POSPal license is now active on a different device.</p>
+                <div style="border-radius: 18px; border: 1px solid #fecaca; background: #fef2f2; padding: 20px 20px; margin-bottom: 28px;">
+                  <p style="font-size: 26px; font-weight: 600; margin: 0; color: #b91c1c;">Security alert</p>
+                </div>
+
+                <p style="color: #374151; margin: 0 0 18px;">If you moved POSPal, no action is needed. Licenses only run on one computer at a time.</p>
+                <p style="color: #374151; margin: 0 0 24px;">If this wasn’t you, email <a href="mailto:support@pospal.gr" style="color: #b91c1c; text-decoration: none; font-weight: 600;">support@pospal.gr</a> immediately so we can secure your account.</p>
+
+                ${subscriptionLine}
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
+            <tr>
+              <td>
+                <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
+                <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
+                <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
+              </td>
+            </tr>
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   `;
-  
-  const html = renderEmailTemplate('Computer Changed', summaryLines, detailItems, [extra, renderSubscriptionIdLine(subscriptionId)], {
-    intent: 'warning',
-    highlightLabel: 'Status',
-    highlightValue: deviceDetail ? `License moved to ${deviceDetail}` : 'License moved to a new device',
-    highlightSupportingText: 'If this was not you, contact support immediately to secure your account.',
-    badgeText: 'Security Alert'
-  });
   return { subject, html };
 }
 /**
@@ -506,21 +633,57 @@ export function getLicenseDisconnectionEmailTemplate(customerName, unlockToken, 
     ? (deviceInfo.hostname || deviceInfo.current || deviceInfo.deviceName || null)
     : null;
   
-  const summaryLines = [
-    `Hi ${customerName}, your POSPal license was disconnected${deviceDetail ? ` from ${deviceDetail}` : ''}.`
-  ];
-  const detailItems = [
-    { label: 'Account email', value: customerEmail },
-    { label: 'Status', value: 'ready to activate elsewhere' }
-  ];
+  const greetingName = customerName || 'there';
+  const subscriptionLine = renderSubscriptionIdLine(subscriptionId);
   const tokenBlock = renderTokenBlock(unlockToken, "If you didn't request this, contact support@pospal.gr.");
 
-  const html = renderEmailTemplate('License Disconnected', summaryLines, detailItems, [tokenBlock, renderSubscriptionIdLine(subscriptionId)], {
-    highlightLabel: 'Status',
-    highlightValue: 'Ready to activate elsewhere',
-    highlightSupportingText: 'Use the token below to connect POSPal on your next device.',
-    badgeText: 'License Update'
-  });
+  const html = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f1f5f9" style="font-family: ${fontStack}; background: #f1f5f9; margin: 0;">
+      <tr>
+        <td align="center" style="padding: 56px 24px 56px 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+          <table role="presentation" width 560 cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="background: #ffffff; border-radius: 32px;">
+            <tr>
+              <td style="padding: 0;">
+                <div style="background: #ffffff; border-radius: 32px; padding: 40px 32px; box-shadow: 0 25px 45px rgba(15, 23, 42, 0.15);">
+                <h1 style="font-size: 32px; line-height: 1.25; color: #0f172a; margin: 0 0 16px; text-align: center;">
+                  License disconnected
+                </h1>
+                <div style="width: 100%; height: 1px; background: #e5e7eb; margin-bottom: 32px;"></div>
+
+                <p style="color: #111827; font-size: 16px; margin: 0 0 24px; font-weight: 600;">Hi ${greetingName}, your POSPal license was disconnected${deviceDetail ? ` from ${deviceDetail}` : ''}.</p>
+                <div style="border-radius: 18px; border: 1px solid #d1fae5; background: #ecfdf5; padding: 20px 20px; margin-bottom: 28px;">
+                  <p style="font-size: 26px; font-weight: 600; margin: 0; color: #065f46;">Ready to activate elsewhere</p>
+                </div>
+
+                <p style="color: #374151; margin: 0 0 18px;">Use the unlock token below to connect POSPal on your next device.</p>
+                <p style="color: #374151; margin: 0 0 24px;">If you didn’t make this change, email <a href="mailto:support@pospal.gr" style="color: #0ea5e9; text-decoration: none;">support@pospal.gr</a> so we can secure your account.</p>
+
+                ${tokenBlock}
+                ${subscriptionLine}
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="margin-top: 32px; background: #050708; border-radius: 20px; padding: 32px 36px; color: #f9fafb;">
+            <tr>
+              <td>
+                <p style="font-size: 18px; font-weight: 600; margin: 0 0 12px;">POSPal</p>
+                <p style="color: #d1d5db; margin: 0 0 6px;">Need anything? We're around to help.</p>
+                <p style="color: #9ca3af; margin: 0;">Email <a href="mailto:support@pospal.gr" style="color: #6ee7b7; text-decoration: none;">support@pospal.gr</a> or visit the Help Center.</p>
+              </td>
+            </tr>
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0; padding: 0; border-collapse: collapse;">
+            <tr><td height="8" style="line-height: 8px; font-size: 0;">&nbsp;</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
   return { subject, html };
 }
 

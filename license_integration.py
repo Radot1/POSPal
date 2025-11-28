@@ -154,15 +154,17 @@ class LicenseIntegration:
             'source': state.source.value,
             'message': state.get_user_message()
         }
-        
+
         # Add subscription details if present
         if state.subscription and state.valid_until:
             legacy.update({
                 'valid_until': state.valid_until,
                 'subscription_id': state.subscription_id,
-                'subscription_status': state.subscription_status
+                'subscription_status': state.subscription_status,
+                'current_period_end': state.valid_until,
+                'next_billing_date': state.valid_until
             })
-        
+
         # Add grace period information
         if state.grace_period_active:
             legacy.update({
@@ -186,7 +188,10 @@ class LicenseIntegration:
                 'cloud_validation_attempted': state.cloud_validation_attempted,
                 'cloud_validation': state.cloud_validation_successful
             })
-        
+
+        if state.metadata:
+            legacy['metadata'] = state.metadata
+
         return legacy
     
     def validate_license_with_cloud(self, customer_email: str, unlock_token: str,

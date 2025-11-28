@@ -69,6 +69,13 @@ function createStripeHelper(env) {
   };
 }
 
+// Simple in-memory cache for Stripe pricing
+let pricingCache = {
+  value: null,
+  expiresAt: 0
+};
+const PRICING_CACHE_SECONDS = 600; // 10 minutes
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -118,6 +125,8 @@ export default {
         return handleCheckDuplicate(request, env);
       case '/recover-license':
         return handleRecoverLicense(request, env);
+      case '/pricing':
+        return handlePricing(request, env);
       case '/health':
         return handleHealthCheck(request, env);
       default:
@@ -128,6 +137,76 @@ export default {
     ctx.waitUntil(runSubscriptionReconciliation(env));
   }
 };
+
+/**
+ * Return live pricing from Stripe with a short cache to avoid rate limits.
+ */
+async function handlePricing(request, env) {
+  const now = Date.now();
+  if (pricingCache.value && pricingCache.expiresAt > now) {
+    return createResponse({
+      ...pricingCache.value,
+      cache_state: 'cache_hit'
+    });
+  }
+
+  const pricePayload = await fetchStripePrice(env);
+  if (pricePayload) {
+    pricingCache = {
+      value: pricePayload,
+      expiresAt: now + PRICING_CACHE_SECONDS * 1000
+    };
+    return createResponse({
+      ...pricePayload,
+      cache_state: 'refreshed'
+    });
+  }
+
+  // If we have an expired cache, return it as stale; otherwise, surface error
+  if (pricingCache.value) {
+    return createResponse({
+      ...pricingCache.value,
+      cache_state: 'stale'
+    });
+  }
+
+  return createErrorResponse('Pricing unavailable', 503, { code: 'PRICING_UNAVAILABLE' });
+}
+
+async function fetchStripePrice(env) {
+  try {
+    const priceId = env.STRIPE_PRICE_ID;
+    if (!priceId || !env.STRIPE_SECRET_KEY) {
+      console.warn('Missing STRIPE_PRICE_ID or STRIPE_SECRET_KEY; cannot fetch pricing');
+      return null;
+    }
+
+    const stripe = createStripeHelper(env);
+    const price = await stripe.get(`/prices/${priceId}`);
+    if (price && price.unit_amount && price.currency) {
+      const amount = Number(price.unit_amount);
+      const currency = String(price.currency).toUpperCase();
+      const normalizedAmount = amount >= 0 ? amount / 100.0 : null;
+      if (normalizedAmount === null) {
+        return null;
+      }
+
+      const payload = {
+        price: normalizedAmount,
+        currency,
+        source: 'stripe_live',
+        cache_ttl_seconds: PRICING_CACHE_SECONDS,
+      };
+      return payload;
+    }
+
+    console.warn('Stripe price response missing amount/currency', price);
+    return null;
+  } catch (error) {
+    console.error('Failed to fetch Stripe pricing:', error);
+    return null;
+  }
+}
 
 /**
  * Handle unified validation requests (consolidates /validate, /instant-validate, /session/*)
@@ -888,6 +967,92 @@ async function handleTestWebhook(request, env) {
           periodEnd
         );
         return createResponse({ success: true, test: true, type: 'immediate_reactivation' });
+      }
+      case 'test.renewal_reminder': {
+        const data = event.data || {};
+        const lookupEmail = data.email;
+        if (!lookupEmail) {
+          return createResponse({ error: 'Provide email for test renewal reminder' }, 400);
+        }
+        const customer = await env.DB.prepare(`
+          SELECT id, email, name FROM customers WHERE lower(email) = lower(?) LIMIT 1
+        `).bind(lookupEmail).first();
+        if (!customer) {
+          return createResponse({ error: 'Customer not found for renewal reminder test' }, 404);
+        }
+        const daysLeft = Number.isFinite(data.days_left) ? data.days_left : 5;
+        await sendRenewalReminderEmail(env, customer.id, customer.email, customer.name || 'Customer', daysLeft);
+        return createResponse({ success: true, test: true, type: 'renewal_reminder' });
+      }
+      case 'test.renewal_processed': {
+        const data = event.data || {};
+        const lookupEmail = data.email;
+        if (!lookupEmail) {
+          return createResponse({ error: 'Provide email for test renewal processed' }, 400);
+        }
+        const customer = await env.DB.prepare(`
+          SELECT id, email, name FROM customers WHERE lower(email) = lower(?) LIMIT 1
+        `).bind(lookupEmail).first();
+        if (!customer) {
+          return createResponse({ error: 'Customer not found for renewal processed test' }, 404);
+        }
+        const amountCents = Number.isFinite(data.amount_cents) ? data.amount_cents : null;
+        const currency = data.currency || 'eur';
+        const periodEnd = data.period_end || null;
+        await sendRenewalProcessedEmail(
+          env,
+          customer.id,
+          customer.email,
+          customer.name || 'Customer',
+          amountCents,
+          currency,
+          periodEnd
+        );
+        return createResponse({ success: true, test: true, type: 'renewal_processed' });
+      }
+      case 'test.machine_switch': {
+        const data = event.data || {};
+        const lookupEmail = data.email;
+        if (!lookupEmail) {
+          return createResponse({ error: 'Provide email for test machine switch' }, 400);
+        }
+        const customer = await env.DB.prepare(`
+          SELECT id, email, name FROM customers WHERE lower(email) = lower(?) LIMIT 1
+        `).bind(lookupEmail).first();
+        if (!customer) {
+          return createResponse({ error: 'Customer not found for machine switch test' }, 404);
+        }
+        await sendMachineSwitchEmail(
+          env,
+          customer.id,
+          customer.email,
+          customer.name || 'Customer',
+          data.device || null
+        );
+        return createResponse({ success: true, test: true, type: 'machine_switch' });
+      }
+      case 'test.license_disconnection': {
+        const data = event.data || {};
+        const lookupEmail = data.email;
+        if (!lookupEmail) {
+          return createResponse({ error: 'Provide email for test license disconnection' }, 400);
+        }
+        const customer = await env.DB.prepare(`
+          SELECT id, email, name, unlock_token FROM customers WHERE lower(email) = lower(?) LIMIT 1
+        `).bind(lookupEmail).first();
+        if (!customer) {
+          return createResponse({ error: 'Customer not found for disconnection test' }, 404);
+        }
+        const token = data.token || customer.unlock_token;
+        await sendLicenseDisconnectionEmail(
+          env,
+          customer.id,
+          customer.email,
+          customer.name || 'Customer',
+          token,
+          data.device || null
+        );
+        return createResponse({ success: true, test: true, type: 'license_disconnection' });
       }
       default:
         console.log(`Unhandled test event type: ${event.type}`);
@@ -1887,48 +2052,6 @@ async function sendWelcomeEmail(env, customerId, email, name, unlockToken) {
     
   } catch (error) {
     console.error('Welcome email error:', error);
-  }
-}
-
-/**
- * Send payment failure email
- */
-async function sendPaymentFailureEmail(env, customerId, email, name) {
-  try {
-    if (await wasEmailSentRecently(env.DB, customerId, 'payment_failed')) {
-      console.log(`Payment failure email recently sent to ${email}, skipping duplicate`);
-      return;
-    }
-    const subscriptionId = await getCustomerSubscriptionId(env.DB, customerId);
-    const { subject, html } = getPaymentFailureEmailTemplate(name, subscriptionId);
-    
-    const emailLogId = await logEmailDelivery(env.DB, customerId, 'payment_failed', email, subject);
-    
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'POSPal Team <noreply@pospal.gr>',
-        to: [email],
-        subject: subject,
-        html: html,
-      }),
-    });
-    
-    if (response.ok) {
-      await updateEmailStatus(env.DB, emailLogId, 'delivered');
-      console.log(`Payment failure email sent to ${email}`);
-    } else {
-      const error = await response.text();
-      await updateEmailStatus(env.DB, emailLogId, 'failed', error);
-      console.error(`Failed to send payment failure email:`, error);
-    }
-    
-  } catch (error) {
-    console.error('Payment failure email error:', error);
   }
 }
 

@@ -29,6 +29,17 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+try:
+    DEFAULT_SUBSCRIPTION_PRICE = float(os.environ.get('DEFAULT_SUBSCRIPTION_PRICE', '20.0'))
+except (TypeError, ValueError):
+    DEFAULT_SUBSCRIPTION_PRICE = 20.0
+
+DEFAULT_SUBSCRIPTION_CURRENCY = (os.environ.get('DEFAULT_SUBSCRIPTION_CURRENCY', 'EUR') or 'EUR').upper()
+
+PRICING_CACHE_TTL_SECONDS = 600  # Cache /api/pricing responses for 10 minutes
+_pricing_cache = None
+_pricing_cache_time = 0
+
 # Global subprocess configuration: Run all subprocesses silently (no CMD windows)
 # This ensures a professional appearance on Windows
 if os.name == 'nt':  # Windows only
@@ -486,6 +497,8 @@ LICENSE_RENEWAL_REQUIRED_STATUSES = {
     "paused",
     "in_grace_period",
     "past_due_incomplete",
+    "inactive",
+    "expired",
 }
 
 LICENSE_CANCELLED_STATUSES = {
@@ -2721,9 +2734,24 @@ def get_frontend_config():
         }
         
         # Add subscription details if available (non-sensitive only)
-        if license_status.get('subscription') and license_status.get('valid_until'):
-            config['license']['subscription_active'] = True
-            config['license']['subscription_status'] = license_status.get('subscription_status', 'unknown')
+        license_details = config['license']
+        metadata = license_status.get('metadata') or {}
+        if license_status.get('subscription'):
+            license_details['subscription_active'] = license_status.get('active', False)
+            license_details['subscription_status'] = license_status.get('subscription_status', 'unknown')
+            if license_status.get('valid_until'):
+                license_details['valid_until'] = license_status.get('valid_until')
+            if license_status.get('current_period_end'):
+                license_details['current_period_end'] = license_status.get('current_period_end')
+            if license_status.get('next_billing_date'):
+                license_details['next_billing_date'] = license_status.get('next_billing_date')
+            pending_date = metadata.get('pending_cancellation_date')
+            if pending_date:
+                license_details['pending_cancellation_date'] = pending_date
+                license_details['pending_cancellation'] = True
+            elif license_status.get('valid_until') and license_details['subscription_status'] in LICENSE_RENEWAL_REQUIRED_STATUSES:
+                license_details['pending_cancellation_date'] = license_status.get('valid_until')
+                license_details['pending_cancellation'] = True
         
         # Add grace period info if relevant
         if license_status.get('grace_period_active'):
@@ -9692,7 +9720,8 @@ def _get_cached_license_payload(email: str | None, source_hint: str = "server_li
 
     days_left = GRACE_PERIOD_DAYS - days_offline
     cached_license = cache_data.get('license_data', {})
-    subscription_info = cached_license.get('subscriptionInfo', {})
+    # Accept both legacy and current keys for subscription info
+    subscription_info = cached_license.get('subscriptionInfo') or cached_license.get('subscription_info') or {}
     customer_name = cached_license.get('customerName')
     subscription_status = subscription_info.get('status')
     next_billing_date = subscription_info.get('nextBillingDate')
@@ -9782,7 +9811,8 @@ def _normalize_license_status_payload(email: str | None,
     """Normalize various payload shapes to a consistent license status response."""
     result: dict[str, object] = {}
     email_value = payload.get('email') or email
-    subscription_info = payload.get('subscription_info') or {}
+    # Accept both current and legacy shapes
+    subscription_info = payload.get('subscription_info') or payload.get('subscriptionInfo') or {}
     subscription_price = payload.get('subscription_price')
     subscription_currency = payload.get('subscription_currency')
     if subscription_price is None:
@@ -9790,7 +9820,11 @@ def _normalize_license_status_payload(email: str | None,
         subscription_price = price
         subscription_currency = subscription_currency or currency
 
-    subscription_status = payload.get('subscription_status') or subscription_info.get('status')
+    subscription_status = (
+        payload.get('subscription_status')
+        or payload.get('subscriptionStatus')
+        or subscription_info.get('status')
+    )
     current_period_end = payload.get('current_period_end') or subscription_info.get('currentPeriodEnd')
 
     # Derive an accurate active flag that respects cancellation/past-due states and period expiry
@@ -9799,9 +9833,24 @@ def _normalize_license_status_payload(email: str | None,
         active_flag = payload.get('valid', False)
 
     normalized_status = str(subscription_status).lower() if subscription_status else ''
-    if normalized_status in LICENSE_CANCELLED_STATUSES or normalized_status in LICENSE_RENEWAL_REQUIRED_STATUSES:
+    period_elapsed = _period_has_elapsed(current_period_end)
+    honor_paid_period = bool(current_period_end) and not period_elapsed
+    subscription_expired_flag = bool(payload.get("subscription_expired"))
+
+    if normalized_status in LICENSE_CANCELLED_STATUSES:
+        if honor_paid_period:
+            active_flag = True
+        else:
+            active_flag = False
+    elif normalized_status in LICENSE_RENEWAL_REQUIRED_STATUSES or subscription_expired_flag:
+        if normalized_status == "inactive" and honor_paid_period:
+            active_flag = True
+        else:
+            active_flag = False
+
+    if subscription_expired_flag:
         active_flag = False
-    if _period_has_elapsed(current_period_end):
+    if period_elapsed:
         active_flag = False
 
     result.update({
@@ -9814,6 +9863,7 @@ def _normalize_license_status_payload(email: str | None,
         "subscription_currency": subscription_currency,
         "next_billing_date": payload.get('next_billing_date') or subscription_info.get('nextBillingDate'),
         "current_period_end": current_period_end,
+        "valid_until": payload.get('valid_until') or subscription_info.get('validUntil') or current_period_end,
         "grace_period": payload.get('grace_period', False),
         "grace_days_left": payload.get('grace_days_left'),
         "days_offline": payload.get('days_offline'),
@@ -9983,6 +10033,168 @@ def get_server_license_status():
             "timestamp": datetime.now().isoformat()
         }
         return jsonify(fallback), 200
+
+
+def _normalize_subscription_price_value(value):
+    if value is None:
+        return None
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _currency_symbol_for(currency_code: str | None) -> str:
+    if not currency_code:
+        return '€'
+    mapping = {
+        'EUR': '€',
+        'USD': '$',
+        'GBP': '£',
+        'CAD': '$',
+        'AUD': '$'
+    }
+    return mapping.get(currency_code.upper(), currency_code.upper())
+
+def _format_price_value(amount: float, symbol: str, include_decimals: bool = True) -> str:
+    decimals = 2 if include_decimals else 0
+    formatted_amount = f"{amount:,.{decimals}f}"
+    if not include_decimals and formatted_amount.endswith('.0'):
+        formatted_amount = formatted_amount[:-2]
+    return f"{symbol}{formatted_amount}"
+
+def _fetch_pricing_from_worker(force_refresh: bool = False):
+
+    global _pricing_cache, _pricing_cache_time
+
+
+
+    now = time.time()
+
+    if not force_refresh and _pricing_cache and (now - _pricing_cache_time) < PRICING_CACHE_TTL_SECONDS:
+
+        return dict(_pricing_cache), True
+
+
+
+    try:
+
+        response = call_cloudflare_api('/pricing', {}, timeout=8, max_retries=1)
+
+        if response and isinstance(response, dict) and response.get('price') is not None:
+
+            price_value = _normalize_subscription_price_value(response.get('price'))
+
+            currency_code = (response.get('currency') or DEFAULT_SUBSCRIPTION_CURRENCY or 'EUR').upper()
+
+            currency_symbol = _currency_symbol_for(currency_code)
+
+            formatted_price = response.get('formatted') or _format_price_value(price_value, currency_symbol, True)
+
+            formatted_short = response.get('formatted_short') or _format_price_value(price_value, currency_symbol, False)
+
+            payload = {
+
+                "price": price_value,
+
+                "currency": currency_code,
+
+                "currency_symbol": currency_symbol,
+
+                "formatted": formatted_price,
+
+                "formatted_short": formatted_short,
+
+                "source": response.get('source', 'stripe_live'),
+
+                "cache_state": response.get('cache_state'),
+
+                "fallback_used": False,
+
+                "last_updated": response.get('last_updated')
+
+            }
+
+            _pricing_cache = payload
+
+            _pricing_cache_time = now
+
+            return dict(payload), False
+
+    except Exception as pricing_error:
+
+        app.logger.error(f"Failed to fetch pricing from worker: {pricing_error}")
+
+
+
+    if _pricing_cache:
+
+        return dict(_pricing_cache), True
+
+    return None, False
+
+
+
+
+
+
+@app.route('/api/pricing', methods=['GET'])
+
+def get_subscription_pricing():
+
+    """
+
+    Lightweight endpoint that exposes the Stripe-backed subscription pricing.
+
+    Uses the Cloudflare Worker pricing endpoint with a short cache to avoid hardcoding values.
+
+    """
+
+    force_refresh = request.args.get('refresh', '').lower() in {'1', 'true', 'yes', 'force'}
+
+
+
+    worker_payload, served_from_cache = _fetch_pricing_from_worker(force_refresh=force_refresh)
+
+    if worker_payload:
+
+        worker_payload.setdefault('cache_state', 'cache_hit' if served_from_cache else 'refreshed')
+
+        return jsonify(worker_payload), 200
+
+
+
+    # Last resort: fallback to static defaults
+
+    currency_symbol = _currency_symbol_for(DEFAULT_SUBSCRIPTION_CURRENCY)
+
+    response_payload = {
+
+        "price": DEFAULT_SUBSCRIPTION_PRICE,
+
+        "currency": DEFAULT_SUBSCRIPTION_CURRENCY,
+
+        "currency_symbol": currency_symbol,
+
+        "formatted": _format_price_value(DEFAULT_SUBSCRIPTION_PRICE, currency_symbol, include_decimals=True),
+
+        "formatted_short": _format_price_value(DEFAULT_SUBSCRIPTION_PRICE, currency_symbol, include_decimals=False),
+
+        "source": "default",
+
+        "cache_state": "unavailable",
+
+        "fallback_used": True,
+
+        "last_updated": None
+
+    }
+
+    return jsonify(response_payload), 200
+
+
+
+
 
 @app.route('/api/license/deactivate', methods=['POST'])
 def deactivate_server_license():
@@ -10408,6 +10620,7 @@ def _validate_license_with_cloud(
             # The worker returns the license data directly in the response
             license_data = {
                 'valid': response.get('valid'),  # Include 'valid' field from API response
+                'active': response.get('active'),
                 'customer_email': customer_email,
                 'unlock_token': unlock_token,
                 'hardware_id': hardware_id,

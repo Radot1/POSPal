@@ -408,7 +408,7 @@
                 </div>
                 
                 <div class="billing-info">
-                    <div class="billing-amount" id="billing-amount">€20</div>
+                    <div class="billing-amount" id="billing-amount" data-pricing-amount data-pricing-format="short">€20.00</div>
                     <div class="billing-period">ανά μήνα</div>
                 </div>
 
@@ -538,12 +538,81 @@
     </div>
 
     <!-- Enhanced Support Bundle -->
+    <script src="./static/pricing.js"></script>
     <script src="/assets/desktop-support.js"></script>
     
     <script>
         // Initialize Stripe
         let stripe;
-        
+        const PRICING_FALLBACK = {
+            amount: 20,
+            formatted: '€20.00',
+            shortFormatted: '€20'
+        };
+
+        function getCurrencySymbol(currencyCode) {
+            if (!currencyCode) return '€';
+            const map = {
+                EUR: '€',
+                USD: '$',
+                GBP: '£',
+                CAD: '$',
+                AUD: '$'
+            };
+            const normalized = currencyCode.toUpperCase();
+            return map[normalized] || normalized;
+        }
+
+        function formatCurrencyDisplay(amount, symbol = '€', includeDecimals = true) {
+            const value = Number(amount);
+            if (!Number.isFinite(value)) {
+                return includeDecimals ? `${symbol}0.00` : `${symbol}0`;
+            }
+            const options = {
+                minimumFractionDigits: includeDecimals ? 2 : 0,
+                maximumFractionDigits: includeDecimals ? 2 : 0
+            };
+            return `${symbol}${value.toLocaleString(undefined, options)}`;
+        }
+
+        async function fetchPricingInfo() {
+            if (window.getPospalPricing) {
+                try {
+                    const sharedPricing = await window.getPospalPricing();
+                    if (sharedPricing) {
+                        return sharedPricing;
+                    }
+                } catch (error) {
+                    console.warn('Shared pricing loader failed', error);
+                }
+            }
+            try {
+                const response = await fetch('/api/pricing');
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (error) {
+                console.warn('Direct pricing fetch failed', error);
+            }
+            return null;
+        }
+
+        function resolvePricingInfo(rawPricing) {
+            if (!rawPricing) {
+                return { ...PRICING_FALLBACK };
+            }
+            const value = typeof rawPricing.price === 'number' ? rawPricing.price : parseFloat(rawPricing.price);
+            if (!Number.isFinite(value)) {
+                return { ...PRICING_FALLBACK };
+            }
+            const symbol = rawPricing.currency_symbol || getCurrencySymbol(rawPricing.currency);
+            return {
+                amount: value,
+                formatted: rawPricing.formatted || formatCurrencyDisplay(value, symbol, true),
+                shortFormatted: rawPricing.formatted_short || formatCurrencyDisplay(value, symbol, false)
+            };
+        }
+
         // Initialize Stripe with config from backend
         fetch('/api/config')
             .then(response => response.json())
@@ -568,6 +637,7 @@
 
         // Load account information
         async function loadAccountData() {
+            let pricingDisplay = resolvePricingInfo(await fetchPricingInfo());
             try {
                 showLoading(true);
                 const token = localStorage.getItem('pospal_token');
@@ -591,7 +661,9 @@
                     email: data.customer?.email || 'No email',
                     subscription: {
                         status: data.customer?.subscription_status || 'unknown',
-                        amount: 20,
+                        amount: pricingDisplay.amount,
+                        formattedAmount: pricingDisplay.formatted,
+                        displayShortAmount: pricingDisplay.shortFormatted,
                         nextBilling: data.subscription?.current_period_end ? 
                             new Date(data.subscription.current_period_end * 1000).toLocaleDateString() : 
                             'Not available',
@@ -616,7 +688,8 @@
                     email: 'Δεν διαθέσιμο',
                     subscription: {
                         status: 'unknown',
-                        amount: 20,
+                        amount: pricingDisplay.amount,
+                        formattedAmount: pricingDisplay.formatted,
                         nextBilling: 'Δεν διαθέσιμο',
                         cancelAtPeriodEnd: false
                     },
@@ -636,7 +709,9 @@
         function updateAccountDisplay(data) {
             document.getElementById('restaurant-name').textContent = data.restaurantName || 'Δεν διαθέσιμο';
             document.getElementById('user-email').textContent = data.email || 'Δεν διαθέσιμο';
-            document.getElementById('billing-amount').textContent = `€${data.subscription?.amount || 20}`;
+            const amountText = data.subscription?.formattedAmount
+                || formatCurrencyDisplay(data.subscription?.amount);
+            document.getElementById('billing-amount').textContent = amountText;
             document.getElementById('next-billing-date').textContent = data.subscription?.nextBilling || 'Δεν διαθέσιμο';
             document.getElementById('orders-count').textContent = data.stats?.totalOrders || '-';
             document.getElementById('monthly-orders').textContent = data.stats?.monthlyOrders || '-';
@@ -662,19 +737,20 @@
             }
 
             // Update recent activity
-            updateRecentActivity();
+            updateRecentActivity(data);
         }
 
         // Update recent activity section
-        function updateRecentActivity() {
+        function updateRecentActivity(data) {
             const activityContainer = document.getElementById('recent-activity');
+            const paymentAmount = data.subscription?.formattedAmount || PRICING_FALLBACK.formatted;
             activityContainer.innerHTML = `
                 <div class="activity-item">
                     <div>
                         <div class="activity-description">Πληρωμή επεξεργάστηκε</div>
                         <div class="activity-date">15 Φεβρουαρίου 2024</div>
                     </div>
-                    <div class="activity-amount">€20.00</div>
+                    <div class="activity-amount">${paymentAmount}</div>
                 </div>
                 <div class="activity-item">
                     <div>

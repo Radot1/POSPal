@@ -2741,8 +2741,12 @@ const FrontendLicenseManager = {
     updateBillingDateDisplay(licenseData) {
         console.log('Updating billing date display with data:', licenseData);
 
-        const normalizedStatus = licenseData.displayStatus
+        let normalizedStatus = licenseData.displayStatus
             || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState);
+        if (licenseData.active === true && normalizedStatus !== 'active') {
+            normalizedStatus = 'active';
+            licenseData.displayStatus = 'active';
+        }
         const planCard = this.elements ? this.elements.planCard : document.getElementById('plan-card');
         const nextPaymentCard = this.elements ? this.elements.nextPaymentCard : document.getElementById('next-payment-card');
         const priceCard = this.elements ? this.elements.priceCard : document.getElementById('price-card');
@@ -10819,8 +10823,12 @@ async function loadLicenseInfo() {
                 statusPayload.isOnline = false;
             }
 
-            const resolvedStatus = licenseData.displayStatus
+            let resolvedStatus = licenseData.displayStatus
                 || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, canonicalState);
+            if (licenseData.active === true && resolvedStatus !== 'active') {
+                resolvedStatus = 'active';
+                licenseData.displayStatus = 'active';
+            }
             const statusKey = (licenseData.isGraceMode || forcedOffline)
                 ? 'offline'
                 : (resolvedStatus || 'inactive');
@@ -11794,7 +11802,7 @@ function initializePortalReturnHandling() {
 
     if (paymentCancelled === 'true') {
         console.log('Payment cancelled by user');
-        showToast('Payment cancelled. Your subscription remains inactive.', 'warning', 4000);
+        showToast('Payment cancelled.', 'warning', 4000);
 
         // Clean URL
         const cleanUrl = new URL(window.location);
@@ -11808,9 +11816,75 @@ function initializePortalReturnHandling() {
     }
 
     // Also listen for hash changes in case of SPA routing
-    window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', () => {
         handlePortalReturn();
     });
+}
+
+const SUBSCRIPTION_REACTIVATION_STATUSES = new Set([
+    'inactive',
+    'cancelled',
+    'canceled',
+    'past_due',
+    'past-due',
+    'unpaid',
+    'incomplete',
+    'incomplete_expired',
+    'expired'
+]);
+
+async function resolveSubscriptionStatusSnapshot() {
+    const snapshot = {
+        status: null,
+        source: 'unknown',
+        payload: null
+    };
+
+    try {
+        const licenseData = LicenseStorage.getLicenseData();
+        if (licenseData && (licenseData.displayStatus || licenseData.licenseStatus || licenseData.licenseState)) {
+            const normalizedStatus = licenseData.displayStatus
+                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState);
+            if (normalizedStatus) {
+                snapshot.status = normalizedStatus;
+                snapshot.source = 'frontend-cache';
+                snapshot.payload = licenseData;
+                return snapshot;
+            }
+        }
+    } catch (cacheError) {
+        console.warn('Unable to determine subscription status from cached license data.', cacheError);
+    }
+
+    try {
+        const response = await fetch('/api/license/status', {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            },
+            cache: 'no-store'
+        });
+
+        if (response.ok) {
+            const payload = await response.json();
+            const normalizedStatus = normalizeLicenseStatusForDisplay(
+                payload.subscription_status || payload.status || payload.license_state,
+                payload.license_state
+            );
+
+            if (normalizedStatus) {
+                snapshot.status = normalizedStatus;
+                snapshot.source = 'server';
+                snapshot.payload = payload;
+            }
+        } else {
+            console.warn(`License status check failed with status ${response.status} before portal access.`);
+        }
+    } catch (statusError) {
+        console.warn('Unable to refresh license status before opening the portal.', statusError);
+    }
+
+    return snapshot;
 }
 
 async function openCustomerPortal() {
@@ -11877,20 +11951,14 @@ async function openCustomerPortal() {
 
         // Check if subscription is inactive or manual - redirect to checkout for reactivation
         const licenseData = LicenseStorage.getLicenseData();
-        const subscriptionId = localStorage.getItem('pospal_subscription_id');
-        const effectiveStatus = licenseData
-            ? (licenseData.displayStatus
-                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState))
-            : null;
-        const cachedStatus = effectiveStatus
-            || normalizeLicenseStatusForDisplay(localStorage.getItem('pospal_license_status'));
+        const subscriptionSnapshot = await resolveSubscriptionStatusSnapshot();
+        const effectiveStatus = subscriptionSnapshot.status;
+        const isReliableStatus = subscriptionSnapshot.source !== 'unknown' && Boolean(effectiveStatus);
+        const requiresReactivation = isReliableStatus
+            && SUBSCRIPTION_REACTIVATION_STATUSES.has(effectiveStatus);
 
-        // Detect manual/test subscriptions or inactive status
-        const isManualSubscription = subscriptionId && subscriptionId.includes('manual');
-        const isInactive = cachedStatus && (cachedStatus === 'inactive' || cachedStatus === 'cancelled');
-
-        if (isManualSubscription || isInactive) {
-            console.log(`Detected ${isManualSubscription ? 'manual' : 'inactive'} subscription - redirecting to checkout for reactivation`);
+        if (requiresReactivation) {
+            console.log(`Detected ${effectiveStatus} subscription status from ${subscriptionSnapshot.source} snapshot - redirecting to checkout for reactivation`);
 
             // Show appropriate message
             showPortalLoading(true, 'Preparing subscription reactivation...');
@@ -12623,22 +12691,25 @@ async function checkSubscriptionStatus() {
     try {
         const unlockToken = localStorage.getItem('pospal_unlock_token');
         const customerEmail = localStorage.getItem('pospal_customer_email');
-        
+
         // Check if we have a trial or subscription to validate
         if (!unlockToken || !customerEmail) {
             return handleTrialValidation();
         }
-        
-        // Check if we're in a valid offline grace period first
-        if (isInOfflineGracePeriod()) {
-            console.log('Using offline grace period - skipping server validation');
-            return; // Continue using app offline
+
+        const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+
+        // Skip validation only when truly offline and still within a safe grace window
+        if (isOffline && isInOfflineGracePeriod()) {
+            console.log('Offline grace period active - deferring server validation');
+            return;
         }
-        
+
         // Check cached status (avoid too frequent API calls when online)
         const lastCheck = localStorage.getItem('pospal_last_validation_check');
-        const cacheValid = lastCheck && (Date.now() - parseInt(lastCheck)) < (1000 * 60 * 60); // 1 hour cache
-        
+        const ACTIVE_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+        const cacheValid = lastCheck && (Date.now() - parseInt(lastCheck, 10)) < ACTIVE_CACHE_MS;
+
         if (cacheValid) {
             const cachedStatus = localStorage.getItem('pospal_cached_status');
             if (cachedStatus === 'active') {
@@ -12686,17 +12757,19 @@ function handleTrialValidation() {
 
 // Check if user is within offline grace period (no warnings - just silent offline mode)
 function isInOfflineGracePeriod() {
-    // REMOVED: Offline grace period warnings removed for all users
-    // Rationale:
-    // - Subscription users: Auto-renew via Stripe, no action needed
-    // - Trial users: Can work offline, will see status in License Management
-    // - Restaurant POS needs to work offline during service
-    // - Intrusive warnings during busy hours are unacceptable
-    // - License status is shown in License Management modal
-    // - Only block features when subscription actually expires (via webhook)
+    const cachedStatus = localStorage.getItem('pospal_cached_status');
+    if (cachedStatus === 'inactive' || cachedStatus === 'cancelled') {
+        return false; // Do not allow grace when we know the sub is suspended
+    }
 
-    console.log('Offline mode allowed - no warnings shown (removed for better UX)');
-    return true; // Always allow offline mode
+    const lastSuccessful = localStorage.getItem('pospal_last_successful_validation');
+    if (!lastSuccessful) {
+        return false;
+    }
+
+    const daysSince = (Date.now() - parseInt(lastSuccessful, 10)) / (1000 * 60 * 60 * 24);
+    const graceDays = 2; // Keep short to stay in sync with backend status
+    return daysSince <= graceDays;
 }
 
 // Attempt server validation with timeout and enhanced UI feedback

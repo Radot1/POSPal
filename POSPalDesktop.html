@@ -1968,7 +1968,7 @@
                                         </div>
                                         <div id="price-card" class="bg-green-50 p-4 rounded-xl border border-green-200 text-center">
                                             <div class="text-xs text-green-600 uppercase tracking-wide font-medium mb-1">Monthly Cost</div>
-                                            <div id="subscription-price" class="text-lg font-bold text-green-800">&euro;20.00</div>
+                                            <div id="subscription-price" class="text-lg font-bold text-green-800" data-pricing-amount data-pricing-format="long">€20.00</div>
                                         </div>
                                         <div id="renewal-card" class="bg-purple-50 p-4 rounded-xl border border-purple-200 text-center">
                                             <div class="text-xs text-purple-600 uppercase tracking-wide font-medium mb-1">Renewal In</div>
@@ -2008,7 +2008,7 @@
                                                     class="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-white font-semibold shadow-lg hover:shadow-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200"
                                                     onclick="showEmbeddedPayment()">
                                                 <i class="fas fa-credit-card"></i>
-                                                Subscribe / Reactivate for &euro;20/month
+                                                <span data-pricing-template="Subscribe / Reactivate for {price_short}/month">Subscribe / Reactivate for €20/month</span>
                                             </button>
                                             <button type="button"
                                                     class="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-gray-200 px-6 py-3 text-gray-800 font-semibold hover:border-gray-300 hover:bg-gray-50 transition-colors"
@@ -3180,7 +3180,7 @@
                                     class="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-500 text-white py-4 px-6 rounded-xl font-bold text-lg hover:from-indigo-700 hover:via-purple-700 hover:to-indigo-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]">
                                 <div class="flex items-center justify-center gap-2">
                                     <i class="fas fa-lock text-sm"></i>
-                                    <span>Subscribe for &euro;20/month</span>
+                                    <span data-pricing-template="Subscribe for {price_short}/month">Subscribe for €20/month</span>
                                 </div>
                             </button>
                             <p class="text-center text-xs text-gray-500 mt-2">
@@ -3461,6 +3461,7 @@
         });
     </script>
 
+    <script src="./static/pricing.js" defer></script>
     <script src="./static/js/qrcode.min.js" defer></script>
     <script src="i18n.js" defer></script>
     <script src="/assets/desktop-support.js" defer></script>
