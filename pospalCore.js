@@ -44,6 +44,60 @@ const LICENSE_STATE_STATUS_MAP = {
     [LICENSE_STATES.LICENSE_MISSING]: 'inactive'
 };
 
+// Canonical resolver for UI-facing license status (prevents stale "inactive" states)
+function resolveDisplayStatusForLicense(licenseData = {}) {
+    const licenseState = (licenseData.licenseState || licenseData.license_state || '').toLowerCase();
+    const subscriptionStatusRaw = licenseData.licenseStatus
+        || licenseData.subscription_status
+        || licenseData.status
+        || '';
+    const subscriptionStatus = typeof subscriptionStatusRaw === 'string'
+        ? subscriptionStatusRaw.toLowerCase()
+        : '';
+
+    const activeFlag = licenseData.active === true
+        || licenseData.licensed === true
+        || licenseData.valid === true;
+
+    const stateResolved = licenseState && LICENSE_STATE_STATUS_MAP[licenseState]
+        ? LICENSE_STATE_STATUS_MAP[licenseState]
+        : null;
+
+    const legacyResolved = normalizeLegacyStatusValue(subscriptionStatus);
+
+    const graceLike = licenseData.grace_period
+        || licenseData.isGraceMode
+        || licenseData.licenseStatus === 'offline_grace'
+        || licenseState === LICENSE_STATES.LICENSED_GRACE;
+
+    // If explicitly offline/grace, keep that first
+    if (graceLike) {
+        return {
+            displayStatus: 'offline',
+            source: stateResolved ? 'license_state' : 'grace_flag'
+        };
+    }
+
+    // Prefer explicit license_state mapping
+    let displayStatus = stateResolved || legacyResolved || 'inactive';
+    let source = stateResolved ? 'license_state' : 'subscription_status';
+    let note = null;
+
+    const explicitCancelled = stateResolved === 'cancelled';
+    const explicitInactive = stateResolved === 'inactive';
+
+    // Active flag wins unless state explicitly says cancelled/inactive/offline
+    if (activeFlag && !explicitCancelled && !explicitInactive && displayStatus !== 'offline') {
+        if (displayStatus === 'inactive' || displayStatus === 'cancelled') {
+            note = 'billing_status_mismatch';
+        }
+        displayStatus = 'active';
+        source = 'active_flag';
+    }
+
+    return { displayStatus, source, note };
+}
+
 function isLikelyNetworkError(error) {
     if (!error) return false;
     const message = String(error.message || error).toLowerCase();
@@ -1540,6 +1594,9 @@ const LicenseStorage = {
         customerEmail: null,
         customerName: null,
         licenseStatus: null,
+        licenseState: null,
+        active: null,
+        displayStatus: null,
         nextBillingDate: null,
         lastUpdated: null
     },
@@ -1558,6 +1615,9 @@ const LicenseStorage = {
             customerEmail: this.cache.customerEmail,
             customerName: this.cache.customerName,
             licenseStatus: this.cache.licenseStatus,
+            licenseState: this.cache.licenseState,
+            active: this.cache.active,
+            displayStatus: this.cache.displayStatus,
             nextBillingDate: this.cache.nextBillingDate,
             lastValidated: this.cache.lastUpdated,
             lastSuccessfulValidation: this.cache.lastUpdated,
@@ -1571,6 +1631,9 @@ const LicenseStorage = {
         if (data.customerEmail) this.cache.customerEmail = data.customerEmail;
         if (data.customerName) this.cache.customerName = data.customerName;
         if (data.licenseStatus) this.cache.licenseStatus = data.licenseStatus;
+        if (data.licenseState) this.cache.licenseState = data.licenseState;
+        if (typeof data.active === 'boolean') this.cache.active = data.active;
+        if (data.displayStatus) this.cache.displayStatus = data.displayStatus;
         if (data.nextBillingDate) this.cache.nextBillingDate = data.nextBillingDate;
         if (data.lastValidated) this.cache.lastUpdated = data.lastValidated;
 
@@ -1584,6 +1647,9 @@ const LicenseStorage = {
             customerEmail: null,
             customerName: null,
             licenseStatus: null,
+            licenseState: null,
+            active: null,
+            displayStatus: null,
             nextBillingDate: null,
             lastUpdated: null
         };
@@ -2299,10 +2365,21 @@ const FrontendLicenseManager = {
             const fallbackDaysOffline = (Date.now() - graceValidationTimestamp) / (1000 * 60 * 60 * 24);
             const daysOffline = daysOfflineFromServer ?? fallbackDaysOffline;
 
+            const resolvedDisplay = resolveDisplayStatusForLicense({
+                licenseState: serverLicense.license_state,
+                licenseStatus: serverLicense.subscription_status || 'active',
+                active: serverLicense.active,
+                licensed: serverLicense.licensed,
+                grace_period: true
+            });
+
             LicenseStorage.setLicenseData({
                 customerEmail: serverLicense.email,
                 customerName: serverLicense.customer_name,
                 licenseStatus: serverLicense.subscription_status || 'active',
+                licenseState: serverLicense.license_state,
+                active: serverLicense.active,
+                displayStatus: resolvedDisplay.displayStatus,
                 nextBillingDate: serverLicense.next_billing_date,
                 lastValidated: lastValidationIso || graceValidationTimestamp
             });
@@ -2356,10 +2433,20 @@ const FrontendLicenseManager = {
             this.cache.lastValidation = validationTimestamp;
             localStorage.setItem('pospal_last_successful_validation', validationTimestamp.toString());
 
+            const resolvedDisplay = resolveDisplayStatusForLicense({
+                licenseState: serverLicense.license_state,
+                licenseStatus: serverLicense.subscription_status || 'active',
+                active: serverLicense.active,
+                licensed: serverLicense.licensed
+            });
+
             LicenseStorage.setLicenseData({
                 customerEmail: serverLicense.email,
                 customerName: serverLicense.customer_name,
                 licenseStatus: serverLicense.subscription_status || 'active',
+                licenseState: serverLicense.license_state,
+                active: serverLicense.active,
+                displayStatus: resolvedDisplay.displayStatus,
                 nextBillingDate: serverLicense.next_billing_date,
                 lastValidated: serverLicense.validated_at || validationTimestamp
             });
@@ -2741,7 +2828,9 @@ const FrontendLicenseManager = {
     updateBillingDateDisplay(licenseData) {
         console.log('Updating billing date display with data:', licenseData);
 
+        const resolvedDisplay = resolveDisplayStatusForLicense(licenseData);
         let normalizedStatus = licenseData.displayStatus
+            || resolvedDisplay.displayStatus
             || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState);
         if (licenseData.active === true && normalizedStatus !== 'active') {
             normalizedStatus = 'active';
@@ -2860,7 +2949,11 @@ const FrontendLicenseManager = {
             // Update subscription status display based on actual status
             if (statusDisplay) {
                 const status = normalizedStatus || 'unknown';
-                statusDisplay.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                if (status === 'active' && licenseData.statusNote === 'billing_status_mismatch') {
+                    statusDisplay.textContent = 'Active (billing updating)';
+                } else {
+                    statusDisplay.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                }
             }
 
             if (planCard && statusDisplay) {
@@ -2934,6 +3027,9 @@ const FrontendLicenseManager = {
             unlockToken: true,
             customerName: serverLicense.customer_name || serverLicense.email,
             licenseStatus: derivedStatus,
+            licenseState: serverLicense.license_state,
+            active: serverLicense.active,
+            licensed: serverLicense.licensed,
             nextBillingDate: serverLicense.next_billing_date,
             subscriptionPrice: serverLicense.subscription_price,
             subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
@@ -10596,37 +10692,41 @@ async function loadLicenseInfo() {
                     graceSourceHints.has(serverLicense.source)
                 ));
 
-                // If server has active license, populate licenseData from it
-                if (serverLicense.licensed && serverLicense.active && !graceMode) {
-                    licenseData = {
-                        unlockToken: true,  // Set to truthy value so existing checks work
-                        customerEmail: serverLicense.email,
-                        customerName: serverLicense.customer_name,
-                        licenseState: serverLicense.license_state,
-                        licenseStatus: serverLicense.subscription_status || 'active',
-                        nextBillingDate: serverLicense.next_billing_date,
-                        subscriptionPrice: serverLicense.subscription_price,
-                        subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
-                        lastValidated: serverLicense.validated_at,
-                        graceDaysLeft: serverLicense.grace_days_left,
+        // If server has active license, populate licenseData from it
+        if (serverLicense.licensed && serverLicense.active && !graceMode) {
+            licenseData = {
+                unlockToken: true,  // Set to truthy value so existing checks work
+                customerEmail: serverLicense.email,
+                customerName: serverLicense.customer_name,
+                licenseState: serverLicense.license_state,
+                licenseStatus: serverLicense.subscription_status || 'active',
+                active: serverLicense.active,
+                licensed: serverLicense.licensed,
+                nextBillingDate: serverLicense.next_billing_date,
+                subscriptionPrice: serverLicense.subscription_price,
+                subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+                lastValidated: serverLicense.validated_at,
+                graceDaysLeft: serverLicense.grace_days_left,
                         daysOffline: serverLicense.days_offline,
                         isGraceMode: false,
                         isOnline: true,
                         connectivityStatus
                     };
                     console.log('Active server license found, license data populated');
-                } else if (graceMode || serverLicense.grace_period) {
-                    licenseData = {
-                        unlockToken: true,
-                        customerEmail: serverLicense.email,
-                        customerName: serverLicense.customer_name,
-                        licenseState: serverLicense.license_state,
-                        licenseStatus: 'offline_grace',
-                        nextBillingDate: serverLicense.next_billing_date,
-                        subscriptionPrice: serverLicense.subscription_price,
-                        subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
-                        lastValidated: serverLicense.validated_at,
-                        graceDaysLeft: serverLicense.grace_days_left,
+        } else if (graceMode || serverLicense.grace_period) {
+            licenseData = {
+                unlockToken: true,
+                customerEmail: serverLicense.email,
+                customerName: serverLicense.customer_name,
+                licenseState: serverLicense.license_state,
+                licenseStatus: 'offline_grace',
+                active: serverLicense.active,
+                licensed: serverLicense.licensed,
+                nextBillingDate: serverLicense.next_billing_date,
+                subscriptionPrice: serverLicense.subscription_price,
+                subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+                lastValidated: serverLicense.validated_at,
+                graceDaysLeft: serverLicense.grace_days_left,
                         daysOffline: serverLicense.days_offline,
                         isGraceMode: true,
                         isOnline: false,
@@ -10644,21 +10744,30 @@ async function loadLicenseInfo() {
                 const hasLicensedState = licenseStateValue.startsWith('licensed_');
                 const hasServerLicense = hasLicensedState || serverLicense.licensed || (statusHint && !statusHint.includes('trial'));
 
-                if (!licenseData && hasServerLicense) {
-                    const derivedStatus = subscriptionStatus
-                        || serverLicense.license_state
-                        || (serverLicense.active ? 'active' : 'inactive');
-                    licenseData = {
-                        unlockToken: true,
-                        customerEmail: serverLicense.email,
-                        customerName: serverLicense.customer_name,
-                        licenseState: serverLicense.license_state,
-                        licenseStatus: derivedStatus,
-                        nextBillingDate: serverLicense.next_billing_date,
-                        subscriptionPrice: serverLicense.subscription_price,
-                        subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
-                        lastValidated: serverLicense.validated_at,
-                        graceDaysLeft: serverLicense.grace_days_left,
+        if (!licenseData && hasServerLicense) {
+            const derivedStatus = subscriptionStatus
+                || serverLicense.license_state
+                || (serverLicense.active ? 'active' : 'inactive');
+            const resolvedDisplay = resolveDisplayStatusForLicense({
+                licenseState: serverLicense.license_state,
+                licenseStatus: derivedStatus,
+                active: serverLicense.active,
+                licensed: serverLicense.licensed
+            });
+            licenseData = {
+                unlockToken: true,
+                customerEmail: serverLicense.email,
+                customerName: serverLicense.customer_name,
+                licenseState: serverLicense.license_state,
+                licenseStatus: derivedStatus,
+                active: serverLicense.active,
+                licensed: serverLicense.licensed,
+                displayStatus: resolvedDisplay.displayStatus,
+                nextBillingDate: serverLicense.next_billing_date,
+                subscriptionPrice: serverLicense.subscription_price,
+                subscriptionCurrency: serverLicense.subscription_currency || 'EUR',
+                lastValidated: serverLicense.validated_at,
+                graceDaysLeft: serverLicense.grace_days_left,
                         daysOffline: serverLicense.days_offline,
                         isGraceMode: false,
                         isOnline: connectivityIndicatesOnline,
@@ -10731,9 +10840,12 @@ async function loadLicenseInfo() {
         let displayStatus = null;
         if (licenseData) {
             canonicalState = licenseData.licenseState || licenseData.licenseStatus;
-            displayStatus = licenseData.displayStatus
-                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, canonicalState);
+            const resolvedDisplay = resolveDisplayStatusForLicense(licenseData);
+            displayStatus = licenseData.displayStatus || resolvedDisplay.displayStatus;
             licenseData.displayStatus = displayStatus;
+            if (resolvedDisplay.note) {
+                licenseData.statusNote = resolvedDisplay.note;
+            }
         }
 
         // Update license status badge
@@ -11843,10 +11955,11 @@ async function resolveSubscriptionStatusSnapshot() {
     try {
         const licenseData = LicenseStorage.getLicenseData();
         if (licenseData && (licenseData.displayStatus || licenseData.licenseStatus || licenseData.licenseState)) {
-            const normalizedStatus = licenseData.displayStatus
-                || normalizeLicenseStatusForDisplay(licenseData.licenseStatus, licenseData.licenseState);
-            if (normalizedStatus) {
-                snapshot.status = normalizedStatus;
+            const resolved = licenseData.displayStatus
+                ? { displayStatus: licenseData.displayStatus }
+                : resolveDisplayStatusForLicense(licenseData);
+            if (resolved.displayStatus) {
+                snapshot.status = resolved.displayStatus;
                 snapshot.source = 'frontend-cache';
                 snapshot.payload = licenseData;
                 return snapshot;
@@ -11867,13 +11980,17 @@ async function resolveSubscriptionStatusSnapshot() {
 
         if (response.ok) {
             const payload = await response.json();
-            const normalizedStatus = normalizeLicenseStatusForDisplay(
-                payload.subscription_status || payload.status || payload.license_state,
-                payload.license_state
-            );
+            const resolved = resolveDisplayStatusForLicense({
+                licenseState: payload.license_state,
+                licenseStatus: payload.subscription_status || payload.status,
+                active: payload.active,
+                licensed: payload.licensed,
+                grace_period: payload.grace_period,
+                isGraceMode: payload.offline
+            });
 
-            if (normalizedStatus) {
-                snapshot.status = normalizedStatus;
+            if (resolved.displayStatus) {
+                snapshot.status = resolved.displayStatus;
                 snapshot.source = 'server';
                 snapshot.payload = payload;
             }
