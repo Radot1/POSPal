@@ -805,3 +805,28 @@ export function getCancellationReversalEmailTemplate(customerName, periodEnd = n
   `;
   return { subject, html };
 }
+
+export function getEmailVerificationTemplate(code, expiresInMinutes = 15) {
+  const summaryLines = [
+    'Enter this code in POSPal to verify your email and continue with your subscription.',
+    'If you did not request this, you can ignore this email.'
+  ];
+
+  return {
+    subject: 'Your POSPal verification code',
+    html: renderEmailTemplate(
+      'Verify your email for POSPal',
+      summaryLines,
+      [],
+      '',
+      {
+        intent: 'neutral',
+        subtitle: 'Security check to continue',
+        highlightLabel: 'Verification code',
+        highlightValue: code,
+        highlightSupportingText: `Code expires in ${expiresInMinutes} minutes.`,
+        badgeText: null
+      }
+    )
+  };
+}

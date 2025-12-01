@@ -1095,7 +1095,9 @@ const StatusDisplayManager = {
             portalActionBtn: document.getElementById('portal-action-btn'),
             portalActionText: document.getElementById('portal-action-text'),
             portalActionIcon: document.getElementById('portal-action-icon'),
-            portalActionDescription: document.getElementById('portal-action-description')
+            portalActionDescription: document.getElementById('portal-action-description'),
+            deviceReleaseButton: document.getElementById('disconnect-license-btn'),
+            deviceReleaseHelper: document.getElementById('disconnect-license-helper')
         };
     },
     
@@ -1107,7 +1109,8 @@ const StatusDisplayManager = {
             customerName = '', 
             validUntil = '', 
             daysLeft = 0,
-            remainingDays = 0 
+            remainingDays = 0,
+            licenseState = ''
         } = options;
         
         let statusConfig = this.getStatusConfig(statusType, { isOnline, customerName, validUntil, daysLeft, remainingDays });
@@ -1125,6 +1128,12 @@ const StatusDisplayManager = {
         this.setPortalAccessEnabled(Boolean(isOnline));
         this.updateSupplementalFields(statusType);
         this.configurePortalAction(statusType, { ...options, panelConfig: statusConfig });
+
+        const shouldDisableRelease = this.isTrialStatus(statusType, licenseState);
+        const disableReason = shouldDisableRelease
+            ? translate('ui.management.deviceRelease.trialDisabled', 'Device release is available only with an active license.')
+            : '';
+        this.setDeviceReleaseAvailability(!shouldDisableRelease, disableReason);
         
         // Add visual feedback for important changes
         if (statusConfig.animate) {
@@ -1571,6 +1580,61 @@ const StatusDisplayManager = {
         if (textEl) textEl.textContent = label;
         if (iconEl) iconEl.className = iconClass;
         if (descEl) descEl.textContent = description;
+    },
+
+    isTrialStatus(statusType, licenseState) {
+        const normalizedStatus = (statusType || '').toLowerCase();
+        const normalizedLicenseState = (licenseState || '').toLowerCase();
+        return normalizedStatus === 'trial' ||
+            normalizedStatus === 'trial_expired' ||
+            normalizedLicenseState === LICENSE_STATES.TRIAL_ACTIVE ||
+            normalizedLicenseState === LICENSE_STATES.TRIAL_EXPIRED;
+    },
+
+    setDeviceReleaseAvailability(isEnabled, reason = '') {
+        if (!this.elements) this.init();
+        const button = this.elements.deviceReleaseButton || document.getElementById('disconnect-license-btn');
+        const helper = this.elements.deviceReleaseHelper || document.getElementById('disconnect-license-helper');
+        if (!button) return;
+
+        if (!button.dataset.originalTitle) {
+            button.dataset.originalTitle = button.getAttribute('title') || '';
+        }
+        if (helper && helper.dataset.originalText === undefined) {
+            helper.dataset.originalText = helper.textContent || '';
+        }
+
+        if (isEnabled) {
+            button.disabled = false;
+            button.removeAttribute('aria-disabled');
+            button.classList.remove('opacity-50', 'cursor-not-allowed');
+            if (button.dataset.originalTitle) {
+                button.setAttribute('title', button.dataset.originalTitle);
+            } else {
+                button.removeAttribute('title');
+            }
+            if (helper && helper.dataset.originalText !== undefined) {
+                helper.textContent = helper.dataset.originalText;
+            }
+            return;
+        }
+
+        const fallbackReason = reason || button.dataset.disabledReason || button.dataset.originalTitle || '';
+        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
+        button.classList.add('opacity-50', 'cursor-not-allowed');
+        if (fallbackReason) {
+            button.setAttribute('title', fallbackReason);
+        }
+        button.dataset.disabledReason = fallbackReason;
+
+        const helperText = reason || translate(
+            'ui.management.deviceRelease.trialMessage',
+            'Subscribe to activate this action and release devices.'
+        );
+        if (helper) {
+            helper.textContent = helperText;
+        }
     },
     
     animateStatusChange() {
@@ -7567,16 +7631,13 @@ function openManagementModal() {
     // Load license info to update footer badge when modal opens
     loadLicenseInfo();
 
-    // Default to licensing dashboard for better UX
-    const licensingTabButton = document.querySelector('.management-tab[onclick*="\'licensing\'"]');
-    if (licensingTabButton) {
-        switchManagementTab('licensing', licensingTabButton);
-    } else {
-        // Fallback to analytics if licensing tab not found
-        const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
-        if (analyticsTabButton) {
-            switchManagementTab('analytics', analyticsTabButton);
-        }
+    // Default to a real tab that exists in the desktop UI
+    const licenseTabButton = document.querySelector('.management-tab[onclick*="\'license\'"]');
+    const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
+    if (licenseTabButton) {
+        switchManagementTab('license', licenseTabButton);
+    } else if (analyticsTabButton) {
+        switchManagementTab('analytics', analyticsTabButton);
     }
 }
 
@@ -7635,14 +7696,26 @@ function switchManagementTab(tabName, clickedButton) {
     const views = ['licensingManagement', 'analyticsManagement', 'itemsManagement', 'categoriesManagement', 'orderHistoryManagement', 'licenseManagement', 'hardwarePrintingManagement', 'onlineMenuManagement'];
     views.forEach(id => {
         const view = document.getElementById(id);
-        if (view) view.style.display = 'none';
+        if (view) {
+            view.classList.add('hidden');
+            view.style.display = 'none';
+        }
     });
 
+    if (tabName === 'onlineMenu') {
+        ensureOnlineMenuSection();
+    }
+
     const activeView = document.getElementById(`${tabName}Management`);
-    if (activeView) activeView.style.display = 'block';
+    if (activeView) {
+        activeView.classList.remove('hidden');
+        activeView.style.display = 'block';
+    }
 
     if (tabName === 'licensing') {
-        loadLicensingDashboard();
+        if (typeof loadLicensingDashboard === 'function') {
+            loadLicensingDashboard();
+        }
     } else if (tabName === 'analytics') {
         const todayButton = document.querySelector('.date-range-btn[onclick*="\'today\'"]');
         loadAnalyticsData('today', todayButton);
@@ -7659,6 +7732,59 @@ function switchManagementTab(tabName, clickedButton) {
     } else if (tabName === 'onlineMenu') {
         initializeCloudflareUI();
     }
+}
+
+// Some legacy desktop bundles stripped the Online Menu markup entirely.
+// Recreate the UI dynamically so the Cloudflare controls always exist.
+function ensureOnlineMenuSection() {
+    let container = document.getElementById('onlineMenuManagement');
+    if (container && container.querySelector('#cfStoreSlug')) {
+        return;
+    }
+
+    const managementContent = document.querySelector('#managementModal .management-content');
+    if (!managementContent) return;
+
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'onlineMenuManagement';
+        container.className = 'hidden';
+        managementContent.appendChild(container);
+    }
+
+    container.innerHTML = `
+        <h3 class="text-lg font-semibold text-gray-800 mb-3">Online Menu</h3>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white p-4 rounded-lg border">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Store Slug</label>
+                        <input id="cfStoreSlug" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., cafe-olive">
+                        <div id="cfSettingsMsg" class="text-xs text-gray-600 mt-1"></div>
+                    </div>
+                    <button class="btn-success px-4 py-2 rounded" onclick="publishOnlineMenu()">
+                        <i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu
+                    </button>
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-lg border">
+                <h4 class="font-semibold text-gray-700 mb-3">Share</h4>
+                <div class="space-y-3">
+                    <div class="flex items-center gap-2">
+                        <input id="cfMenuUrl" readonly class="flex-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Menu URL will appear here">
+                        <button class="btn-secondary px-2 py-2 rounded text-sm whitespace-nowrap" onclick="copyCloudflareUrl()">
+                            <span class="hidden sm:inline">Copy URL</span>
+                            <span class="sm:hidden">Copy</span>
+                        </button>
+                    </div>
+                    <div>
+                        <div id="cfQrContainer" class="inline-block bg-white p-2 border rounded"></div>
+                    </div>
+                    <div id="cfPublishMsg" class="text-xs text-gray-600"></div>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 async function initializeCloudflareUI() {
@@ -13953,6 +14079,7 @@ window.testInternetConnection = testInternetConnection;
 function showEmbeddedPayment() {
     // Reset email validation state when opening modal
     resetEmailValidationState();
+    resetEmailVerificationState();
     // Show the subscription modal
     document.getElementById('subscriptionModal').style.display = 'flex';
 }
@@ -13960,7 +14087,8 @@ function showEmbeddedPayment() {
 function closeSubscriptionModal() {
     // Reset email validation state when closing modal
     resetEmailValidationState();
-    
+    resetEmailVerificationState();
+
     // Clear all input boxes
     document.getElementById('sub-restaurant-name').value = '';
     document.getElementById('sub-customer-name').value = '';
@@ -13977,7 +14105,23 @@ let emailValidationState = {
     isDuplicate: false,
     isReturningCustomer: false,
     lastValidatedEmail: null,
-    validationTimeout: null
+    validationTimeout: null,
+    lastMessageType: 'clear',
+    lastPortalUrl: null
+};
+
+// Email verification state for OTP flow
+let emailVerificationState = {
+    status: 'idle', // idle | code_sent | verified
+    verificationId: null,
+    verificationToken: null,
+    expiresAt: null,
+    cooldownUntil: null,
+    lastEmail: null,
+    cooldownTimer: null,
+    expiryTimer: null,
+    uiSendLocked: false,
+    uiVerifyLocked: false
 };
 
 // Reset email validation state
@@ -13988,10 +14132,39 @@ function resetEmailValidationState() {
         isDuplicate: false,
         isReturningCustomer: false,
         lastValidatedEmail: null,
-        validationTimeout: null
+        validationTimeout: null,
+        lastMessageType: 'clear',
+        lastPortalUrl: null
     };
     showEmailValidationMessage('clear');
     hideSubscriptionError();
+    updateSubscriptionControlsState();
+}
+
+// Reset email verification state and UI
+function resetEmailVerificationState() {
+    if (emailVerificationState.cooldownTimer) {
+        clearInterval(emailVerificationState.cooldownTimer);
+        emailVerificationState.cooldownTimer = null;
+    }
+    if (emailVerificationState.expiryTimer) {
+        clearTimeout(emailVerificationState.expiryTimer);
+        emailVerificationState.expiryTimer = null;
+    }
+    emailVerificationState = {
+        status: 'idle',
+        verificationId: null,
+        verificationToken: null,
+        expiresAt: null,
+        cooldownUntil: null,
+        lastEmail: null,
+        cooldownTimer: null,
+        expiryTimer: null,
+        uiSendLocked: false,
+        uiVerifyLocked: false
+    };
+    updateEmailVerificationUI('reset');
+    updateSubscriptionControlsState();
 }
 
 const SUBSCRIPTION_ERROR_DEFAULT_CLASS = 'bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2';
@@ -14076,6 +14249,9 @@ function showEmailValidationMessage(type, portalUrl = null) {
         if (div) div.style.display = 'none';
     });
     
+    emailValidationState.lastMessageType = type;
+    emailValidationState.lastPortalUrl = portalUrl || null;
+
     switch (type) {
         case 'loading':
             if (loadingDiv) loadingDiv.style.display = 'block';
@@ -14110,9 +14286,18 @@ function showEmailValidationMessage(type, portalUrl = null) {
 // Handle email blur validation
 function handleEmailBlur(email) {
     TimerManager.clear('emailValidation');
-    
-    if (!email || !email.includes('@') || email === emailValidationState.lastValidatedEmail) {
+
+    if (!email || !email.includes('@')) {
         showEmailValidationMessage('clear');
+        updateSubscriptionControlsState();
+        return;
+    }
+
+    if (email === emailValidationState.lastValidatedEmail) {
+        if (emailValidationState.lastMessageType && emailValidationState.lastMessageType !== 'clear') {
+            showEmailValidationMessage(emailValidationState.lastMessageType, emailValidationState.lastPortalUrl);
+        }
+        updateSubscriptionControlsState();
         return;
     }
     
@@ -14142,7 +14327,314 @@ function handleEmailBlur(email) {
             emailValidationState.isDuplicate = false;
             emailValidationState.isReturningCustomer = false;
         }
+        updateSubscriptionControlsState();
     }, 500); // 500ms delay to avoid too many API calls
+}
+
+// --- Email verification helpers ---
+function getEmailVerificationElements() {
+    return {
+        sendBtn: document.getElementById('send-email-code-btn'),
+        verifyBtn: document.getElementById('verify-email-code-btn'),
+        codeInput: document.getElementById('email-verification-code'),
+        statusSpan: document.getElementById('email-code-status'),
+        messageDiv: document.getElementById('email-verification-message')
+    };
+}
+
+function isEmailDuplicateBlocked() {
+    return emailValidationState.isDuplicate && !emailValidationState.isReturningCustomer;
+}
+
+function updateSubscriptionControlsState() {
+    const { sendBtn, verifyBtn, codeInput } = getEmailVerificationElements();
+    const submitBtn = document.getElementById('subscription-submit-btn');
+    const emailInput = document.getElementById('sub-customer-email');
+
+    if (!sendBtn || !verifyBtn || !codeInput || !submitBtn || !emailInput) {
+        return;
+    }
+
+    const email = emailInput.value.trim().toLowerCase();
+    const emailValid = !!email && email.includes('@');
+    const duplicateBlocked = isEmailDuplicateBlocked();
+    const emailValidated = emailValid &&
+        email === emailValidationState.lastValidatedEmail &&
+        !emailValidationState.isValidating &&
+        !duplicateBlocked;
+
+    const cooldownActive = !!(emailVerificationState.cooldownUntil && Date.now() < emailVerificationState.cooldownUntil);
+
+    const verificationMatchesEmail = emailVerificationState.lastEmail === email;
+    const codeAvailable = emailVerificationState.status === 'code_sent' &&
+        verificationMatchesEmail &&
+        (!emailVerificationState.expiresAt || Date.now() < emailVerificationState.expiresAt);
+    const verified = emailVerificationState.status === 'verified' &&
+        verificationMatchesEmail &&
+        emailVerificationState.verificationToken &&
+        (!emailVerificationState.expiresAt || Date.now() < emailVerificationState.expiresAt);
+
+    const canSend = emailValidated && !cooldownActive && !emailVerificationState.uiSendLocked;
+    const canVerify = codeAvailable && !duplicateBlocked && !emailVerificationState.uiVerifyLocked;
+    const canSubmit = verified && !duplicateBlocked;
+
+    sendBtn.disabled = !canSend;
+    verifyBtn.disabled = !canVerify;
+    codeInput.disabled = duplicateBlocked ||
+        (!codeAvailable && !verified) ||
+        emailVerificationState.status === 'verified' ||
+        emailVerificationState.uiVerifyLocked;
+    submitBtn.disabled = !canSubmit;
+}
+
+function updateEmailVerificationUI(state, data = {}) {
+    const { sendBtn, verifyBtn, codeInput, statusSpan, messageDiv } = getEmailVerificationElements();
+    if (!sendBtn || !verifyBtn || !codeInput || !statusSpan || !messageDiv) return;
+
+    const setMessage = (intent, text) => {
+        const intentClasses = {
+            success: 'bg-green-50 text-green-800 border border-green-200',
+            warning: 'bg-yellow-50 text-yellow-800 border border-yellow-200',
+            error: 'bg-red-50 text-red-700 border border-red-200',
+            info: 'bg-blue-50 text-blue-800 border border-blue-200'
+        };
+        messageDiv.textContent = text || '';
+        messageDiv.className = `text-sm rounded-lg px-3 py-2 ${intentClasses[intent] || intentClasses.info}`;
+        messageDiv.style.display = text ? 'block' : 'none';
+    };
+
+    switch (state) {
+        case 'reset':
+            emailVerificationState.uiSendLocked = false;
+            emailVerificationState.uiVerifyLocked = false;
+            codeInput.value = '';
+            sendBtn.textContent = 'Send verification code';
+            statusSpan.style.display = 'none';
+            setMessage(null, '');
+            updateSubscriptionControlsState();
+            return;
+        case 'sending':
+            emailVerificationState.uiSendLocked = true;
+            emailVerificationState.uiVerifyLocked = true;
+            statusSpan.style.display = 'flex';
+            statusSpan.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Sending...</span>';
+            setMessage(null, '');
+            updateSubscriptionControlsState();
+            return;
+        case 'cooldown': {
+            const seconds = data.seconds || 0;
+            sendBtn.textContent = `Resend in ${seconds}s`;
+            statusSpan.style.display = 'none';
+            updateSubscriptionControlsState();
+            return;
+        }
+        case 'code_sent':
+            emailVerificationState.uiSendLocked = false;
+            emailVerificationState.uiVerifyLocked = false;
+            statusSpan.style.display = 'none';
+            sendBtn.textContent = 'Code sent';
+            setMessage('info', `Code sent to ${emailVerificationState.lastEmail}. Check spam if you don't see it.`);
+            updateSubscriptionControlsState();
+            return;
+        case 'verifying':
+            emailVerificationState.uiVerifyLocked = true;
+            emailVerificationState.uiSendLocked = true;
+            statusSpan.style.display = 'flex';
+            statusSpan.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Verifying...</span>';
+            setMessage('info', 'Verifying code...');
+            updateSubscriptionControlsState();
+            return;
+        case 'verified':
+            emailVerificationState.uiVerifyLocked = true;
+            emailVerificationState.uiSendLocked = true;
+            statusSpan.style.display = 'none';
+            setMessage('success', 'Email verified. You can complete your subscription.');
+            updateSubscriptionControlsState();
+            return;
+        case 'error':
+            statusSpan.style.display = 'none';
+            emailVerificationState.uiVerifyLocked = false;
+            emailVerificationState.uiSendLocked = false;
+            setMessage(data.intent || 'error', data.message || 'Verification error');
+            updateSubscriptionControlsState();
+            return;
+        default:
+            updateSubscriptionControlsState();
+    }
+}
+
+function startVerificationCooldown(seconds) {
+    const { sendBtn } = getEmailVerificationElements();
+    if (!sendBtn) return;
+
+    const endTime = Date.now() + seconds * 1000;
+    emailVerificationState.cooldownUntil = endTime;
+
+    if (emailVerificationState.cooldownTimer) {
+        clearInterval(emailVerificationState.cooldownTimer);
+    }
+
+    const tick = () => {
+        const remaining = Math.max(0, Math.round((endTime - Date.now()) / 1000));
+        updateEmailVerificationUI('cooldown', { seconds: remaining });
+        if (remaining <= 0) {
+            clearInterval(emailVerificationState.cooldownTimer);
+            emailVerificationState.cooldownTimer = null;
+            emailVerificationState.cooldownUntil = null;
+            const { sendBtn: latestSendBtn } = getEmailVerificationElements();
+            if (latestSendBtn) {
+                latestSendBtn.textContent = 'Resend code';
+            }
+            updateSubscriptionControlsState();
+        }
+    };
+
+    tick();
+    emailVerificationState.cooldownTimer = setInterval(tick, 1000);
+}
+
+function scheduleVerificationExpiryCheck(expiresAtMillis) {
+    if (emailVerificationState.expiryTimer) {
+        clearTimeout(emailVerificationState.expiryTimer);
+        emailVerificationState.expiryTimer = null;
+    }
+    if (!expiresAtMillis || expiresAtMillis <= Date.now()) {
+        updateSubscriptionControlsState();
+        return;
+    }
+    const delay = Math.max(0, expiresAtMillis - Date.now());
+    emailVerificationState.expiryTimer = setTimeout(() => {
+        emailVerificationState.expiryTimer = null;
+        updateSubscriptionControlsState();
+    }, delay + 500);
+}
+
+async function sendEmailVerificationCode() {
+    const emailInput = document.getElementById('sub-customer-email');
+    if (!emailInput) return;
+
+    const email = emailInput.value.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+        updateEmailVerificationUI('error', { message: 'Enter a valid email before sending a code.' });
+        return;
+    }
+
+    if (emailValidationState.isDuplicate && !emailValidationState.isReturningCustomer) {
+        updateEmailVerificationUI('error', { message: 'This email already has an active subscription.' });
+        return;
+    }
+
+    const emailValidated = email === emailValidationState.lastValidatedEmail && !emailValidationState.isValidating && !isEmailDuplicateBlocked();
+    if (!emailValidated) {
+        updateEmailVerificationUI('error', { message: 'Validate your email first before requesting a code.' });
+        return;
+    }
+
+    if (emailVerificationState.cooldownUntil && Date.now() < emailVerificationState.cooldownUntil) {
+        const seconds = Math.round((emailVerificationState.cooldownUntil - Date.now()) / 1000);
+        updateEmailVerificationUI('error', { intent: 'warning', message: `Please wait ${seconds}s before resending.` });
+        return;
+    }
+
+    emailVerificationState.uiSendLocked = true;
+    emailVerificationState.uiVerifyLocked = true;
+    updateEmailVerificationUI('sending');
+
+    try {
+        const response = await fetch(`${WORKER_URL}/verify/email/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            const message = result.error || 'Could not send verification code.';
+            updateEmailVerificationUI('error', { message });
+            return;
+        }
+
+        emailVerificationState.status = 'code_sent';
+        emailVerificationState.verificationId = result.verificationId;
+        emailVerificationState.verificationToken = null;
+        emailVerificationState.expiresAt = Date.now() + (result.expiresInSeconds || 900) * 1000;
+        emailVerificationState.lastEmail = email;
+
+        scheduleVerificationExpiryCheck(emailVerificationState.expiresAt);
+        startVerificationCooldown(result.cooldownSeconds || 60);
+        updateEmailVerificationUI('code_sent');
+    } catch (error) {
+        console.error('Verification send failed:', error);
+        emailVerificationState.status = 'idle';
+        emailVerificationState.verificationId = null;
+        emailVerificationState.expiresAt = null;
+        emailVerificationState.lastEmail = null;
+        scheduleVerificationExpiryCheck(null);
+        updateEmailVerificationUI('error', { message: 'Network error sending code. Please try again.' });
+    }
+}
+
+async function verifyEmailCode() {
+    const emailInput = document.getElementById('sub-customer-email');
+    const codeInput = document.getElementById('email-verification-code');
+    if (!emailInput || !codeInput) return;
+
+    const email = emailInput.value.trim().toLowerCase();
+    const code = codeInput.value.trim();
+
+    if (!email || !code || code.length !== 6) {
+        updateEmailVerificationUI('error', { message: 'Enter the 6-digit code we sent to your email.' });
+        return;
+    }
+
+    if (!emailVerificationState.verificationId || emailVerificationState.lastEmail !== email) {
+        updateEmailVerificationUI('error', { message: 'Please request a new code for this email.' });
+        return;
+    }
+
+    if (emailVerificationState.expiresAt && Date.now() > emailVerificationState.expiresAt) {
+        emailVerificationState.status = 'idle';
+        emailVerificationState.verificationId = null;
+        emailVerificationState.verificationToken = null;
+        emailVerificationState.lastEmail = null;
+        emailVerificationState.expiresAt = null;
+        scheduleVerificationExpiryCheck(null);
+        updateEmailVerificationUI('error', { message: 'Code expired. Send a new code.', intent: 'warning' });
+        return;
+    }
+
+    updateEmailVerificationUI('verifying');
+
+    try {
+        const response = await fetch(`${WORKER_URL}/verify/email/confirm`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email,
+                verificationId: emailVerificationState.verificationId,
+                code
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success || !result.verificationToken) {
+            const attempts = result.attemptsRemaining;
+            const message = result.error || 'Invalid code. Please try again.';
+            const extra = attempts !== undefined ? ` (${Math.max(0, attempts)} attempts left)` : '';
+            updateEmailVerificationUI('error', { message: `${message}${extra}` });
+            return;
+        }
+
+        emailVerificationState.status = 'verified';
+        emailVerificationState.verificationToken = result.verificationToken;
+        emailVerificationState.expiresAt = Date.now() + (result.expiresInSeconds || 900) * 1000;
+        scheduleVerificationExpiryCheck(emailVerificationState.expiresAt);
+        updateEmailVerificationUI('verified');
+    } catch (error) {
+        console.error('Verification check failed:', error);
+        updateEmailVerificationUI('error', { message: 'Network error verifying code. Please try again.' });
+    }
 }
 
 // Handle subscription form submission
@@ -14163,9 +14655,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 showEmailValidationMessage('clear');
                 emailValidationState.isDuplicate = false;
                 emailValidationState.isReturningCustomer = false;
+                resetEmailVerificationState();
             }
         });
     }
+
+    // Wire up email verification controls
+    const sendCodeBtn = document.getElementById('send-email-code-btn');
+    if (sendCodeBtn) {
+        sendCodeBtn.addEventListener('click', sendEmailVerificationCode);
+    }
+
+    const verifyCodeBtn = document.getElementById('verify-email-code-btn');
+    if (verifyCodeBtn) {
+        verifyCodeBtn.addEventListener('click', verifyEmailCode);
+    }
+
+    updateSubscriptionControlsState();
     
     const subscriptionForm = document.getElementById('subscriptionForm');
     if (subscriptionForm) {
@@ -14211,6 +14717,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (validationResult.isDuplicate) {
                     emailValidationState.isDuplicate = true;
                     emailValidationState.isReturningCustomer = validationResult.isReturningCustomer;
+                    updateSubscriptionControlsState();
 
                     if (!validationResult.isReturningCustomer) {
                         showEmailValidationMessage('active', validationResult.portalUrl);
@@ -14220,8 +14727,27 @@ document.addEventListener('DOMContentLoaded', function() {
                         return;
                     }
                 }
+                updateSubscriptionControlsState();
             }
-            
+
+            // Require verified email before proceeding
+            if (emailVerificationState.status !== 'verified' ||
+                !emailVerificationState.verificationToken ||
+                emailVerificationState.lastEmail !== email) {
+                errorDiv.className = SUBSCRIPTION_ERROR_DEFAULT_CLASS;
+                errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Please verify your email before subscribing.';
+                showSubscriptionError(SUBSCRIPTION_ERROR_AUTO_HIDE_MS);
+                return;
+            }
+
+            if (emailVerificationState.expiresAt && Date.now() > emailVerificationState.expiresAt) {
+                resetEmailVerificationState();
+                errorDiv.className = SUBSCRIPTION_ERROR_DEFAULT_CLASS;
+                errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Your verification code expired. Please resend and verify again.';
+                showSubscriptionError(SUBSCRIPTION_ERROR_AUTO_HIDE_MS);
+                return;
+            }
+
             // Show loading state
             submitBtn.disabled = true;
             loadingDiv.style.display = 'block';
@@ -14233,7 +14759,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     restaurantName: document.getElementById('sub-restaurant-name').value,
                     name: document.getElementById('sub-customer-name').value,
                     email: email,
-                    phone: document.getElementById('sub-customer-phone').value
+                    phone: document.getElementById('sub-customer-phone').value,
+                    verificationToken: emailVerificationState.verificationToken
                 };
                 
                 const response = await fetch(`${WORKER_URL}/create-checkout-session`, {

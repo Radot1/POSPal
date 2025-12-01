@@ -2078,7 +2078,7 @@
                                     <i class="fas fa-unlink mr-2"></i>
                                     Release This Device
                                 </button>
-                                <p class="text-xs text-gray-500">Releasing ends this session immediately and clears cached license data on this device.</p>
+                                <p id="disconnect-license-helper" class="text-xs text-gray-500">Releasing ends this session immediately and clears cached license data on this device.</p>
                             </div>
                         </div>
 
@@ -2470,7 +2470,8 @@
                             </div>
                     </div>
                 </div>
-                <div id="onlineMenuManagement" class="hidden">
+            </div>
+            <div id="onlineMenuManagement" class="hidden">
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">Online Menu</h3>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <div class="bg-white p-4 rounded-lg border">
@@ -3150,6 +3151,38 @@
                                 <i class="fas fa-check-circle mt-0.5 flex-shrink-0"></i>
                                 <span>Email is available for new subscription.</span>
                             </div>
+
+                            <!-- Email verification flow -->
+                            <div id="email-verification-section" class="mt-3 space-y-2">
+                                <div class="flex items-center gap-3">
+                                    <button type="button"
+                                            id="send-email-code-btn"
+                                            class="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-2.5 rounded-lg font-semibold shadow hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                            disabled>
+                                        Send verification code
+                                    </button>
+                                    <span id="email-code-status" class="hidden text-sm text-gray-600 flex items-center gap-2">
+                                        <i class="fas fa-spinner fa-spin"></i><span>Sending...</span>
+                                    </span>
+                                </div>
+
+                                <div class="flex items-center gap-3">
+                                    <input type="text"
+                                           id="email-verification-code"
+                                           inputmode="numeric"
+                                           maxlength="6"
+                                           class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all outline-none"
+                                           placeholder="Enter 6-digit code">
+                                    <button type="button"
+                                            id="verify-email-code-btn"
+                                            class="bg-gray-900 text-white px-4 py-2.5 rounded-lg font-semibold hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                            disabled>
+                                        Verify code
+                                    </button>
+                                </div>
+
+                                <div id="email-verification-message" class="hidden text-sm rounded-lg px-3 py-2"></div>
+                            </div>
                         </div>
 
                         <!-- Phone Number -->
@@ -3177,7 +3210,9 @@
                         <!-- Submit Button with Price -->
                         <div class="pt-2">
                             <button type="submit"
-                                    class="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-500 text-white py-4 px-6 rounded-xl font-bold text-lg hover:from-indigo-700 hover:via-purple-700 hover:to-indigo-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]">
+                                    id="subscription-submit-btn"
+                                    class="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-500 text-white py-4 px-6 rounded-xl font-bold text-lg hover:from-indigo-700 hover:via-purple-700 hover:to-indigo-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled>
                                 <div class="flex items-center justify-center gap-2">
                                     <i class="fas fa-lock text-sm"></i>
                                     <span data-pricing-template="Subscribe for {price_short}/month">Subscribe for €20/month</span>
@@ -3466,6 +3501,108 @@
     <script src="i18n.js" defer></script>
     <script src="/assets/desktop-support.js" defer></script>
     <script src="pospalCore.js" defer></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', function () {
+            if (typeof window.switchManagementTab === 'function') {
+                window.switchManagementTab = (function (originalFn) {
+                    return function safeSwitchManagementTab(tabName, clickedButton) {
+                        window.currentManagementTab = tabName;
+
+                        const isDesktopUI = document.body.classList.contains('desktop-ui');
+                        const tabButtons = document.querySelectorAll('.management-tab');
+                        if (isDesktopUI) {
+                            tabButtons.forEach(btn => btn.classList.remove('active'));
+                            if (clickedButton && clickedButton.classList && clickedButton.classList.contains('management-tab')) {
+                                clickedButton.classList.add('active');
+                            }
+                        } else {
+                            tabButtons.forEach(btn => {
+                                btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
+                                btn.classList.add('text-gray-600', 'hover:bg-gray-200');
+                            });
+                            if (clickedButton && clickedButton.classList && clickedButton.classList.contains('management-tab')) {
+                                clickedButton.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
+                                clickedButton.classList.remove('text-gray-600', 'hover:bg-gray-200');
+                            }
+                        }
+
+                        const views = [
+                            'licensingManagement',
+                            'analyticsManagement',
+                            'itemsManagement',
+                            'categoriesManagement',
+                            'orderHistoryManagement',
+                            'licenseManagement',
+                            'hardwarePrintingManagement',
+                            'onlineMenuManagement'
+                        ];
+                        views.forEach(id => {
+                            const view = document.getElementById(id);
+                            if (view) {
+                                view.classList.add('hidden');
+                                view.style.display = 'none';
+                            }
+                        });
+
+                        if (tabName === 'onlineMenu' && typeof window.ensureOnlineMenuSection === 'function') {
+                            window.ensureOnlineMenuSection();
+                        }
+
+                        const activeView = document.getElementById(`${tabName}Management`);
+                        if (activeView) {
+                            activeView.classList.remove('hidden');
+                            activeView.style.display = 'block';
+                        }
+
+                        if (tabName === 'licensing') {
+                            if (typeof window.loadLicensingDashboard === 'function') {
+                                window.loadLicensingDashboard();
+                            }
+                            return;
+                        }
+
+                        if (tabName === 'analytics' && typeof window.loadAnalyticsData === 'function') {
+                            const todayButton = document.querySelector('.date-range-btn[onclick*="\'today\'"]');
+                            window.loadAnalyticsData('today', todayButton);
+                        } else if (tabName === 'categories' && window.elements && window.elements.categoryNameInput) {
+                            window.elements.categoryNameInput.value = '';
+                        } else if (tabName === 'orderHistory' && typeof window.loadTodaysOrdersForReprint === 'function') {
+                            window.loadTodaysOrdersForReprint();
+                        } else if (tabName === 'license') {
+                            if (typeof window.loadHardwareId === 'function') window.loadHardwareId();
+                            if (typeof window.loadLicenseInfo === 'function') window.loadLicenseInfo();
+                        } else if (tabName === 'hardwarePrinting' && typeof window.initializeHardwarePrintingUI === 'function') {
+                            window.initializeHardwarePrintingUI();
+                        } else if (tabName === 'onlineMenu' && typeof window.initializeCloudflareUI === 'function') {
+                            window.initializeCloudflareUI();
+                        }
+
+                        if (typeof originalFn === 'function') {
+                            try {
+                                originalFn(tabName, clickedButton);
+                            } catch (err) {
+                                console.warn('Original switchManagementTab failed', err);
+                            }
+                        }
+                    };
+                })(window.switchManagementTab);
+            }
+
+            if (typeof window.openManagementModal === 'function') {
+                const originalOpen = window.openManagementModal;
+                window.openManagementModal = function patchedOpenManagementModal() {
+                    originalOpen();
+                    const licenseTabButton = document.querySelector('.management-tab[onclick*="\'license\'"]');
+                    const analyticsTabButton = document.querySelector('.management-tab[onclick*="\'analytics\'"]');
+                    if (licenseTabButton) {
+                        window.switchManagementTab('license', licenseTabButton);
+                    } else if (analyticsTabButton) {
+                        window.switchManagementTab('analytics', analyticsTabButton);
+                    }
+                };
+            }
+        });
+    </script>
 </body>
 </html>
 

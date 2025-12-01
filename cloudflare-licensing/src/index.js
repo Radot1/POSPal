@@ -39,7 +39,8 @@ import {
   getLicenseRecoveryEmailTemplate,
   getRenewalProcessedEmailTemplate,
   getSubscriptionCancelledEmailTemplate,
-  getCancellationReversalEmailTemplate
+  getCancellationReversalEmailTemplate,
+  getEmailVerificationTemplate
 } from './email-templates.js';
 
 /**
@@ -75,6 +76,11 @@ let pricingCache = {
   expiresAt: 0
 };
 const PRICING_CACHE_SECONDS = 600; // 10 minutes
+const EMAIL_VERIFICATION_CODE_LENGTH = 6;
+const EMAIL_VERIFICATION_EXPIRY_SECONDS = 15 * 60; // 15 minutes
+const EMAIL_VERIFICATION_COOLDOWN_SECONDS = 60; // 60 seconds between sends
+const EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR = 5;
+const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
 
 export default {
   async fetch(request, env, ctx) {
@@ -121,6 +127,10 @@ export default {
         return handleTrialStatus(request, env);
       case '/license/activation-email':
         return handleActivationEmail(request, env);
+      case '/verify/email/start':
+        return handleEmailVerificationStart(request, env);
+      case '/verify/email/confirm':
+        return handleEmailVerificationConfirm(request, env);
       case '/check-duplicate':
         return handleCheckDuplicate(request, env);
       case '/recover-license':
@@ -206,6 +216,35 @@ async function fetchStripePrice(env) {
     console.error('Failed to fetch Stripe pricing:', error);
     return null;
   }
+}
+
+/**
+ * Generate a numeric verification code with leading zeros preserved.
+ */
+function generateVerificationCode(length = EMAIL_VERIFICATION_CODE_LENGTH) {
+  const max = Math.pow(10, length);
+  const num = Math.floor(Math.random() * max);
+  return num.toString().padStart(length, '0');
+}
+
+/**
+ * Generate a random verification token for checkout enforcement.
+ */
+function generateVerificationToken() {
+  const array = new Uint8Array(24);
+  crypto.getRandomValues(array);
+  return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Hash a verification code with salt and email for binding.
+ */
+async function hashVerificationCode(code, salt, email) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`${code}:${salt}:${(email || '').toLowerCase()}`);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -3031,24 +3070,32 @@ async function handleSetupIntentSucceeded(event, env) {
  */
 async function handleCreateCheckoutSession(request, env) {
   try {
-    const { restaurantName, name, email, phone } = await request.json();
-    
+    const { restaurantName, name, email, phone, verificationToken } = await request.json();
+
     if (!restaurantName || !name || !email) {
       return createResponse({ error: 'Missing required fields: restaurantName, name, email' }, 400);
     }
-    
+
     if (!isValidEmail(email)) {
       return createResponse({ error: 'Invalid email' }, 400);
     }
-    
+
+    // Require email verification token
+    if (!verificationToken || typeof verificationToken !== 'string') {
+      return createResponse({
+        error: 'Email verification required before subscribing',
+        code: 'EMAIL_NOT_VERIFIED'
+      }, 400);
+    }
+
     // Check if customer already has an active subscription
     const existingCustomer = await env.DB.prepare(`
       SELECT * FROM customers WHERE email = ? AND subscription_status = 'active'
-    `).bind(email).first();
-    
+    `).bind(email.toLowerCase()).first();
+
     if (existingCustomer) {
       console.log(`Duplicate subscription attempt blocked for ${email}`);
-      
+
       // Log the duplicate attempt
       await logAuditEvent(env.DB, existingCustomer.id, 'duplicate_subscription_attempt', {
         attemptedAt: new Date().toISOString(),
@@ -3067,15 +3114,15 @@ async function handleCreateCheckoutSession(request, env) {
         }
       }, 409); // 409 Conflict status code
     }
-    
+
     // Check if customer exists but with inactive subscription
     const inactiveCustomer = await env.DB.prepare(`
       SELECT * FROM customers WHERE email = ? AND subscription_status != 'active'
-    `).bind(email).first();
-    
+    `).bind(email.toLowerCase()).first();
+
     if (inactiveCustomer) {
       console.log(`Previous customer returning: ${email}, status: ${inactiveCustomer.subscription_status}`);
-      
+
       // Log the returning customer attempt
       await logAuditEvent(env.DB, inactiveCustomer.id, 'returning_customer_checkout', {
         previousStatus: inactiveCustomer.subscription_status,
@@ -3086,7 +3133,7 @@ async function handleCreateCheckoutSession(request, env) {
     // Get request origin to determine success/cancel URLs
     const requestUrl = new URL(request.url);
     const origin = request.headers.get('Origin') || `${requestUrl.protocol}//${requestUrl.host}`;
-    
+
     // Determine if this is localhost (development) or production
     const isLocalhost = origin.includes('localhost');
     const baseUrl = isLocalhost ? 'http://localhost:5000' : origin;
@@ -3105,6 +3152,20 @@ async function handleCreateCheckoutSession(request, env) {
         return response.json();
       }
     };
+
+    // Validate verification token (after we know email is normalized)
+    const verificationResult = await verifyEmailTokenForCheckout(
+      env.DB,
+      email.toLowerCase(),
+      verificationToken
+    );
+
+    if (!verificationResult.ok) {
+      return createResponse({
+        error: verificationResult.message || 'Email verification failed',
+        code: verificationResult.code || 'EMAIL_NOT_VERIFIED'
+      }, verificationResult.status || 400);
+    }
 
     // Create Stripe Checkout Session
     const session = await stripe.post('/checkout/sessions', {
@@ -3139,7 +3200,10 @@ async function handleCreateCheckoutSession(request, env) {
 
     // Log checkout session creation
     console.log(`Checkout session created: ${session.id} for ${email}`);
-    
+
+    // Mark verification token as used once checkout is created
+    await markEmailVerificationUsed(env.DB, verificationResult.verificationId);
+
     return createResponse({
       checkoutUrl: session.url,
       sessionId: session.id
@@ -3148,6 +3212,59 @@ async function handleCreateCheckoutSession(request, env) {
   } catch (error) {
     console.error('Checkout session creation error:', error);
     return createResponse({ error: 'Failed to create checkout session' }, 500);
+  }
+}
+
+async function verifyEmailTokenForCheckout(db, email, verificationToken) {
+  try {
+    if (!verificationToken) {
+      return { ok: false, code: 'EMAIL_NOT_VERIFIED', message: 'Verification token missing', status: 400 };
+    }
+
+    const record = await db.prepare(`
+      SELECT id, status, expires_at
+      FROM email_verifications
+      WHERE email = ?
+        AND verification_token = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).bind(email, verificationToken).first();
+
+    if (!record) {
+      return { ok: false, code: 'EMAIL_NOT_VERIFIED', message: 'Invalid verification token', status: 401 };
+    }
+
+    const now = new Date();
+    if (record.expires_at && new Date(record.expires_at) < now) {
+      await db.prepare(`
+        UPDATE email_verifications
+        SET status = 'expired'
+        WHERE id = ?
+      `).bind(record.id).run();
+      return { ok: false, code: 'EMAIL_NOT_VERIFIED', message: 'Verification expired', status: 401 };
+    }
+
+    if (record.status !== 'verified') {
+      return { ok: false, code: 'EMAIL_NOT_VERIFIED', message: 'Verification not completed', status: 401 };
+    }
+
+    return { ok: true, verificationId: record.id };
+  } catch (error) {
+    console.error('Verification token validation error:', error);
+    return { ok: false, code: 'EMAIL_NOT_VERIFIED', message: 'Unable to validate verification token', status: 500 };
+  }
+}
+
+async function markEmailVerificationUsed(db, verificationId) {
+  if (!verificationId) return;
+  try {
+    await db.prepare(`
+      UPDATE email_verifications
+      SET status = 'used', used_at = datetime('now')
+      WHERE id = ?
+    `).bind(verificationId).run();
+  } catch (error) {
+    console.error('Failed to mark verification as used:', error);
   }
 }
 
@@ -3229,6 +3346,214 @@ async function handleCheckDuplicate(request, env) {
   } catch (error) {
     console.error('Check duplicate error:', error);
     return createResponse({ error: 'Failed to check email' }, 500);
+  }
+}
+
+/**
+ * Start email verification: generate code, rate-limit, send via Resend.
+ */
+async function handleEmailVerificationStart(request, env) {
+  try {
+    const { email, context = 'subscription_signup' } = await request.json();
+    const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown';
+
+    if (!email || !isValidEmail(email)) {
+      return createResponse({ error: 'Valid email is required', code: 'INVALID_EMAIL' }, 400);
+    }
+
+    if (!env.RESEND_API_KEY) {
+      console.error('RESEND_API_KEY missing; cannot send verification email');
+      return createResponse({ error: 'Email delivery is not configured', code: 'EMAIL_SENDING_DISABLED' }, 500);
+    }
+
+    const normalizedEmail = email.toLowerCase();
+
+    // Rate limit: max N per hour per email and per IP
+    const emailLimit = await env.DB.prepare(`
+      SELECT COUNT(*) as count FROM email_verifications
+      WHERE email = ? AND created_at >= datetime('now', '-1 hour')
+    `).bind(normalizedEmail).first();
+
+    if (emailLimit && emailLimit.count >= EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR) {
+      return createResponse({
+        error: 'Too many verification requests. Please try again later.',
+        code: 'RATE_LIMIT',
+        retryAfter: EMAIL_VERIFICATION_COOLDOWN_SECONDS
+      }, 429);
+    }
+
+    const ipLimit = await env.DB.prepare(`
+      SELECT COUNT(*) as count FROM email_verifications
+      WHERE last_sent_ip = ? AND created_at >= datetime('now', '-1 hour')
+    `).bind(clientIp).first();
+
+    if (ipLimit && ipLimit.count >= EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR) {
+      return createResponse({
+        error: 'Too many verification requests from this IP. Please try again later.',
+        code: 'RATE_LIMIT',
+        retryAfter: EMAIL_VERIFICATION_COOLDOWN_SECONDS
+      }, 429);
+    }
+
+    const verificationId = crypto.randomUUID ? crypto.randomUUID() : generateVerificationToken();
+    const salt = generateVerificationToken();
+    const code = generateVerificationCode();
+    const codeHash = await hashVerificationCode(code, salt, normalizedEmail);
+    const expiresAt = new Date(Date.now() + EMAIL_VERIFICATION_EXPIRY_SECONDS * 1000).toISOString();
+
+    await env.DB.prepare(`
+      INSERT INTO email_verifications (
+        email, verification_id, verification_token, code_hash, salt, status,
+        context, expires_at, last_sent_ip, send_count, attempt_count, created_at
+      )
+      VALUES (?, ?, NULL, ?, ?, 'pending', ?, ?, ?, 1, 0, datetime('now'))
+    `).bind(
+      normalizedEmail,
+      verificationId,
+      codeHash,
+      salt,
+      context,
+      expiresAt,
+      clientIp
+    ).run();
+
+    // Send verification email
+    const { subject, html } = getEmailVerificationTemplate(code, Math.floor(EMAIL_VERIFICATION_EXPIRY_SECONDS / 60));
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'POSPal Team <noreply@pospal.gr>',
+        to: [normalizedEmail],
+        subject,
+        html,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to send verification email:', errorText);
+      return createResponse({ error: 'Failed to send verification email', code: 'EMAIL_SEND_FAILED' }, 500);
+    }
+
+    return createResponse({
+      success: true,
+      verificationId,
+      expiresInSeconds: EMAIL_VERIFICATION_EXPIRY_SECONDS,
+      cooldownSeconds: EMAIL_VERIFICATION_COOLDOWN_SECONDS
+    });
+
+  } catch (error) {
+    console.error('Email verification start error:', error);
+    return createResponse({ error: 'Failed to start verification', code: 'EMAIL_VERIFICATION_ERROR' }, 500);
+  }
+}
+
+/**
+ * Confirm email verification code and issue verification token.
+ */
+async function handleEmailVerificationConfirm(request, env) {
+  try {
+    const { email, verificationId, code } = await request.json();
+    const normalizedEmail = (email || '').toLowerCase();
+
+    if (!normalizedEmail || !isValidEmail(normalizedEmail)) {
+      return createResponse({ error: 'Valid email is required', code: 'INVALID_EMAIL' }, 400);
+    }
+
+    if (!verificationId || typeof verificationId !== 'string') {
+      return createResponse({ error: 'Verification ID is required', code: 'VERIFICATION_ID_REQUIRED' }, 400);
+    }
+
+    if (!code || typeof code !== 'string' || code.trim().length !== EMAIL_VERIFICATION_CODE_LENGTH) {
+      return createResponse({ error: 'Invalid verification code', code: 'INVALID_CODE' }, 400);
+    }
+
+    const record = await env.DB.prepare(`
+      SELECT * FROM email_verifications
+      WHERE verification_id = ? AND email = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).bind(verificationId, normalizedEmail).first();
+
+    if (!record) {
+      return createResponse({ error: 'Verification request not found', code: 'NOT_FOUND' }, 404);
+    }
+
+    const now = new Date();
+    if (record.expires_at && new Date(record.expires_at) < now) {
+      await env.DB.prepare(`
+        UPDATE email_verifications
+        SET status = 'expired'
+        WHERE id = ?
+      `).bind(record.id).run();
+      return createResponse({ error: 'Verification code expired', code: 'CODE_EXPIRED' }, 400);
+    }
+
+    if (record.status === 'used') {
+      return createResponse({ error: 'Verification already used', code: 'ALREADY_USED' }, 400);
+    }
+
+    if (record.status === 'verified') {
+      // Already verified; re-issue token for idempotency
+      return createResponse({
+        success: true,
+        verificationToken: record.verification_token,
+        verificationId,
+        expiresInSeconds: Math.max(0, Math.floor((new Date(record.expires_at) - now) / 1000))
+      });
+    }
+
+    if (record.attempt_count >= EMAIL_VERIFICATION_MAX_ATTEMPTS) {
+      return createResponse({ error: 'Too many attempts. Request a new code.', code: 'TOO_MANY_ATTEMPTS' }, 429);
+    }
+
+    const hashedInput = await hashVerificationCode(code.trim(), record.salt, normalizedEmail);
+    if (hashedInput !== record.code_hash) {
+      const newAttemptCount = (record.attempt_count || 0) + 1;
+      await env.DB.prepare(`
+        UPDATE email_verifications
+        SET attempt_count = ?, last_attempt_at = datetime('now')
+        WHERE id = ?
+      `).bind(newAttemptCount, record.id).run();
+
+      return createResponse({
+        error: 'Incorrect verification code',
+        code: 'INVALID_CODE',
+        attemptsRemaining: Math.max(0, EMAIL_VERIFICATION_MAX_ATTEMPTS - newAttemptCount)
+      }, 400);
+    }
+
+    // Success: mark verified and issue token
+    const verificationToken = generateVerificationToken();
+    await env.DB.prepare(`
+      UPDATE email_verifications
+      SET status = 'verified',
+          verification_token = ?,
+          verified_at = datetime('now'),
+          last_attempt_at = datetime('now'),
+          attempt_count = attempt_count + 1
+      WHERE id = ?
+    `).bind(verificationToken, record.id).run();
+
+    const expiresInSeconds = record.expires_at
+      ? Math.max(0, Math.floor((new Date(record.expires_at) - now) / 1000))
+      : EMAIL_VERIFICATION_EXPIRY_SECONDS;
+
+    return createResponse({
+      success: true,
+      verificationToken,
+      verificationId,
+      expiresInSeconds
+    });
+
+  } catch (error) {
+    console.error('Email verification confirm error:', error);
+    return createResponse({ error: 'Failed to verify code', code: 'EMAIL_VERIFICATION_ERROR' }, 500);
   }
 }
 

@@ -8656,7 +8656,14 @@ def create_subscription_session():
             validated_data['restaurantName'] = restaurant_name if restaurant_name else validated_data['name']
         else:
             validated_data['restaurantName'] = validated_data['name']
-        
+
+        # Optional email verification token (enforced by Cloudflare Worker)
+        verification_token = data.get('verificationToken') or data.get('verification_token')
+        if verification_token and isinstance(verification_token, str):
+            verification_token = sanitize_string_input(verification_token, 128)
+            if verification_token:
+                validated_data['verificationToken'] = verification_token
+
         # Call Cloudflare Worker to create Stripe checkout session
         app.logger.info(f"Creating subscription session for: {validated_data['email'][:5]}*** / {validated_data['name']}")
         response = call_cloudflare_api('/create-checkout-session', validated_data)
