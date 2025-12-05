@@ -7,6 +7,10 @@ import csv
 import os
 from decimal import Decimal, ROUND_HALF_UP
 from config import Config
+try:
+    from embedded_credentials import EMBEDDED_CLOUDFLARE_TOKEN  # type: ignore
+except Exception:
+    EMBEDDED_CLOUDFLARE_TOKEN = ''
 import win32print  # type: ignore
 import time
 import json
@@ -25,6 +29,7 @@ import subprocess
 import webbrowser
 import signal
 import base64
+import shutil
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -118,6 +123,76 @@ def _sse_broadcast(event_name: str, payload: dict):
             pass
 
 
+def _is_license_state_menu_allowed(state: str | None) -> bool:
+    if not state:
+        return False
+    state = str(state).lower()
+    if state.startswith('licensed_'):
+        return True
+    return state in {'trial_active', 'trial'}
+
+
+def _maybe_notify_cloudflare_menu_state(payload: dict):
+    """
+    Notify Cloudflare when license transitions between allowed and disallowed states
+    so the QR menu can be suspended promptly.
+    """
+    global _last_cloudflare_menu_allowed
+    try:
+        state = str(payload.get('license_state') or '').lower()
+        if not state:
+            return
+        allowed = _is_license_state_menu_allowed(state)
+        previous = _last_cloudflare_menu_allowed
+        if previous is not None and previous == allowed:
+            return
+        email = payload.get('email') or payload.get('customer_email')
+        unlock_token = payload.get('unlock_token') or payload.get('unlockToken')
+        slug = str(config.get('cloudflare_store_slug', '') or '').strip().lower()
+        if not slug and os.path.exists(PUBLISH_MARKER_FILE):
+            try:
+                with open(PUBLISH_MARKER_FILE, 'r', encoding='utf-8') as marker_file:
+                    persisted_marker = json.load(marker_file) or {}
+                slug = str(persisted_marker.get('slug', '') or '').strip().lower()
+            except Exception:
+                slug = ''
+        hardware_id_value = None
+        try:
+            hardware_id_value = get_enhanced_hardware_id()
+        except Exception:
+            hardware_id_value = None
+        hardware_id_valid = bool(hardware_id_value and hardware_id_value != "hardware_id_generation_failed")
+        _last_cloudflare_menu_allowed = allowed
+        data = {
+            "allowed": bool(allowed),
+            "license_state": state,
+            "source": payload.get('source')
+        }
+        if email and unlock_token:
+            data["email"] = email
+            data["unlock_token"] = unlock_token
+            if slug:
+                data["slug"] = slug
+            if hardware_id_valid:
+                data["hardware_id"] = hardware_id_value
+        elif slug and hardware_id_valid:
+            data["slug"] = slug
+            data["hardware_id"] = hardware_id_value
+        else:
+            app.logger.debug("Skipping Cloudflare menu sync (insufficient credentials and no recoverable slug/hardware).")
+            return
+        try:
+            call_cloudflare_api('/qr-menu/status', data, timeout=6, max_retries=1)
+            if allowed:
+                app.logger.info("Sent Cloudflare menu reactivation update due to license state change.")
+            else:
+                app.logger.info("Sent Cloudflare menu suspension update due to license state change.")
+        except Exception as exc:
+            app.logger.warning(f"Failed to notify Cloudflare about menu availability update: {exc}")
+    except Exception as exc:
+        app.logger.warning(f"Cloudflare menu sync skipped due to error: {exc}")
+
+
 def _broadcast_license_status(payload: dict, source: str = "unknown"):
     """Broadcast license status updates to SSE subscribers."""
     if not isinstance(payload, dict):
@@ -129,6 +204,7 @@ def _broadcast_license_status(payload: dict, source: str = "unknown"):
         _sse_broadcast('license_status_update', enriched_payload)
     except Exception as exc:
         app.logger.warning(f"Failed to broadcast license status update: {exc}")
+    _maybe_notify_cloudflare_menu_state(payload)
 
 
 def load_business_profile_data():
@@ -231,37 +307,71 @@ else:
 # Enhanced path resolution: try multiple locations for data directory
 def find_data_directory():
     """Find the data directory by trying multiple possible locations"""
-    possible_paths = [
-        # Customer's installation path
-        r'C:\POSPal\data',
-        # Primary: relative to executable/script
-        os.path.join(BASE_DIR, 'data'),
-        # Fallback: current working directory + data
-        os.path.join(os.getcwd(), 'data'),
-        # Fallback: executable directory + data (for cases where cwd is different)
-        os.path.join(os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)), 'data'),
-        # Fallback: script directory + data (for development)
-        os.path.dirname(os.path.abspath(__file__)) + '\\data' if not getattr(sys, 'frozen', False) else None
-    ]
-    
-    # Filter out None values and check which paths exist
-    valid_paths = [path for path in possible_paths if path and os.path.exists(path)]
-    
+    canonical_path = os.path.join(BASE_DIR, 'data')
+    legacy_path = r'C:\POSPal\data'
+    cwd_candidate = os.path.join(os.getcwd(), 'data')
+    exe_candidate = os.path.join(
+        os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)),
+        'data'
+    )
+    script_candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data') if not getattr(sys, 'frozen', False) else None
+
+    def _has_menu(path: str | None) -> bool:
+        return bool(path) and os.path.exists(os.path.join(path, 'menu.json'))
+
+    def _dedupe_paths(paths):
+        seen = set()
+        for p in paths:
+            if not p:
+                continue
+            resolved = os.path.normpath(p)
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            yield resolved
+
+    # Always ensure canonical path exists so new installs have a stable location
+    try:
+        os.makedirs(canonical_path, exist_ok=True)
+    except Exception as exc:
+        logging.warning(f"Could not create canonical data directory {canonical_path}: {exc}")
+
+    # Migrate legacy installs (C:\POSPal\data) into the executable's data folder if needed
+    if os.path.exists(legacy_path) and _has_menu(legacy_path) and not _has_menu(canonical_path):
+        try:
+            for root, _, files in os.walk(legacy_path):
+                rel = os.path.relpath(root, legacy_path)
+                target_root = os.path.join(canonical_path, rel) if rel != '.' else canonical_path
+                os.makedirs(target_root, exist_ok=True)
+                for filename in files:
+                    src_file = os.path.join(root, filename)
+                    dst_file = os.path.join(target_root, filename)
+                    shutil.copy2(src_file, dst_file)
+            app.logger.info(f"Migrated legacy data from {legacy_path} to {canonical_path}")
+        except Exception as exc:
+            app.logger.warning(f"Failed to migrate data from {legacy_path} to {canonical_path}: {exc}")
+
+    possible_paths = list(_dedupe_paths([
+        canonical_path,
+        legacy_path,
+        cwd_candidate,
+        exe_candidate,
+        script_candidate
+    ]))
+
+    valid_paths = [path for path in possible_paths if os.path.exists(path)]
+
     if valid_paths:
-        # Prefer the path that contains menu.json
         for path in valid_paths:
-            if os.path.exists(os.path.join(path, 'menu.json')):
-                app.logger.info(f"Found data directory with menu.json: {path}")
+            if _has_menu(path):
+                app.logger.info(f"Using data directory with menu.json: {path}")
                 return path
-        # If no path has menu.json, use the first valid path
-        app.logger.info(f"Using data directory: {valid_paths[0]}")
+        app.logger.info(f"No menu.json found. Falling back to first existing data directory: {valid_paths[0]}")
         return valid_paths[0]
-    else:
-        # If no existing data directory found, create one relative to executable
-        default_path = os.path.join(BASE_DIR, 'data')
-        app.logger.warning(f"No existing data directory found. Creating default: {default_path}")
-        os.makedirs(default_path, exist_ok=True)
-        return default_path
+
+    # If no existing data directory found, use the canonical path that was just created
+    app.logger.warning(f"No data directories found. Using canonical path: {canonical_path}")
+    return canonical_path
 
 DATA_DIR = find_data_directory()
 
@@ -360,6 +470,9 @@ def _period_has_elapsed(period_end_value):
 # --- Graceful cloud validation backoff state ---
 # Ensure we never run more than one outbound cloud validation at a time
 _cloud_validation_lock = threading.Lock()
+
+# Track last known menu availability state to avoid redundant Cloudflare updates
+_last_cloudflare_menu_allowed: bool | None = None
 
 
 class LicenseStatusCoordinator:
@@ -2121,32 +2234,127 @@ def save_config(updated_values: dict):
         return False
 
 # --- Cloudflare Online Menu Settings ---
+_PLACEHOLDER_API_KEYS = {
+    'change_me',
+    'your_cloudflare_api_token_here',
+    'replace_with_cloudflare_token',
+    'replace_with_real_token',
+    '__placeholder__'
+}
+_embedded_candidate = (EMBEDDED_CLOUDFLARE_TOKEN or '').strip()
+if _embedded_candidate and _embedded_candidate.lower() in {'replace_with_cloudflare_token', 'replace_with_real_token', '__placeholder__'}:
+    _PLACEHOLDER_API_KEYS.add(_embedded_candidate)
+
+def _resolve_cloudflare_api_key() -> tuple[str, str]:
+    """Return (api_key, source) for Cloudflare publishing."""
+    env_key = str(Config.CLOUDFLARE_API_TOKEN or '').strip()
+    if env_key:
+        if env_key.lower() in _PLACEHOLDER_API_KEYS:
+            return '', 'environment_placeholder'
+        return env_key, 'environment'
+
+    embedded_key = (EMBEDDED_CLOUDFLARE_TOKEN or '').strip()
+    if embedded_key and embedded_key not in _PLACEHOLDER_API_KEYS:
+        return embedded_key, 'embedded_constant'
+
+    stored_plain = str(config.get('cloudflare_api_key', '')).strip()
+    if stored_plain:
+        return stored_plain, 'config_plain'
+
+    encrypted_value = str(config.get('cloudflare_api_key_enc', '')).strip()
+    if encrypted_value:
+        decrypted = _decrypt_config_secret(encrypted_value)
+        if decrypted:
+            return decrypted.strip(), 'config_encrypted'
+        app.logger.warning("Stored encrypted Cloudflare API key could not be decrypted.")
+
+    return '', 'missing'
+
 @app.route('/api/settings/cloudflare', methods=['GET', 'POST'])
 def cloudflare_settings():
     if request.method == 'GET':
-        # Do not expose api key in GET
+        cloud_status = {}
+        persisted_marker: dict[str, str] | dict = {}
+        persisted_slug = ''
+        if os.path.exists(PUBLISH_MARKER_FILE):
+            try:
+                with open(PUBLISH_MARKER_FILE, 'r', encoding='utf-8') as f:
+                    persisted_marker = json.load(f) or {}
+                persisted_slug = str(persisted_marker.get('slug', '') or '').strip()
+            except Exception:
+                persisted_marker = {}
+                persisted_slug = ''
+        try:
+            # Attempt to fetch cloud status to auto-populate slug/url
+            server_license = load_server_license() or {}
+            email = server_license.get('customer_email')
+            unlock = server_license.get('unlock_token')
+            slug = str(config.get('cloudflare_store_slug', '')).strip()
+            if not slug and persisted_slug:
+                slug = persisted_slug
+                save_config({
+                    "cloudflare_store_slug": persisted_slug,
+                    "cloudflare_store_slug_locked": True
+                })
+            if email and unlock:
+                status_url = f"{str(config.get('cloudflare_api_base', '')).rstrip('/')}/qr-menu/status"
+                params = {"email": email, "unlock_token": unlock}
+                if slug:
+                    params["slug"] = slug
+                try:
+                    resp = requests.get(status_url, params=params, timeout=6)
+                    if resp.ok:
+                        cloud_status = resp.json()
+                except Exception:
+                    pass
+            elif slug:
+                status_url = f"{str(config.get('cloudflare_api_base', '')).rstrip('/')}/qr-menu/status"
+                params = {"slug": slug}
+                try:
+                    resp = requests.get(status_url, params=params, timeout=6)
+                    if resp.ok:
+                        cloud_status = resp.json()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         payload = {
             "cloudflare_api_base": str(config.get('cloudflare_api_base', '')),
             "cloudflare_store_slug": str(config.get('cloudflare_store_slug', '')),
             "cloudflare_public_base": str(config.get('cloudflare_public_base', '')),
             "cloudflare_store_slug_locked": bool(config.get('cloudflare_store_slug_locked', False))
         }
+        if not payload["cloudflare_store_slug"] and slug:
+            payload["cloudflare_store_slug"] = slug
+            payload["cloudflare_store_slug_locked"] = True
+        if cloud_status:
+            payload['cloud_slug'] = cloud_status.get('slug')
+            payload['cloud_public_base'] = cloud_status.get('public_base')
+            payload['cloud_menu_version'] = cloud_status.get('menu_version')
+            payload['cloud_last_published_at'] = cloud_status.get('last_published_at')
+            payload['cloud_allowed'] = cloud_status.get('allowed')
+            payload['cloud_subscription_status'] = cloud_status.get('subscription_status')
         # If app folder was deleted but this is the same machine, surface persisted publish marker
         try:
-            if os.path.exists(PUBLISH_MARKER_FILE):
-                with open(PUBLISH_MARKER_FILE, 'r', encoding='utf-8') as f:
-                    marker = json.load(f)
-                payload['persisted_public_url'] = marker.get('public_url')
-                payload['persisted_slug'] = marker.get('slug')
+            if persisted_marker:
+                payload['persisted_public_url'] = persisted_marker.get('public_url')
+                payload['persisted_slug'] = persisted_marker.get('slug')
+                payload['persisted_first_published_at'] = persisted_marker.get('first_published_at')
+                payload['persisted_last_published_at'] = persisted_marker.get('last_published_at')
         except Exception:
             pass
+        try:
+            if slug:
+                snapshot = _compute_server_license_status(force_refresh=False)
+                if snapshot:
+                    _maybe_notify_cloudflare_menu_state(snapshot)
+        except Exception as exc:
+            app.logger.debug(f"Cloudflare slug sync skipped: {exc}")
         return jsonify(payload)
     data = request.get_json(silent=True) or {}
-    # Allow updating any of these
+    # Allow updating the slug only via API; other settings are managed internally
     allowed_keys = [
-        'cloudflare_api_base',
-        'cloudflare_store_slug',
-        'cloudflare_public_base'
+        'cloudflare_store_slug'
     ]
     updates = {k: str(v) for k, v in data.items() if k in allowed_keys}
     # Enforce slug lock: once set and locked, it cannot change
@@ -2188,18 +2396,48 @@ def publish_menu_cloudflare():
 
         # Read config
         api_base = str(config.get('cloudflare_api_base', '')).rstrip('/')
-        api_key = Config.CLOUDFLARE_API_TOKEN or str(config.get('cloudflare_api_key', ''))
+        api_key, api_key_source = _resolve_cloudflare_api_key()
         public_base = str(config.get('cloudflare_public_base', '')).rstrip('/')
+        # Pull license credentials for customer binding
+        server_license = load_server_license() or {}
+        customer_email = server_license.get('customer_email') or ''
+        unlock_token = server_license.get('unlock_token') or ''
+        publisher = os.environ.get('COMPUTERNAME') or os.environ.get('HOSTNAME') or 'pospal-desktop'
+        app.logger.info(
+            "Cloudflare publish request slug=%s data_dir=%s menu_exists=%s api_key_source=%s",
+            store_slug or '[missing]',
+            DATA_DIR,
+            os.path.exists(MENU_FILE),
+            api_key_source
+        )
 
-        if not api_base or not api_key or not store_slug:
-            return jsonify({"success": False, "message": "Cloudflare settings incomplete."}), 400
+        missing_parts = []
+        if not api_base:
+            missing_parts.append("API base URL")
+        if not api_key:
+            missing_parts.append("API token")
+        if not store_slug:
+            missing_parts.append("store slug")
+        if missing_parts:
+            app.logger.warning(f"Cloudflare publish blocked: missing {missing_parts} (source={api_key_source})")
+            user_message = "Cloudflare settings incomplete. Please contact support."
+            if missing_parts == ["store slug"]:
+                user_message = "Store slug is required before publishing."
+            return jsonify({
+                "success": False,
+                "message": user_message
+            }), 400
 
         # Compose endpoint: expecting a Worker route like /v1/stores/{slug}/menu
         url = f"{api_base}/v1/stores/{store_slug}/menu"
         payload = {
             "store": store_slug,
             "version": int(time.time()),
-            "menu": menu_data
+            "menu": menu_data,
+            "email": customer_email,
+            "unlock_token": unlock_token,
+            "public_base": public_base,
+            "published_by": publisher
         }
         headers = {
             'Authorization': f"Bearer {api_key}",
@@ -2220,12 +2458,20 @@ def publish_menu_cloudflare():
 
         # Persist marker to ProgramData to survive app folder deletion
         try:
+            existing_marker = {}
+            if os.path.exists(PUBLISH_MARKER_FILE):
+                try:
+                    with open(PUBLISH_MARKER_FILE, 'r', encoding='utf-8') as f:
+                        existing_marker = json.load(f)
+                except Exception:
+                    existing_marker = {}
             os.makedirs(PERSIST_DIR, exist_ok=True)
             with open(PUBLISH_MARKER_FILE, 'w', encoding='utf-8') as f:
                 json.dump({
                     "slug": store_slug,
                     "public_url": f"{public_base}/s/{store_slug}",
-                    "first_published_at": datetime.now().isoformat()
+                    "first_published_at": existing_marker.get("first_published_at") or datetime.now().isoformat(),
+                    "last_published_at": datetime.now().isoformat()
                 }, f, indent=2)
         except Exception as e:
             app.logger.warning(f"Failed to write publish marker: {e}")
@@ -10504,12 +10750,40 @@ def _decrypt_license_data(encrypted_data):
         fernet = _get_license_encryption_key()
         if not fernet:
             return None
-            
+
         encrypted_bytes = base64.urlsafe_b64decode(encrypted_data.encode())
         decrypted_data = fernet.decrypt(encrypted_bytes)
         return json.loads(decrypted_data.decode())
     except Exception as e:
         app.logger.error(f"Failed to decrypt license data: {e}")
+        return None
+
+def _encrypt_config_secret(value: str) -> str | None:
+    """Encrypt sensitive config values (e.g., API tokens) for local storage."""
+    if not value:
+        return None
+    try:
+        fernet = _get_license_encryption_key()
+        if not fernet:
+            return None
+        token = fernet.encrypt(value.encode('utf-8'))
+        return base64.urlsafe_b64encode(token).decode('utf-8')
+    except Exception as exc:
+        app.logger.warning(f"Failed to encrypt config secret: {exc}")
+        return None
+
+def _decrypt_config_secret(value: str) -> str | None:
+    """Decrypt sensitive config values stored via _encrypt_config_secret."""
+    if not value:
+        return None
+    try:
+        fernet = _get_license_encryption_key()
+        if not fernet:
+            return None
+        decrypted = fernet.decrypt(base64.urlsafe_b64decode(value.encode('utf-8')))
+        return decrypted.decode('utf-8')
+    except Exception as exc:
+        app.logger.warning(f"Failed to decrypt config secret: {exc}")
         return None
 
 def _validate_license_with_cloud(

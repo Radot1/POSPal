@@ -1703,6 +1703,15 @@ const LicenseStorage = {
 
         // Note: NO localStorage.setItem() for credentials!
         // Credentials ONLY exist on server now (server_license.enc)
+
+        // Re-evaluate gated UI (online menu controls) whenever license state changes.
+        if (typeof applyCloudflareAccessGate === 'function') {
+            try {
+                applyCloudflareAccessGate();
+            } catch (err) {
+                console.warn('applyCloudflareAccessGate failed:', err);
+            }
+        }
     },
 
     // Clear cache
@@ -2798,6 +2807,14 @@ const FrontendLicenseManager = {
             isActive: isActive,
             timestamp: Date.now()
         };
+
+        // Surface trial mode through the shared license cache so gated features
+        // (like the Cloudflare publisher) can detect that trials are still active.
+        LicenseStorage.setLicenseData({
+            licenseState: LICENSE_STATES.TRIAL_ACTIVE,
+            displayStatus: 'trial',
+            active: false
+        });
         
         this.throttledUIUpdate(() => {
             StatusDisplayManager.updateLicenseStatus('trial', {
@@ -2814,6 +2831,12 @@ const FrontendLicenseManager = {
             status: 'expired',
             timestamp: Date.now()
         };
+
+        LicenseStorage.setLicenseData({
+            licenseState: LICENSE_STATES.TRIAL_EXPIRED,
+            displayStatus: 'trial_expired',
+            active: false
+        });
         
         this.throttledUIUpdate(() => {
             StatusDisplayManager.updateLicenseStatus('trial_expired', {
@@ -7753,68 +7776,208 @@ function ensureOnlineMenuSection() {
     }
 
     container.innerHTML = `
-        <h3 class="text-lg font-semibold text-gray-800 mb-3">Online Menu</h3>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="bg-white p-4 rounded-lg border">
-                <div class="space-y-3">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Store Slug</label>
-                        <input id="cfStoreSlug" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., cafe-olive">
-                        <div id="cfSettingsMsg" class="text-xs text-gray-600 mt-1"></div>
+        <div class="bg-gradient-to-r from-emerald-50 via-white to-blue-50 border border-emerald-100 rounded-xl p-4 mb-4 shadow-sm">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div class="flex items-start gap-3">
+                    <div class="h-12 w-12 rounded-lg bg-white shadow flex items-center justify-center border border-emerald-100 text-emerald-600">
+                        <i class="fas fa-qrcode text-xl"></i>
                     </div>
-                    <button class="btn-success px-4 py-2 rounded" onclick="publishOnlineMenu()">
-                        <i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu
-                    </button>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-gray-500">Online Menu</p>
+                        <p class="text-lg font-bold text-gray-900">QR Menu Publishing</p>
+                        <p id="cfStatusDetail" class="text-sm text-gray-600">Bring your menu online, share a beautiful QR, and update it instantly.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="cfStatusPill" class="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">Not published yet</span>
                 </div>
             </div>
-            <div class="bg-white p-4 rounded-lg border">
-                <h4 class="font-semibold text-gray-700 mb-3">Share</h4>
-                <div class="space-y-3">
-                    <div class="flex items-center gap-2">
-                        <input id="cfMenuUrl" readonly class="flex-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Menu URL will appear here">
-                        <button class="btn-secondary px-2 py-2 rounded text-sm whitespace-nowrap" onclick="copyCloudflareUrl()">
-                            <span class="hidden sm:inline">Copy URL</span>
-                            <span class="sm:hidden">Copy</span>
-                        </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="bg-white p-4 rounded-lg border shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h4 class="font-semibold text-gray-800">Setup &amp; Publish</h4>
+                        <p class="text-xs text-gray-500">Choose your public slug and push updates live.</p>
+                    </div>
+                    <span id="cfSlugLock" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">Unlocked</span>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Store Slug <span class="text-red-500">*</span></label>
+                        <input id="cfStoreSlug" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., cafe-olive">
                     </div>
                     <div>
-                        <div id="cfQrContainer" class="inline-block bg-white p-2 border rounded"></div>
+                        <button class="w-full btn-success px-4 py-2 rounded flex items-center justify-center gap-2" onclick="publishOnlineMenu()">
+                            <i class="fas fa-cloud-upload-alt"></i><span>Publish / Update</span>
+                        </button>
+                    </div>
+                    <div id="cfSettingsMsg" class="text-xs text-gray-600"></div>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-lg border shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-semibold text-gray-800">Share &amp; Preview</h4>
+                    <span class="text-xs text-gray-500 flex items-center gap-1"><i class="fas fa-shield-alt text-emerald-600"></i>Customer-ready</span>
+                </div>
+                <div class="space-y-4">
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Live URL</label>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input id="cfMenuUrl" readonly class="flex-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Menu URL will appear here">
+                            <div class="flex gap-2">
+                                <button class="btn-secondary px-3 py-2 rounded text-sm whitespace-nowrap" onclick="copyCloudflareUrl()"><span class="hidden sm:inline">Copy</span><span class="sm:hidden">Copy</span></button>
+                                <button class="btn-secondary px-3 py-2 rounded text-sm whitespace-nowrap" onclick="openCloudflareMenu()"><i class="fas fa-external-link-alt mr-1"></i>Open</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4 flex-wrap">
+                        <div id="cfQrContainer" class="inline-block bg-white p-2 border rounded shadow-sm"></div>
+                        <div class="space-y-2">
+                            <button class="btn-primary px-4 py-2 rounded flex items-center gap-2" onclick="downloadCloudflareQr()">
+                                <i class="fas fa-download"></i>Download QR
+                            </button>
+                            <p class="text-xs text-gray-500 max-w-xs">Perfect for table tents, receipts, or signage. Print-ready PNG download.</p>
+                        </div>
                     </div>
                     <div id="cfPublishMsg" class="text-xs text-gray-600"></div>
+                    <div class="flex items-center text-xs text-gray-500 gap-2">
+                        <i class="fas fa-clock"></i>
+                        <span id="cfLastPublished">Not published yet</span>
+                    </div>
                 </div>
             </div>
         </div>
     `;
 }
 
+function setCloudflareStatus(state, label, detail) {
+    const pill = document.getElementById('cfStatusPill');
+    const detailEl = document.getElementById('cfStatusDetail');
+    const slugLock = document.getElementById('cfSlugLock');
+    let pillClasses = 'px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1 ';
+    switch (state) {
+        case 'live':
+            pillClasses += 'bg-green-100 text-green-700 border border-green-200';
+            break;
+        case 'warning':
+            pillClasses += 'bg-amber-100 text-amber-700 border border-amber-200';
+            break;
+        case 'error':
+            pillClasses += 'bg-red-100 text-red-700 border border-red-200';
+            break;
+        default:
+            pillClasses += 'bg-gray-100 text-gray-700 border border-gray-200';
+    }
+    if (pill) {
+        pill.className = pillClasses;
+        pill.textContent = label || 'Status';
+    }
+    if (detailEl) {
+        detailEl.textContent = detail || '';
+    }
+    if (slugLock) {
+        slugLock.textContent = state === 'live' ? 'Locked' : 'Unlocked';
+        slugLock.className = state === 'live'
+            ? 'text-xs px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200'
+            : 'text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200';
+    }
+}
+
+function getOnlineMenuAccessState() {
+    try {
+        const lic = LicenseStorage && LicenseStorage.getLicenseData ? LicenseStorage.getLicenseData() : null;
+        const state = (lic && (lic.licenseState || lic.license_state || lic.displayStatus || lic.licenseStatus)) || '';
+        const normalized = state.toString().toLowerCase();
+        const allowed = normalized.startsWith('licensed_') || normalized === 'trial_active' || normalized === 'trial';
+        return { allowed, state: normalized || 'unknown' };
+    } catch (e) {
+        return { allowed: false, state: 'unknown' };
+    }
+}
+
+function applyCloudflareAccessGate() {
+    const { allowed, state } = getOnlineMenuAccessState();
+    const slugEl = document.getElementById('cfStoreSlug');
+    const publishBtn = document.querySelector('button[onclick="publishOnlineMenu()"]');
+    const msgEl = document.getElementById('cfSettingsMsg');
+
+    if (!allowed) {
+        if (slugEl) { slugEl.disabled = true; slugEl.style.backgroundColor = '#f3f4f6'; }
+        if (publishBtn) { publishBtn.disabled = true; publishBtn.classList.add('opacity-60'); }
+        setCloudflareStatus('error', 'Requires activation', 'Publishing is available after activating your subscription.');
+        if (msgEl) {
+            msgEl.textContent = state === 'trial_expired'
+                ? 'Your trial has ended. Activate to keep your online menu updated.'
+                : 'Activate your subscription to publish or update the online menu.';
+            msgEl.className = 'text-xs text-red-600 mt-1';
+        }
+        return false;
+    }
+
+    if (slugEl) { slugEl.disabled = false; slugEl.style.backgroundColor = ''; }
+    if (publishBtn) { publishBtn.disabled = false; publishBtn.classList.remove('opacity-60'); }
+    return true;
+}
+
 async function initializeCloudflareUI() {
     try {
         const resp = await fetch('/api/settings/cloudflare');
         const cfg = await resp.json();
-        const slugEl = document.getElementById('cfStoreSlug');
-        const urlEl = document.getElementById('cfMenuUrl');
-        const publishBtn = document.querySelector('button[onclick="publishOnlineMenu()"]');
-        const msgEl = document.getElementById('cfSettingsMsg');
-        
+    const slugEl = document.getElementById('cfStoreSlug');
+    const urlEl = document.getElementById('cfMenuUrl');
+    const publishBtn = document.querySelector('button[onclick="publishOnlineMenu()"]');
+    const msgEl = document.getElementById('cfSettingsMsg');
+    const lastPubEl = document.getElementById('cfLastPublished');
+        window.__pospalCloudflareBase = '';
+
+        const gateAllowed = applyCloudflareAccessGate();
+        if (!gateAllowed) {
+            setCloudflareStatus('error', 'Requires activation', 'Activate your subscription to publish or update your online menu.');
+        }
+
         // CRITICAL: If machine has persisted slug, immediately lock everything
+        const cloudSlug = cfg.cloud_slug || '';
+        const cloudBase = cfg.cloud_public_base || '';
+        const cloudAllowed = cfg.cloud_allowed;
         const isLocked = cfg.cloudflare_store_slug_locked || cfg.persisted_slug;
-        const effectiveSlug = cfg.cloudflare_store_slug || cfg.persisted_slug || '';
-        
+        let effectiveSlug = cfg.cloudflare_store_slug || cfg.persisted_slug || '';
+        let effectiveBase = cfg.cloudflare_public_base || '';
+
+        // Prefer cloud slug/base if returned
+        if (cloudSlug && cloudSlug !== effectiveSlug) {
+            effectiveSlug = cloudSlug;
+            if (slugEl) slugEl.value = cloudSlug;
+            showToast(`Cloud slug found: ${cloudSlug}. Updated local settings.`, 'info');
+        }
+        if (cloudBase) {
+            effectiveBase = cloudBase;
+        }
+
+        window.__pospalCloudflareBase = effectiveBase;
+
         if (slugEl) slugEl.value = effectiveSlug;
         
         // Show URL if available
         const persistedUrl = cfg.persisted_public_url || '';
-        const computedUrl = (cfg.cloudflare_public_base && effectiveSlug)
-          ? `${cfg.cloudflare_public_base.replace(/\/$/,'')}/s/${effectiveSlug}`
+        const computedUrl = (effectiveBase && effectiveSlug)
+          ? `${effectiveBase.replace(/\/$/,'')}/s/${effectiveSlug}`
           : '';
         const urlToShow = persistedUrl || computedUrl;
         if (urlToShow) {
             if (urlEl) urlEl.value = urlToShow;
             renderCloudflareQr(urlToShow);
         }
-        
+        if (lastPubEl) {
+            const last = cfg.cloud_last_published_at || cfg.persisted_last_published_at || cfg.persisted_first_published_at;
+            lastPubEl.textContent = last ? `Last published ${new Date(last).toLocaleString()}` : 'Not published yet';
+        }
+
         // SECURITY: Lock UI if website exists on this machine
-        if (isLocked) {
+        if (isLocked && gateAllowed) {
             if (slugEl) {
                 slugEl.disabled = true;
                 slugEl.style.backgroundColor = '#f3f4f6';
@@ -7828,20 +7991,26 @@ async function initializeCloudflareUI() {
                 publishBtn.innerHTML = '<i class="fas fa-sync mr-2"></i>Update Menu';
                 publishBtn.title = 'Update existing menu content';
             }
-            
+
             // If config slug is missing but persisted exists, restore it
             if (!cfg.cloudflare_store_slug && cfg.persisted_slug) {
                 console.log('Restoring missing slug from persistence:', cfg.persisted_slug);
                 await fetch('/api/settings/cloudflare', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         cloudflare_store_slug: cfg.persisted_slug,
-                        cloudflare_store_slug_locked: true 
+                        cloudflare_store_slug_locked: true
                     })
                 });
             }
+            setCloudflareStatus('live', 'Live', urlToShow ? `Live at ${urlToShow}` : 'Published and locked to this device.');
         } else {
+            if (slugEl) {
+                slugEl.disabled = false;
+                slugEl.style.backgroundColor = '';
+                slugEl.style.cursor = '';
+            }
             if (msgEl) {
                 msgEl.textContent = 'Enter a unique store name (e.g., cafe-olive). This will become part of your permanent URL.';
                 msgEl.className = 'text-xs text-gray-600 mt-1';
@@ -7849,6 +8018,13 @@ async function initializeCloudflareUI() {
             if (publishBtn) {
                 publishBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu';
                 publishBtn.title = 'Publish menu online';
+            }
+            if (urlToShow && gateAllowed && (cloudAllowed === undefined || cloudAllowed === true)) {
+                setCloudflareStatus('live', 'Live', `Live at ${urlToShow}`);
+            } else if (cloudAllowed === false) {
+                setCloudflareStatus('error', 'Requires activation', 'Your online menu is offline until you activate.');
+            } else {
+                setCloudflareStatus(effectiveSlug ? 'warning' : 'default', effectiveSlug ? 'Ready to publish' : 'Not published yet', effectiveSlug ? 'Slug saved. Publish to go live.' : 'Add a slug to generate your QR menu.');
             }
         }
     } catch (e) {
@@ -7889,8 +8065,8 @@ async function maybeAutoPublishMenu() {
 }
 
 function getCloudflareUrlFromInputs() {
-    const publicBase = (document.getElementById('cfPublicBase')||{}).value || '';
     const slug = (document.getElementById('cfStoreSlug')||{}).value || '';
+    const publicBase = (window.__pospalCloudflareBase || '').toString();
     if (!publicBase || !slug) return '';
     const base = publicBase.replace(/\/$/, '');
     return `${base}/s/${slug}`;
@@ -7912,63 +8088,35 @@ function renderCloudflareQr(url) {
     }
 }
 
-async function saveCloudflareSettings() {
-    const apiBase = (document.getElementById('cfApiBase')||{}).value || '';
-    const apiKey = (document.getElementById('cfApiKey')||{}).value || '';
-    const storeSlug = (document.getElementById('cfStoreSlug')||{}).value || '';
-    const publicBase = (document.getElementById('cfPublicBase')||{}).value || '';
-    const msg = document.getElementById('cfSettingsMsg');
-    try {
-        const resp = await fetch('/api/settings/cloudflare', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                cloudflare_api_base: apiBase,
-                cloudflare_api_key: apiKey,
-                cloudflare_store_slug: storeSlug,
-                cloudflare_public_base: publicBase
-            })
-        });
-        const res = await resp.json();
-        if (res && res.success) {
-            if (msg) { msg.textContent = 'Settings saved.'; }
-            const url = getCloudflareUrlFromInputs();
-            if (url) {
-                const urlEl = document.getElementById('cfMenuUrl');
-                if (urlEl) urlEl.value = url;
-                renderCloudflareQr(url);
-            }
-            showToast('Cloudflare settings saved.', 'success');
-        } else {
-            const err = (res && res.message) || 'Failed to save settings';
-            if (msg) { msg.textContent = err; }
-            showToast(err, 'error');
-        }
-    } catch (e) {
-        if (msg) { msg.textContent = 'Network error saving settings.'; }
-        showToast('Network error saving settings.', 'error');
-    }
-}
-
 async function publishOnlineMenu() {
     const btn = event && event.target && event.target.closest('button');
     const msg = document.getElementById('cfPublishMsg');
     try {
+        if (!applyCloudflareAccessGate()) {
+            if (msg) msg.textContent = 'Publishing requires an active subscription.';
+            showToast('Publishing requires an active subscription.', 'warning');
+            return;
+        }
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Publishing...'; }
         if (msg) msg.textContent = '';
         // 1) Save slug to server (normalized server-side)
         const slugEl = document.getElementById('cfStoreSlug');
         const slugRaw = slugEl ? (slugEl.value || '') : '';
         const slug = (slugRaw || '').trim();
+
         if (!slug) {
             if (msg) msg.textContent = 'Please enter a store slug (e.g., cafetest).';
+            showToast('Store slug required.', 'error');
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu'; }
             return;
         }
+        setCloudflareStatus('warning', 'Publishing', 'Sending your menu to the cloud...');
         const saveResp = await fetch('/api/settings/cloudflare', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cloudflare_store_slug: slug })
+            body: JSON.stringify({
+                cloudflare_store_slug: slug
+            })
         });
         const saveRes = await saveResp.json().catch(()=>({}));
         if (!saveResp.ok || !saveRes.success) {
@@ -7987,14 +8135,19 @@ async function publishOnlineMenu() {
             if (url) renderCloudflareQr(url);
             showToast('Menu published online.', 'success');
             if (msg) msg.textContent = 'Published successfully.';
+            const lastPubEl = document.getElementById('cfLastPublished');
+            if (lastPubEl) lastPubEl.textContent = `Last published ${new Date().toLocaleString()}`;
+            setCloudflareStatus('live', 'Live', url ? `Live at ${url}` : 'Menu published.');
         } else {
             const err = (res && (res.message || (res.details && (res.details.message || res.details.text)))) || 'Publish failed';
             showToast(err, 'error');
             if (msg) msg.textContent = err;
+            setCloudflareStatus('error', 'Publish failed', err);
         }
     } catch (e) {
         showToast('Network error during publish.', 'error');
         if (msg) msg.textContent = 'Network error during publish.';
+        setCloudflareStatus('error', 'Network error', 'Check your connection and try again.');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu'; }
     }
@@ -8010,6 +8163,41 @@ async function copyCloudflareUrl() {
     } catch (e) {
         showToast('Could not copy URL.', 'error');
     }
+}
+
+function openCloudflareMenu() {
+    const urlEl = document.getElementById('cfMenuUrl');
+    const val = urlEl ? (urlEl.value || '') : '';
+    if (!val) {
+        showToast('No URL to open.', 'warning');
+        return;
+    }
+    window.open(val, '_blank', 'noopener');
+}
+
+function downloadCloudflareQr() {
+    const container = document.getElementById('cfQrContainer');
+    if (!container || !container.firstChild) {
+        showToast('QR not ready yet.', 'warning');
+        return;
+    }
+    const canvas = container.querySelector('canvas');
+    const img = container.querySelector('img');
+    let dataUrl = '';
+    if (canvas && canvas.toDataURL) {
+        dataUrl = canvas.toDataURL('image/png');
+    } else if (img && img.src) {
+        dataUrl = img.src;
+    }
+    if (!dataUrl) {
+        showToast('Unable to export QR.', 'error');
+        return;
+    }
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = 'pospal-menu-qr.png';
+    link.click();
+    showToast('QR downloaded.', 'success');
 }
 
 function populateManagementCategorySelect() {

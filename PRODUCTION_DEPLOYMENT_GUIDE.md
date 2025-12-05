@@ -3,6 +3,12 @@
 ## Overview
 This guide covers the complete production deployment process for POSPal's subscription-based licensing system, including Flask application, Cloudflare Workers, and database setup.
 
+## Cloudflare Online Menu Publishing
+
+- **Embedded token**: `embedded_credentials.py` now ships with the Cloudflare QR Menu API token (stored as base64). Rotate the value before running `build.bat` whenever the Cloudflare secret changes. PyInstaller bundles the module automatically, so customers never have to paste the token or see it in the UI.
+- **No UI exposure**: `/api/settings/cloudflare` only accepts the store slug. If support sees `Cloudflare settings incomplete`, inspect the embedded token or Cloudflare worker health instead of collecting secrets from customers.
+- **Data directory**: the runtime prefers the `data` folder next to the executable (for example `POSPal_v1.2.1\data`). On startup we migrate legacy installs from `C:\POSPal\data`, so publish logs (`pospal_debug.log`) always sit beside the running `.exe`.
+
 ## Architecture Overview
 
 ```

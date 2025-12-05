@@ -2472,33 +2472,82 @@
                 </div>
             </div>
             <div id="onlineMenuManagement" class="hidden">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Online Menu</h3>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div class="bg-white p-4 rounded-lg border">
-                            <div class="space-y-3">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Store Slug</label>
-                                    <input id="cfStoreSlug" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., cafe-olive">
-                                    <div id="cfSettingsMsg" class="text-xs text-gray-600 mt-1"></div>
-                                </div>
-                                <button class="btn-success px-4 py-2 rounded" onclick="publishOnlineMenu()"><i class="fas fa-cloud-upload-alt mr-2"></i>Publish Menu</button>
+                <div class="bg-gradient-to-r from-emerald-50 via-white to-blue-50 border border-emerald-100 rounded-xl p-4 mb-4 shadow-sm">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div class="flex items-start gap-3">
+                            <div class="h-12 w-12 rounded-lg bg-white shadow flex items-center justify-center border border-emerald-100 text-emerald-600">
+                                <i class="fas fa-qrcode text-xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs uppercase tracking-wide text-gray-500">Online Menu</p>
+                                <p class="text-lg font-bold text-gray-900">QR Menu Publishing</p>
+                                <p id="cfStatusDetail" class="text-sm text-gray-600">Bring your menu online, share a beautiful QR, and update it instantly.</p>
                             </div>
                         </div>
-                        <div class="bg-white p-4 rounded-lg border">
-                            <h4 class="font-semibold text-gray-700 mb-3">Share</h4>
-                            <div class="space-y-3">
-                                <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2">
+                            <span id="cfStatusPill" class="px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">Not published yet</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white p-4 rounded-lg border shadow-sm">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h4 class="font-semibold text-gray-800">Setup &amp; Publish</h4>
+                                <p class="text-xs text-gray-500">Choose your public slug and push updates live.</p>
+                            </div>
+                            <span id="cfSlugLock" class="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">Unlocked</span>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Store Slug <span class="text-red-500">*</span></label>
+                                <input id="cfStoreSlug" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="e.g., cafe-olive">
+                            </div>
+                            <div>
+                                <button class="w-full btn-success px-4 py-2 rounded flex items-center justify-center gap-2" onclick="publishOnlineMenu()">
+                                    <i class="fas fa-cloud-upload-alt"></i><span>Publish / Update</span>
+                                </button>
+                            </div>
+                            <div id="cfSettingsMsg" class="text-xs text-gray-600"></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg border shadow-sm">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-gray-800">Share &amp; Preview</h4>
+                            <span class="text-xs text-gray-500 flex items-center gap-1"><i class="fas fa-shield-alt text-emerald-600"></i>Customer-ready</span>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="space-y-2">
+                                <label class="block text-sm font-medium text-gray-700">Live URL</label>
+                                <div class="flex flex-col sm:flex-row gap-2">
                                     <input id="cfMenuUrl" readonly class="flex-1 px-3 py-2 border border-gray-300 rounded-md" placeholder="Menu URL will appear here">
-                                    <button class="btn-secondary px-2 py-2 rounded text-sm whitespace-nowrap" onclick="copyCloudflareUrl()"><span class="hidden sm:inline">Copy URL</span><span class="sm:hidden">Copy</span></button>
+                                    <div class="flex gap-2">
+                                        <button class="btn-secondary px-3 py-2 rounded text-sm whitespace-nowrap" onclick="copyCloudflareUrl()"><span class="hidden sm:inline">Copy</span><span class="sm:hidden">Copy</span></button>
+                                        <button class="btn-secondary px-3 py-2 rounded text-sm whitespace-nowrap" onclick="openCloudflareMenu()"><i class="fas fa-external-link-alt mr-1"></i>Open</button>
+                                    </div>
                                 </div>
-                                <div>
-                                    <div id="cfQrContainer" class="inline-block bg-white p-2 border rounded"></div>
+                            </div>
+                            <div class="flex items-start gap-4 flex-wrap">
+                                <div id="cfQrContainer" class="inline-block bg-white p-2 border rounded shadow-sm"></div>
+                                <div class="space-y-2">
+                                    <button class="btn-primary px-4 py-2 rounded flex items-center gap-2" onclick="downloadCloudflareQr()">
+                                        <i class="fas fa-download"></i>Download QR
+                                    </button>
+                                    <p class="text-xs text-gray-500 max-w-xs">Perfect for table tents, receipts, or signage. Print-ready PNG download.</p>
                                 </div>
-                                <div id="cfPublishMsg" class="text-xs text-gray-600"></div>
+                            </div>
+                            <div id="cfPublishMsg" class="text-xs text-gray-600"></div>
+                            <div class="flex items-center text-xs text-gray-500 gap-2">
+                                <i class="fas fa-clock"></i>
+                                <span id="cfLastPublished">Not published yet</span>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
             </div>
             <div id="appVersionContainer" class="p-3 border-t border-gray-200 bg-gradient-to-t from-gray-50 via-gray-50 to-white flex justify-between items-center text-xs text-gray-500 flex-shrink-0 rounded-b-lg mt-auto">
                 <div class="flex items-center gap-4 flex-wrap"><span data-i18n="ui.footer.version">POSPal Version:</span> <span id="appVersion" class="font-medium text-gray-600">1.0.0</span><span id="footer-trial-status" class="font-medium text-xs text-gray-400">Checking license...</span><button onclick="switchManagementTab('license', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.licenseInfo">License Info</button><button onclick="switchManagementTab('hardwarePrinting', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1" data-i18n="ui.footer.settings">Settings</button><button onclick="switchManagementTab('onlineMenu', this)" class="text-gray-500 hover:text-gray-800 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400 rounded px-1">Online Menu</button></div>

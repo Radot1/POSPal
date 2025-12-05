@@ -82,10 +82,33 @@ const EMAIL_VERIFICATION_COOLDOWN_SECONDS = 60; // 60 seconds between sends
 const EMAIL_VERIFICATION_MAX_SENDS_PER_HOUR = 5;
 const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
 
+let qrMenuSuspensionTableEnsured = false;
+let qrMenuDeviceOverrideTableEnsured = false;
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     
+    // QR Menu public/private endpoints
+    if (url.pathname.startsWith('/v1/stores/') && url.pathname.endsWith('/menu')) {
+      const slug = decodeURIComponent(url.pathname.replace('/v1/stores/', '').replace(/\/menu$/, '')).toLowerCase();
+      if (!slug) return createErrorResponse('Missing store slug', 400);
+      if (request.method === 'GET') {
+        return handleQrMenuPublic(env, slug);
+      }
+      if (request.method === 'POST') {
+        return handleQrMenuPublish(request, env, slug);
+      }
+      return createErrorResponse('Method not allowed', 405);
+    }
+    if (url.pathname === '/qr-menu/status') {
+      if (request.method === 'POST') {
+        return handleQrMenuStatusUpdate(request, env);
+      }
+      const slug = (url.searchParams.get('slug') || '').trim().toLowerCase();
+      return handleQrMenuStatus(env, slug, url.searchParams);
+    }
+
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return handleCORS();
@@ -215,6 +238,441 @@ async function fetchStripePrice(env) {
   } catch (error) {
     console.error('Failed to fetch Stripe pricing:', error);
     return null;
+  }
+}
+
+async function ensureQrMenuSuspensionTable(env) {
+  if (qrMenuSuspensionTableEnsured) {
+    return;
+  }
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS qr_menu_suspensions (
+        customer_id INTEGER PRIMARY KEY,
+        allowed INTEGER NOT NULL DEFAULT 1,
+        license_state TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+      )
+    `).run();
+    qrMenuSuspensionTableEnsured = true;
+  } catch (err) {
+    console.error('Failed to ensure qr_menu_suspensions table', err);
+  }
+}
+
+async function ensureQrMenuDeviceOverridesTable(env) {
+  if (qrMenuDeviceOverrideTableEnsured) {
+    return;
+  }
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS qr_menu_device_overrides (
+        hardware_hash TEXT PRIMARY KEY,
+        slug TEXT NOT NULL,
+        allowed INTEGER NOT NULL DEFAULT 1,
+        license_state TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+    await env.DB.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_qr_menu_device_slug
+      ON qr_menu_device_overrides(lower(slug))
+    `).run();
+    qrMenuDeviceOverrideTableEnsured = true;
+  } catch (err) {
+    console.error('Failed to ensure qr_menu_device_overrides table', err);
+  }
+}
+
+async function deleteDeviceOverrideForSlug(env, slug) {
+  if (!slug) {
+    return;
+  }
+  try {
+    await ensureQrMenuDeviceOverridesTable(env);
+    await env.DB.prepare(`
+      DELETE FROM qr_menu_device_overrides
+      WHERE lower(slug) = lower(?)
+    `).bind(slug).run();
+  } catch (err) {
+    console.error('Failed to delete device override for slug', err);
+  }
+}
+
+function isMenuPublishingAllowed(subscriptionStatus, overrideAllowed, deviceOverrideAllowed) {
+  if (overrideAllowed === 0 || overrideAllowed === false) {
+    return false;
+  }
+  if (overrideAllowed === 1 || overrideAllowed === true) {
+    return true;
+  }
+  if (deviceOverrideAllowed === 0 || deviceOverrideAllowed === false) {
+    return false;
+  }
+  if (deviceOverrideAllowed === 1 || deviceOverrideAllowed === true) {
+    return true;
+  }
+  return isCustomerActiveForMenu(subscriptionStatus);
+}
+
+async function handleQrMenuPublic(env, slug) {
+  try {
+    await ensureQrMenuSuspensionTable(env);
+    await ensureQrMenuDeviceOverridesTable(env);
+    const deviceOverride = await env.DB.prepare(`
+      SELECT allowed, license_state, updated_at
+      FROM qr_menu_device_overrides
+      WHERE lower(slug) = lower(?)
+      LIMIT 1
+    `).bind(slug).first();
+    if (deviceOverride && (deviceOverride.allowed === 0 || deviceOverride.allowed === false)) {
+      return new Response(renderMenuSuspendedPage(slug), {
+        status: 403,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
+    }
+    const row = await env.DB.prepare(`
+      SELECT qm.menu_json, qm.customer_id, c.subscription_status,
+             s.allowed AS override_allowed,
+             d.allowed AS device_override_allowed
+      FROM qr_menus qm
+      LEFT JOIN customers c ON qm.customer_id = c.id
+      LEFT JOIN qr_menu_suspensions s ON s.customer_id = qm.customer_id
+      LEFT JOIN qr_menu_device_overrides d ON lower(d.slug) = lower(qm.slug)
+      WHERE lower(qm.slug) = lower(?)
+      LIMIT 1
+    `).bind(slug).first();
+    if (!row || !row.menu_json) {
+      return createErrorResponse('Menu not found', 404);
+    }
+    if (!isMenuPublishingAllowed(row.subscription_status, row.override_allowed, row.device_override_allowed)) {
+      return new Response(renderMenuSuspendedPage(slug), {
+        status: 403,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
+    }
+    return new Response(row.menu_json, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=60'
+      }
+    });
+  } catch (err) {
+    console.error('QR menu fetch error', err);
+    return createErrorResponse('Failed to fetch menu', 500);
+  }
+}
+
+async function getCustomerForQr(env, email, unlockToken) {
+  if (!email || !unlockToken) return null;
+  try {
+    await ensureQrMenuSuspensionTable(env);
+    const customer = await env.DB.prepare(`
+      SELECT c.id, c.email, c.subscription_status, s.allowed AS override_allowed
+      FROM customers c
+      LEFT JOIN qr_menu_suspensions s ON s.customer_id = c.id
+      WHERE lower(c.email) = lower(?) AND c.unlock_token = ?
+      LIMIT 1
+    `).bind(email, unlockToken).first();
+    if (!customer) return null;
+    if (!isMenuPublishingAllowed(customer.subscription_status, customer.override_allowed, null)) {
+      console.warn('QR menu publish blocked: inactive subscription', customer.email);
+      return null;
+    }
+    return customer;
+  } catch (err) {
+    console.error('QR menu customer lookup failed', err);
+    return null;
+  }
+}
+
+async function handleQrMenuPublish(request, env, slug) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const email = (body.email || body.customer_email || '').trim();
+    const unlockToken = (body.unlock_token || body.unlockToken || '').trim();
+    const menu = body.menu;
+    const publicBase = (body.public_base || body.publicBase || body.public || env.PUBLIC_MENU_BASE || '').toString().trim().replace(/\/$/, '');
+    const lastPublishedBy = (body.published_by || body.machine || body.device || '').toString().trim() || 'desktop-app';
+
+    if (!menu || typeof menu !== 'object') {
+      return createErrorResponse('Invalid menu payload', 400);
+    }
+
+    // Validate customer
+    const customer = await getCustomerForQr(env, email, unlockToken);
+    if (!customer) {
+      return createErrorResponse('Invalid or inactive customer credentials for publishing', 401);
+    }
+
+    // Check slug ownership
+    const existingSlug = await env.DB.prepare(`
+      SELECT customer_id, menu_version
+      FROM qr_menus
+      WHERE lower(slug) = lower(?)
+      LIMIT 1
+    `).bind(slug).first();
+    if (existingSlug && existingSlug.customer_id !== customer.id) {
+      return createErrorResponse('Slug is already claimed by another account', 409);
+    }
+
+    const existingCustomer = await env.DB.prepare(`
+      SELECT slug, menu_version
+      FROM qr_menus
+      WHERE customer_id = ?
+      LIMIT 1
+    `).bind(customer.id).first();
+
+    const now = new Date().toISOString();
+    let nextVersion = 1;
+
+    if (!existingCustomer && !existingSlug) {
+      await env.DB.prepare(`
+        INSERT INTO qr_menus (customer_id, slug, menu_json, public_base, menu_version, last_published_at, last_published_by)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
+      `).bind(customer.id, slug, JSON.stringify(menu), publicBase, now, lastPublishedBy).run();
+      nextVersion = 1;
+    } else {
+      // Use whichever record exists (customer row is authoritative if present)
+      const versionBase = (existingCustomer && existingCustomer.menu_version) || (existingSlug && existingSlug.menu_version) || 1;
+      nextVersion = versionBase + 1;
+      const targetSlug = existingCustomer && existingCustomer.slug ? existingCustomer.slug : slug;
+      await env.DB.prepare(`
+        INSERT INTO qr_menus (customer_id, slug, menu_json, public_base, menu_version, last_published_at, last_published_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(customer_id) DO UPDATE SET
+          slug=excluded.slug,
+          menu_json=excluded.menu_json,
+          public_base=excluded.public_base,
+          menu_version=excluded.menu_version,
+          last_published_at=excluded.last_published_at,
+          last_published_by=excluded.last_published_by,
+          updated_at=CURRENT_TIMESTAMP
+      `).bind(customer.id, targetSlug, JSON.stringify(menu), publicBase, nextVersion, now, lastPublishedBy).run();
+    }
+
+    const publicUrl = publicBase ? `${publicBase}/s/${slug}` : null;
+    return createResponse({
+      ok: true,
+      slug,
+      menu_version: nextVersion,
+      url: publicUrl
+    });
+  } catch (err) {
+    console.error('QR menu publish error', err);
+    return createErrorResponse('Failed to publish menu', 500);
+  }
+}
+
+function isCustomerActiveForMenu(subscriptionStatus) {
+  const status = (subscriptionStatus || '').toLowerCase();
+  return status === 'active' || status === 'trial' || status === 'trialing' || status === 'trial_active';
+}
+
+function renderMenuSuspendedPage(slug) {
+  return `
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Menu Unavailable</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin:0; padding:0; background: linear-gradient(135deg,#f8fafc,#e2e8f0); color:#0f172a; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .card { background:#fff; border-radius:14px; padding:28px; max-width:420px; width:90%; box-shadow:0 10px 40px rgba(15,23,42,0.12); border:1px solid #e2e8f0; }
+    h1 { margin:0 0 8px; font-size:22px; }
+    p { margin:6px 0; color:#475569; line-height:1.5; }
+    .pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background:#fef2f2; color:#b91c1c; font-weight:600; font-size:12px; border:1px solid #fecdd3; }
+    .footer { margin-top:14px; font-size:13px; color:#64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="pill">Menu Offline</div>
+    <h1>Menu unavailable</h1>
+    <p>This restaurant's online menu is temporarily offline.</p>
+    <p><strong>Why?</strong> The subscription or trial for this account has ended.</p>
+    <p class="footer">If you are the owner, please sign in to POSPal and reactivate your subscription to bring the menu back online.<br><br><span style="color:#94a3b8">Slug:</span> ${slug}</p>
+  </div>
+</body>
+</html>`;
+}
+
+async function handleQrMenuStatus(env, slug, searchParams) {
+  try {
+    await ensureQrMenuSuspensionTable(env);
+    await ensureQrMenuDeviceOverridesTable(env);
+    const params = searchParams || new URLSearchParams();
+    const safeSlug = (slug || '').trim().toLowerCase();
+    const email = (params.get('email') || '').trim();
+    const unlockToken = (params.get('unlock_token') || params.get('unlockToken') || '').trim();
+
+    let row = null;
+    if (safeSlug) {
+      row = await env.DB.prepare(`
+        SELECT qm.slug, qm.public_base, qm.menu_version, qm.last_published_at, c.subscription_status,
+               s.allowed AS override_allowed, s.license_state AS override_license_state, s.updated_at AS override_updated_at,
+               d.allowed AS device_override_allowed
+        FROM qr_menus qm
+        LEFT JOIN customers c ON qm.customer_id = c.id
+        LEFT JOIN qr_menu_suspensions s ON s.customer_id = qm.customer_id
+        LEFT JOIN qr_menu_device_overrides d ON lower(d.slug) = lower(qm.slug)
+        WHERE lower(qm.slug) = lower(?)
+        LIMIT 1
+      `).bind(safeSlug).first();
+    }
+
+    if (!row && email && unlockToken) {
+      row = await env.DB.prepare(`
+        SELECT qm.slug, qm.public_base, qm.menu_version, qm.last_published_at, c.subscription_status,
+               s.allowed AS override_allowed, s.license_state AS override_license_state, s.updated_at AS override_updated_at,
+               d.allowed AS device_override_allowed
+        FROM qr_menus qm
+        JOIN customers c ON qm.customer_id = c.id
+        LEFT JOIN qr_menu_suspensions s ON s.customer_id = qm.customer_id
+        LEFT JOIN qr_menu_device_overrides d ON lower(d.slug) = lower(qm.slug)
+        WHERE lower(c.email) = lower(?) AND c.unlock_token = ?
+        LIMIT 1
+      `).bind(email, unlockToken).first();
+    }
+
+    if (!row) {
+      if (safeSlug) {
+        const deviceRow = await env.DB.prepare(`
+          SELECT slug, allowed, license_state, updated_at
+          FROM qr_menu_device_overrides
+          WHERE lower(slug) = lower(?)
+          LIMIT 1
+        `).bind(safeSlug).first();
+        if (deviceRow) {
+          return createResponse({
+            slug: deviceRow.slug,
+            public_base: null,
+            menu_version: null,
+            last_published_at: null,
+            subscription_status: null,
+            override_allowed: null,
+            override_license_state: null,
+            override_updated_at: null,
+            device_override_allowed: typeof deviceRow.allowed === 'number' ? deviceRow.allowed === 1 : null,
+            allowed: deviceRow.allowed === 1
+          });
+        }
+      }
+      return createErrorResponse('Menu not found', 404);
+    }
+
+    const allowed = isMenuPublishingAllowed(row.subscription_status, row.override_allowed, row.device_override_allowed);
+
+    return createResponse({
+      slug: row.slug,
+      public_base: row.public_base,
+      menu_version: row.menu_version,
+      last_published_at: row.last_published_at,
+      subscription_status: row.subscription_status,
+      override_allowed: typeof row.override_allowed === 'number' ? row.override_allowed === 1 : null,
+      override_license_state: row.override_license_state || null,
+      override_updated_at: row.override_updated_at || null,
+      device_override_allowed: typeof row.device_override_allowed === 'number' ? row.device_override_allowed === 1 : null,
+      allowed
+    });
+  } catch (err) {
+    console.error('QR menu status error', err);
+    return createErrorResponse('Failed to fetch menu status', 500);
+  }
+}
+
+async function handleQrMenuStatusUpdate(request, env) {
+  try {
+    await ensureQrMenuSuspensionTable(env);
+    await ensureQrMenuDeviceOverridesTable(env);
+    const body = await request.json().catch(() => ({}));
+    const email = (body.email || body.customer_email || '').trim();
+    const unlockToken = (body.unlock_token || body.unlockToken || '').trim();
+    const allowedRaw = body.allowed;
+    const slug = ((body.slug || body.store_slug || body.cloudflare_store_slug || body.persisted_slug || '') || '').trim().toLowerCase();
+    const hardwareIdRaw = (body.hardware_id || body.hardwareId || body.device_id || '').toString().trim();
+    if (!email || !unlockToken) {
+      if (!slug || !hardwareIdRaw) {
+        return createErrorResponse('Provide email/unlock_token or slug + hardware_id', 400);
+      }
+    }
+    if (typeof allowedRaw !== 'boolean') {
+      return createErrorResponse('allowed must be a boolean', 400);
+    }
+
+    let responseSource = 'customer';
+    let updated = false;
+
+    if (email && unlockToken) {
+      const customer = await env.DB.prepare(`
+        SELECT id, email
+        FROM customers
+        WHERE lower(email) = lower(?) AND unlock_token = ?
+        LIMIT 1
+      `).bind(email, unlockToken).first();
+
+      if (!customer) {
+        if (!slug || !hardwareIdRaw) {
+          return createErrorResponse('Invalid customer credentials', 401);
+        }
+      } else {
+        const allowedValue = allowedRaw ? 1 : 0;
+        await env.DB.prepare(`
+          INSERT INTO qr_menu_suspensions (customer_id, allowed, license_state, updated_at)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(customer_id) DO UPDATE SET
+            allowed = excluded.allowed,
+            license_state = excluded.license_state,
+            updated_at = CURRENT_TIMESTAMP
+        `).bind(
+          customer.id,
+          allowedValue,
+          body.license_state || body.reason || null
+        ).run();
+        updated = true;
+        if (slug) {
+          await deleteDeviceOverrideForSlug(env, slug);
+        }
+      }
+    }
+
+    if (!updated) {
+      if (!slug || !hardwareIdRaw) {
+        return createErrorResponse('Unable to process status update without slug and hardware_id', 400);
+      }
+      const hardwareHash = await deriveTrialHardwareHash(hardwareIdRaw, env);
+      if (!hardwareHash) {
+        return createErrorResponse('Unable to derive hardware fingerprint', 400, { code: 'HW_HASH_FAILED' });
+      }
+      const allowedValue = allowedRaw ? 1 : 0;
+      await env.DB.prepare(`
+        INSERT INTO qr_menu_device_overrides (hardware_hash, slug, allowed, license_state, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(hardware_hash) DO UPDATE SET
+          slug = excluded.slug,
+          allowed = excluded.allowed,
+          license_state = excluded.license_state,
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(
+        hardwareHash,
+        slug,
+        allowedValue,
+        body.license_state || body.reason || null
+      ).run();
+      responseSource = 'hardware';
+    }
+
+    return createResponse({
+      ok: true,
+      allowed: Boolean(allowedRaw),
+      via: responseSource
+    });
+  } catch (err) {
+    console.error('QR menu status update error', err);
+    return createErrorResponse('Failed to update menu status', 500);
   }
 }
 
