@@ -3407,12 +3407,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const data = await res.json();
                 const lang = (data && (data.language === 'el' || data.language === 'en')) ? data.language : 'en';
                 languageSelect.value = lang;
+                languageSelect.dataset.currentLanguage = lang;
+            } else {
+                languageSelect.dataset.currentLanguage = languageSelect.value;
             }
-        } catch {}
+        } catch (error) {
+            console.warn('Failed to load saved language preference:', error);
+            languageSelect.dataset.currentLanguage = languageSelect.value;
+        }
         languageSelect.addEventListener('change', async (e) => {
-            const val = e.target.value;
-            await setLanguage(val);
-            updateReceiptPreview();
+            const selectEl = e.target;
+            const requestedLang = selectEl.value === 'el' ? 'el' : 'en';
+            const previousLang = selectEl.dataset.currentLanguage || requestedLang;
+            if (requestedLang === previousLang) {
+                return;
+            }
+            selectEl.disabled = true;
+            selectEl.classList.add('opacity-60');
+            try {
+                const result = await setLanguage(requestedLang, { silentToast: false });
+                const persistedLang = (result && result.language) ? result.language : requestedLang;
+                selectEl.dataset.currentLanguage = persistedLang;
+                selectEl.value = persistedLang;
+            } catch (error) {
+                console.error('Language change failed:', error);
+                selectEl.value = previousLang;
+                if (typeof showToast === 'function') {
+                    const isGreek = (typeof I18N === 'object' && I18N && I18N.lang === 'el');
+                    const errorMessage = isGreek
+                        ? 'Η αλλαγή γλώσσας απέτυχε. Προσπαθήστε ξανά.'
+                        : 'Language update failed. Please try again.';
+                    showToast(errorMessage, 'error');
+                }
+            } finally {
+                selectEl.disabled = false;
+                selectEl.classList.remove('opacity-60');
+            }
         });
     }
         
@@ -8456,6 +8486,139 @@ function getBusinessProfileValue(id) {
     return (document.getElementById(id)?.value || '').trim();
 }
 
+function getPreviewLanguageCode() {
+    try {
+        if (typeof window.getCurrentLanguage === 'function') {
+            const lang = window.getCurrentLanguage();
+            if (lang) return lang;
+        }
+    } catch {}
+    const select = document.getElementById('languageSelect');
+    if (select && select.value) {
+        return select.value;
+    }
+    try {
+        const cached = localStorage.getItem('pospal_language_cache');
+        if (cached) return cached;
+    } catch {}
+    return 'en';
+}
+
+const RECEIPT_PREVIEW_COMMON_GREEK_TERMS = [
+    { greek: 'καφές', latin: 'KAFES' },
+    { greek: 'καφέ', latin: 'KAFE' },
+    { greek: 'τσάι', latin: 'TSAI' },
+    { greek: 'νερό', latin: 'NERO' },
+    { greek: 'τυρόπιτα', latin: 'TYROPITA' },
+    { greek: 'σπανακόπιτα', latin: 'SPANAKOPITA' },
+    { greek: 'μουσακάς', latin: 'MOUSAKAS' },
+    { greek: 'σαλάτα', latin: 'SALATA' },
+    { greek: 'κρέας', latin: 'KREAS' },
+    { greek: 'ψάρι', latin: 'PSARI' },
+    { greek: 'πατάτες', latin: 'PATATES' },
+    { greek: 'κρεμμύδι', latin: 'KREMMYDI' },
+    { greek: 'ντομάτα', latin: 'DOMATA' },
+    { greek: 'τυρί', latin: 'TYRI' },
+    { greek: 'ψωμί', latin: 'PSOMI' },
+    { greek: 'κρασί', latin: 'KRASI' },
+    { greek: 'μπίρα', latin: 'BIRA' },
+    { greek: 'γάλα', latin: 'GALA' },
+    { greek: 'ζάχαρη', latin: 'ZAHARI' },
+    { greek: 'αλάτι', latin: 'ALATI' },
+    { greek: 'πιπέρι', latin: 'PIPERI' },
+    { greek: 'ελιές', latin: 'ELIES' },
+    { greek: 'φέτα', latin: 'FETA' },
+    { greek: 'γιαούρτι', latin: 'GIAOYRTI' },
+    { greek: 'μέλι', latin: 'MELI' },
+    { greek: 'σοκολάτα', latin: 'SOKOLATA' },
+    { greek: 'παγωτό', latin: 'PAGOTO' }
+];
+
+const RECEIPT_PREVIEW_MULTI_MAP = {
+    'ου': 'ou', 'ΟΥ': 'OU', 'Ου': 'Ou',
+    'αι': 'ai', 'ΑΙ': 'AI', 'Αι': 'Ai',
+    'ει': 'ei', 'ΕΙ': 'EI', 'Ει': 'Ei',
+    'οι': 'oi', 'ΟΙ': 'OI', 'Οι': 'Oi',
+    'υι': 'yi', 'ΥΙ': 'YI', 'Υι': 'Yi',
+    'αυ': 'af', 'ΑΥ': 'AF', 'Αυ': 'Af',
+    'ευ': 'ef', 'ΕΥ': 'EF', 'Ευ': 'Ef',
+    'μπ': 'b', 'ΜΠ': 'B', 'Μπ': 'B',
+    'ντ': 'd', 'ΝΤ': 'D', 'Ντ': 'D',
+    'γκ': 'g', 'ΓΚ': 'G', 'Γκ': 'G',
+    'τζ': 'tz', 'ΤΖ': 'TZ', 'Τζ': 'Tz',
+    'τσ': 'ts', 'ΤΣ': 'TS', 'Τς': 'Ts'
+};
+
+const RECEIPT_PREVIEW_CHAR_MAP = {
+    'α': 'a', 'β': 'v', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'i', 'θ': 'th',
+    'ι': 'i', 'κ': 'k', 'λ': 'l', 'μ': 'm', 'ν': 'n', 'ξ': 'ks', 'ο': 'o', 'π': 'p',
+    'ρ': 'r', 'σ': 's', 'ς': 's', 'τ': 't', 'υ': 'y', 'φ': 'f', 'χ': 'h', 'ψ': 'ps', 'ω': 'o',
+    'Α': 'A', 'Β': 'V', 'Γ': 'G', 'Δ': 'D', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'I', 'Θ': 'TH',
+    'Ι': 'I', 'Κ': 'K', 'Λ': 'L', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'KS', 'Ο': 'O', 'Π': 'P',
+    'Ρ': 'R', 'Σ': 'S', 'Τ': 'T', 'Υ': 'Y', 'Φ': 'F', 'Χ': 'H', 'Ψ': 'PS', 'Ω': 'O',
+    'ά': 'a', 'έ': 'e', 'ή': 'i', 'ί': 'i', 'ό': 'o', 'ύ': 'y', 'ώ': 'o',
+    'ΐ': 'i', 'ΰ': 'y', 'ϊ': 'i', 'ϋ': 'y'
+};
+
+function replaceAllOccurrences(source, search, replacement) {
+    if (!source || !search || search === replacement) return source;
+    return source.split(search).join(replacement);
+}
+
+function applyCommonTermTransliterations(text) {
+    if (!text) return text;
+    const originalLower = text.toLocaleLowerCase('el-GR');
+    let updated = text;
+    RECEIPT_PREVIEW_COMMON_GREEK_TERMS.forEach(({ greek, latin }) => {
+        if (!originalLower.includes(greek)) return;
+        updated = replaceAllOccurrences(updated, greek, latin);
+        const upper = greek.toLocaleUpperCase('el-GR');
+        updated = replaceAllOccurrences(updated, upper, latin);
+        const capitalized = greek.charAt(0).toLocaleUpperCase('el-GR') + greek.slice(1);
+        updated = replaceAllOccurrences(updated, capitalized, latin);
+    });
+    return updated;
+}
+
+function transliterateReceiptPreviewText(value) {
+    if (value === null || value === undefined || value === '') {
+        return value;
+    }
+    let text = String(value);
+    text = applyCommonTermTransliterations(text);
+    let result = '';
+    let i = 0;
+    while (i < text.length) {
+        const pair = text.slice(i, i + 2);
+        if (RECEIPT_PREVIEW_MULTI_MAP[pair]) {
+            result += RECEIPT_PREVIEW_MULTI_MAP[pair];
+            i += 2;
+            continue;
+        }
+        const char = text[i];
+        result += RECEIPT_PREVIEW_CHAR_MAP[char] || char;
+        i += 1;
+    }
+    return result;
+}
+
+function containsGreekCharacters(value) {
+    if (!value) return false;
+    return /[\u0370-\u03FF\u1F00-\u1FFF]/.test(value);
+}
+
+function applyReceiptPreviewTransliteration(lines) {
+    if (!Array.isArray(lines)) {
+        return lines;
+    }
+    return lines.map(line => {
+        if (containsGreekCharacters(line)) {
+            return transliterateReceiptPreviewText(line);
+        }
+        return line;
+    });
+}
+
 function updateReceiptPreview() {
     const previewEl = document.getElementById('receiptPreview');
     if (!previewEl) return;
@@ -8552,7 +8715,8 @@ function updateReceiptPreview() {
     }
     closingLines.forEach(line => wrapPreviewText(line).forEach(wrapped => lines.push(centerPreviewLine(wrapped))));
 
-    previewEl.textContent = lines.join('\n');
+    const finalLines = applyReceiptPreviewTransliteration(lines);
+    previewEl.textContent = finalLines.join('\n');
 }
 
 function centerPreviewLine(text) {

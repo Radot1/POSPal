@@ -4469,12 +4469,23 @@ def general_settings():
     if not payload:
         return jsonify({"success": False, "message": "No valid settings provided."}), 400
     if save_config(payload):
+        stored_language = str(config.get('language', 'en'))
+        response_payload = {
+            "success": True,
+            "language": stored_language
+        }
+        if 'port' in payload:
+            try:
+                response_payload["port"] = int(config.get('port', 5000))
+            except Exception:
+                response_payload["port"] = 5000
+
         # Broadcast to all connected clients that settings changed
         try:
-            _sse_broadcast('settings', {"language": str(config.get('language', 'en'))})
+            _sse_broadcast('settings', {"language": stored_language})
         except Exception:
             pass
-        return jsonify({"success": True})
+        return jsonify(response_payload)
     return jsonify({"success": False, "message": "Failed to save settings."}), 500
 
 

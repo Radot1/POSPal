@@ -1,6 +1,8 @@
 // Simple i18n helper for in-app UI and receipt preview text
 const I18N_STORAGE_KEY = 'pospal_language_cache';
 let I18N = { lang: 'en', dict: {} };
+let languageChangeInFlight = false;
+let queuedLanguageUpdate = null;
 
 async function fetchCurrentLanguage() {
     try {
@@ -17,8 +19,12 @@ async function fetchCurrentLanguage() {
     }
 }
 
+function normalizeLanguage(lang) {
+    return (lang === 'el' || lang === 'en') ? lang : 'en';
+}
+
 async function loadLanguage(lang) {
-    const normalized = (lang === 'el' || lang === 'en') ? lang : 'en';
+    const normalized = normalizeLanguage(lang);
     const url = `locales/${normalized}.json`;
     const res = await fetch(url);
     I18N.dict = await res.json();
@@ -52,21 +58,101 @@ function applyTranslations(root = document) {
     });
 }
 
-async function setLanguage(lang) {
-    const normalized = (lang === 'el' || lang === 'en') ? lang : 'en';
+function updateLanguageSelectElements(lang) {
+    const select = document.getElementById('languageSelect');
+    if (select) {
+        select.value = lang;
+        select.dataset.currentLanguage = lang;
+    }
+}
+
+function refreshReceiptPreviewSafely() {
+    if (typeof window.updateReceiptPreview === 'function') {
+        try {
+            window.updateReceiptPreview();
+        } catch (error) {
+            console.warn('Failed to refresh receipt preview after language change:', error);
+        }
+    }
+}
+
+function isLanguageDictionaryReady(lang) {
+    if (!I18N || !I18N.dict) return false;
+    if (I18N.lang !== lang) return false;
     try {
-        await fetch('/api/settings/general', {
+        return Object.keys(I18N.dict).length > 0;
+    } catch {
+        return false;
+    }
+}
+
+async function syncLanguageFromServer(lang, { showToast = true } = {}) {
+    const normalized = normalizeLanguage(lang);
+    if (languageChangeInFlight) {
+        queuedLanguageUpdate = normalized;
+        return;
+    }
+    const previousLang = I18N.lang;
+    const needsLoad = !isLanguageDictionaryReady(normalized);
+    if (needsLoad) {
+        await loadLanguage(normalized);
+    }
+    updateLanguageSelectElements(normalized);
+    refreshReceiptPreviewSafely();
+    if (showToast && previousLang !== normalized) {
+        showI18nToast(normalized);
+    }
+}
+
+async function setLanguage(lang, options = {}) {
+    const normalized = normalizeLanguage(lang);
+    const { silentToast = true } = options;
+    let persistedLanguage = normalized;
+    languageChangeInFlight = true;
+    try {
+        const resp = await fetch('/api/settings/general', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ language: normalized })
         });
-    } catch {}
-    await loadLanguage(normalized);
+        if (!resp.ok) {
+            throw new Error(`Language save failed: ${resp.status}`);
+        }
+        let body = {};
+        try {
+            body = await resp.json();
+        } catch {}
+        if (body && (body.language === 'el' || body.language === 'en')) {
+            persistedLanguage = body.language;
+        }
+        await loadLanguage(persistedLanguage);
+        updateLanguageSelectElements(persistedLanguage);
+        refreshReceiptPreviewSafely();
+        if (!silentToast) {
+            showI18nToast(persistedLanguage);
+        }
+        return { success: true, language: persistedLanguage };
+    } catch (error) {
+        console.error('Language update failed:', error);
+        throw error;
+    } finally {
+        languageChangeInFlight = false;
+        if (queuedLanguageUpdate) {
+            const queued = queuedLanguageUpdate;
+            queuedLanguageUpdate = null;
+            if (queued !== persistedLanguage) {
+                await syncLanguageFromServer(queued, { showToast: true });
+            } else {
+                updateLanguageSelectElements(queued);
+                refreshReceiptPreviewSafely();
+            }
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
     const lang = await fetchCurrentLanguage();
-    await loadLanguage(lang);
+    await syncLanguageFromServer(lang, { showToast: false });
     try {
         window.evtSource = new EventSource('/api/events');
         const es = window.evtSource;  // Keep local reference for this file
@@ -74,10 +160,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const payload = JSON.parse(e.data || '{}');
                 if (payload && (payload.language === 'en' || payload.language === 'el')) {
-                    await loadLanguage(payload.language);
-                    showI18nToast(payload.language);
+                    const incoming = payload.language;
+                    await syncLanguageFromServer(incoming, { showToast: incoming !== I18N.lang });
                 }
-            } catch {}
+            } catch (error) {
+                console.warn('Failed to process settings event:', error);
+            }
         });
         es.addEventListener('license_status_update', (event) => {
             try {
@@ -106,8 +194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const newLang = (d && (d.language === 'en' || d.language === 'el')) ? d.language : 'en';
                 if (newLang !== last) {
                     last = newLang;
-                    await loadLanguage(newLang);
-                    showI18nToast(newLang);
+                    await syncLanguageFromServer(newLang);
                 }
             } catch (e) {
                 console.warn('Settings polling error:', e.message);
@@ -123,6 +210,9 @@ window.t = t;
 window.applyTranslations = applyTranslations;
 window.setLanguage = setLanguage;
 window.loadLanguage = loadLanguage;
+window.syncLanguageFromServer = syncLanguageFromServer;
+window.isLanguageChangePending = () => languageChangeInFlight;
+window.getCurrentLanguage = () => I18N.lang;
 
 function showI18nToast(lang){
     const msg = lang === 'el' ? 'Η γλώσσα ορίστηκε σε Ελληνικά' : 'Language set to English';
