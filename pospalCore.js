@@ -372,12 +372,14 @@ const DevicePreferences = {
         }
 
         // Return defaults for first-time setup
-        return {
+        const defaults = {
             device_id: this.generateDeviceId(),
             device_name: '',
             print_behavior: 'auto', // 'auto' | 'confirm' | 'disabled'
             first_setup_completed: false
         };
+        this.saveAll(defaults);
+        return defaults;
     },
 
     // Save all preferences
@@ -468,6 +470,21 @@ const DevicePreferences = {
     }
 };
 
+const PRINTER_ROLE_LABELS = {
+    kitchen: 'Kitchen Tickets',
+    customer: 'Customer Receipts',
+    table: 'Table Bills'
+};
+
+function formatPrinterRole(role) {
+    return PRINTER_ROLE_LABELS[role] || role;
+}
+
+let cachedPrinterOptions = [];
+let cachedRolePrinters = {};
+let cachedDeviceProfile = null;
+let cachedResolvedPrinters = {};
+
 const PrinterMonitor = (() => {
     const POLL_INTERVAL = 45000;
     let pollTimer = null;
@@ -512,7 +529,7 @@ const PrinterMonitor = (() => {
     async function refresh(options = {}) {
         const { showToast: shouldToast = false } = options;
         try {
-            const resp = await fetch('/api/printer/health');
+            const resp = await fetch(`/api/printer/health?device_id=${encodeURIComponent(DEVICE_ID)}`);
             if (!resp.ok) {
                 throw new Error(`Printer health request failed (${resp.status})`);
             }
@@ -612,7 +629,7 @@ const PrinterMonitor = (() => {
         select.disabled = true;
         select.innerHTML = '<option value="">Loading printers...</option>';
         try {
-            const resp = await fetch('/api/printers');
+            const resp = await fetch(`/api/printers?device_id=${encodeURIComponent(DEVICE_ID)}`);
             if (!resp.ok) throw new Error('Failed to fetch printers');
             const data = await resp.json();
             const printers = Array.isArray(data.printers) ? data.printers : [];
@@ -848,7 +865,11 @@ const PrinterMonitor = (() => {
             const resp = await fetch('/api/printer/test', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ device_name: deviceName })
+                body: JSON.stringify({
+                    device_name: deviceName,
+                    device_id: DEVICE_ID,
+                    role: 'kitchen'
+                })
             });
             const result = await resp.json();
             if (result.success) {
@@ -976,7 +997,7 @@ document.addEventListener('click', handlePrinterActionClick);
 
 // --- NEW: Centralized State Management ---
 // Generate unique device ID for this session
-const DEVICE_ID = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+const DEVICE_ID = DevicePreferences.getDeviceId();
 let currentOrder = [];
 let currentOrderLineItemCounter = 0;
 let orderNumber = 1;
@@ -3379,20 +3400,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.footerTrialStatus = document.getElementById('footer-trial-status');
         // Language selector
         const languageSelect = document.getElementById('languageSelect');
-        if (languageSelect) {
-            try {
-                const res = await fetch('/api/settings/general');
-                if (res.ok) {
-                    const data = await res.json();
-                    const lang = (data && (data.language === 'el' || data.language === 'en')) ? data.language : 'en';
-                    languageSelect.value = lang;
-                }
-            } catch {}
-            languageSelect.addEventListener('change', async (e) => {
-                const val = e.target.value;
-                await setLanguage(val);
-            });
-        }
+    if (languageSelect) {
+        try {
+            const res = await fetch('/api/settings/general');
+            if (res.ok) {
+                const data = await res.json();
+                const lang = (data && (data.language === 'el' || data.language === 'en')) ? data.language : 'en';
+                languageSelect.value = lang;
+            }
+        } catch {}
+        languageSelect.addEventListener('change', async (e) => {
+            const val = e.target.value;
+            await setLanguage(val);
+            updateReceiptPreview();
+        });
+    }
         
         // Add event listener for login form after re-caching
         if (elements.loginForm) {
@@ -6128,7 +6150,7 @@ async function autoVerifyPrinter() {
     console.log('Auto-verifying printer on startup...');
     try {
         // First check if we have a printer configured and if it's accessible
-        const response = await fetch('/api/printers');
+        const response = await fetch(`/api/printers?device_id=${encodeURIComponent(DEVICE_ID)}`);
         const data = await response.json();
         
         if (!data.selected) {
@@ -6149,7 +6171,15 @@ async function autoVerifyPrinter() {
         }
 
         // Perform silent test print
-        const testResp = await fetch('/api/printer/test', { method: 'POST' });
+        const testResp = await fetch('/api/printer/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                device_name: DevicePreferences.getDeviceName(),
+                device_id: DEVICE_ID,
+                role: 'kitchen'
+            })
+        });
         const testResult = await testResp.json();
         
         if (testResult.success) {
@@ -6801,7 +6831,8 @@ async function submitOrderToServer(tableNumberForOrder, printBehavior) {
         paymentMethod: (tableManagementEnabled && selectedTableId) ? 'Pending' : (isPaidByCard ? 'Card' : 'Cash'),
         // Phase 6: Add print behavior flag for server
         devicePrintBehavior: printBehavior,
-        deviceName: DevicePreferences.getDeviceName()
+        deviceName: DevicePreferences.getDeviceName(),
+        deviceId: DEVICE_ID
     };
 
     try {
@@ -8226,13 +8257,28 @@ async function initializeHardwarePrintingUI() {
         // Load server printer settings
         const settingsResp = await fetch('/api/settings/printing');
         const settings = await settingsResp.json();
-        const cutToggle = document.getElementById('cutAfterPrintToggle');
-        if (cutToggle) cutToggle.checked = !!settings.cut_after_print;
-        const copiesInput = document.getElementById('copiesPerOrderInput');
-        if (copiesInput) {
-            const val = parseInt(settings.copies_per_order);
-            copiesInput.value = isNaN(val) ? 2 : Math.max(1, Math.min(10, val));
+        const kitchenCutToggle = document.getElementById('cutAfterKitchenToggle') || document.getElementById('cutAfterPrintToggle');
+        if (kitchenCutToggle) kitchenCutToggle.checked = !!settings.cut_after_kitchen;
+        const kitchenCopiesInput = document.getElementById('kitchenCopiesInput') || document.getElementById('copiesPerOrderInput');
+        if (kitchenCopiesInput) {
+            const val = parseInt(settings.kitchen_copies ?? settings.copies_per_order);
+            kitchenCopiesInput.value = isNaN(val) ? 2 : Math.max(1, Math.min(10, val));
         }
+        const customerCutToggle = document.getElementById('cutAfterCustomerToggle');
+        if (customerCutToggle) customerCutToggle.checked = !!settings.cut_after_customer;
+        const customerCopiesInput = document.getElementById('customerCopiesInput');
+        if (customerCopiesInput) {
+            const val = parseInt(settings.customer_copies);
+            customerCopiesInput.value = isNaN(val) ? 1 : Math.max(1, Math.min(10, val));
+        }
+        const tableCutToggle = document.getElementById('cutAfterTableToggle');
+        if (tableCutToggle) tableCutToggle.checked = !!settings.cut_after_table;
+        const tableCopiesInput = document.getElementById('tableCopiesInput');
+        if (tableCopiesInput) {
+            const val = parseInt(settings.table_copies);
+            tableCopiesInput.value = isNaN(val) ? 1 : Math.max(1, Math.min(10, val));
+        }
+        updateTableReceiptSettingsVisibility(tableManagementEnabled);
         await refreshPrinters();
 
         // Load device settings (Phase 5)
@@ -8249,6 +8295,23 @@ async function initializeHardwarePrintingUI() {
     }
 }
 
+const BUSINESS_PROFILE_INPUT_IDS = [
+    'businessNameInput',
+    'businessAddressInput',
+    'businessPhoneInput',
+    'businessEmailInput',
+    'businessWebsiteInput',
+    'businessTaxInput',
+    'businessFooterInput',
+    'businessLogoInput',
+    'businessQrInput',
+    'businessFooterCustomerInput',
+    'businessFooterKitchenInput',
+    'businessFooterTableInput'
+];
+let businessProfilePreviewInitialized = false;
+const RECEIPT_PREVIEW_WIDTH = 42;
+
 async function loadBusinessProfile() {
     const fieldMap = {
         name: 'businessNameInput',
@@ -8257,7 +8320,12 @@ async function loadBusinessProfile() {
         email: 'businessEmailInput',
         website: 'businessWebsiteInput',
         tax_id: 'businessTaxInput',
-        footer: 'businessFooterInput'
+        footer: 'businessFooterInput',
+        logo: 'businessLogoInput',
+        qr_payload: 'businessQrInput',
+        footer_customer: 'businessFooterCustomerInput',
+        footer_kitchen: 'businessFooterKitchenInput',
+        footer_table: 'businessFooterTableInput'
     };
     const statusEl = document.getElementById('businessProfileStatus');
     const firstField = document.getElementById('businessNameInput');
@@ -8295,6 +8363,8 @@ async function loadBusinessProfile() {
         if (statusEl) statusEl.textContent = 'Unable to load profile';
         showToast(error.message || 'Failed to load business profile', 'error');
     }
+    initializeBusinessProfilePreviewListeners();
+    updateReceiptPreview();
 }
 
 async function saveBusinessProfile() {
@@ -8307,7 +8377,12 @@ async function saveBusinessProfile() {
         email: 'businessEmailInput',
         website: 'businessWebsiteInput',
         tax_id: 'businessTaxInput',
-        footer: 'businessFooterInput'
+        footer: 'businessFooterInput',
+        logo: 'businessLogoInput',
+        qr_payload: 'businessQrInput',
+        footer_customer: 'businessFooterCustomerInput',
+        footer_kitchen: 'businessFooterKitchenInput',
+        footer_table: 'businessFooterTableInput'
     };
     const payload = {};
 
@@ -8351,6 +8426,7 @@ async function saveBusinessProfile() {
                 statusEl.textContent = 'Profile saved';
             }
         }
+        updateReceiptPreview();
     } catch (error) {
         console.error('Failed to save business profile:', error);
         showToast(error.message || 'Failed to save business profile', 'error');
@@ -8363,6 +8439,169 @@ async function saveBusinessProfile() {
     }
 
     await loadBusinessProfile();
+}
+
+function initializeBusinessProfilePreviewListeners() {
+    if (businessProfilePreviewInitialized) return;
+    BUSINESS_PROFILE_INPUT_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', updateReceiptPreview);
+        }
+    });
+    businessProfilePreviewInitialized = true;
+}
+
+function getBusinessProfileValue(id) {
+    return (document.getElementById(id)?.value || '').trim();
+}
+
+function updateReceiptPreview() {
+    const previewEl = document.getElementById('receiptPreview');
+    if (!previewEl) return;
+
+    const splitLines = (value) => (value ? value.split(/\r?\n/).map(line => line.trim()).filter(Boolean) : []);
+    const tReceipt = (key, fallback) => {
+        if (typeof window.t === 'function') {
+            const translated = window.t(`receipt.${key}`);
+            if (translated && typeof translated === 'string') {
+                return translated;
+            }
+        }
+        return fallback;
+    };
+
+    const name = getBusinessProfileValue('businessNameInput') || 'Your Business Name';
+    const addressLines = splitLines(getBusinessProfileValue('businessAddressInput'));
+    const phone = getBusinessProfileValue('businessPhoneInput');
+    const email = getBusinessProfileValue('businessEmailInput');
+    const website = getBusinessProfileValue('businessWebsiteInput');
+    const taxLine = getBusinessProfileValue('businessTaxInput');
+    const logoLines = splitLines(getBusinessProfileValue('businessLogoInput'));
+    const qrValue = getBusinessProfileValue('businessQrInput');
+    const footerDefault = splitLines(getBusinessProfileValue('businessFooterInput'));
+    const footerCustomer = splitLines(getBusinessProfileValue('businessFooterCustomerInput'));
+    const contactLines = [];
+    if (phone) contactLines.push(`${tReceipt('contact_phone', 'Phone')}: ${phone}`);
+    if (email) contactLines.push(`${tReceipt('contact_email', 'Email')}: ${email}`);
+    if (website) contactLines.push(`${tReceipt('contact_web', 'Web')}: ${website}`);
+
+    const now = new Date();
+    const lines = [];
+
+    logoLines.forEach(line => wrapPreviewText(line).forEach(wrapped => lines.push(centerPreviewLine(wrapped))));
+    lines.push(centerPreviewLine(name));
+    addressLines.forEach(line => wrapPreviewText(line).forEach(wrapped => lines.push(centerPreviewLine(wrapped))));
+    contactLines.forEach(line => wrapPreviewText(line).forEach(wrapped => lines.push(centerPreviewLine(wrapped))));
+    if (taxLine) {
+        wrapPreviewText(`${tReceipt('field_tax', 'Tax / ABN / VAT')}: ${taxLine}`).forEach(wrapped => lines.push(centerPreviewLine(wrapped)));
+    }
+    const hasContactBlock = addressLines.length || contactLines.length || taxLine;
+    if (hasContactBlock) {
+        if (lines.length && lines[lines.length - 1] !== '') {
+            lines.push('');
+        }
+    } else {
+        lines.push(centerPreviewLine(tReceipt('business_info_placeholder', 'Add business info via Settings > Business Profile')));
+        lines.push('');
+    }
+
+    lines.push(centerPreviewLine(tReceipt('title_customer', 'Customer Receipt')));
+    lines.push('-'.repeat(RECEIPT_PREVIEW_WIDTH));
+    lines.push(`${tReceipt('field_date', 'Date')}: ${now.toLocaleDateString()}   ${tReceipt('field_time', 'Time')}: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    lines.push(`${tReceipt('field_table', 'Table')}: Sample     ${tReceipt('field_guests', 'Guests')}: 2`);
+    lines.push(`${tReceipt('field_dining', 'Dining')}: ${tReceipt('channel_table_service', 'Table Service')}`);
+    lines.push(`${tReceipt('field_receipt_id', 'Receipt ID')}: ABC12345`);
+    lines.push('-'.repeat(RECEIPT_PREVIEW_WIDTH));
+
+    const sampleItems = [
+        { name: 'Freddo Espresso', qty: 2, price: 3.5 },
+        { name: 'Spanakopita', qty: 1, price: 4.2 },
+        { name: 'Baklava Slice', qty: 1, price: 4.5 }
+    ];
+    let subtotal = 0;
+    sampleItems.forEach(item => {
+        const qtyLabel = item.qty > 1 ? `${item.qty} x ` : '';
+        const lineTotal = item.qty * item.price;
+        subtotal += lineTotal;
+        lines.push(formatPreviewAmountLine(`${qtyLabel}${item.name}`, lineTotal));
+    });
+
+    lines.push('-'.repeat(RECEIPT_PREVIEW_WIDTH));
+    lines.push(formatPreviewAmountLine(tReceipt('amount_bill_total', 'Bill total'), subtotal));
+    lines.push(formatPreviewAmountLine(tReceipt('amount_payment_received', 'Payment received'), subtotal));
+    lines.push(formatPreviewAmountLine(tReceipt('amount_balance_due', 'Balance due'), 0));
+    lines.push('');
+    lines.push(`${tReceipt('field_payment_status', 'Payment status')}: ${tReceipt('table_bill_status_paid', 'PAID')}`);
+    lines.push('-'.repeat(RECEIPT_PREVIEW_WIDTH));
+    lines.push(centerPreviewLine(`${tReceipt('field_method', 'Method')}: Card`));
+    lines.push('');
+
+    if (qrValue) {
+        lines.push('-'.repeat(RECEIPT_PREVIEW_WIDTH));
+        lines.push(centerPreviewLine(tReceipt('section_qr', 'Scan & Pay')));
+        lines.push(centerPreviewLine(`[${tReceipt('qr_fallback_label', 'Link')}] ${qrValue}`));
+        wrapPreviewText(tReceipt('qr_hint', 'Scan with your phone camera to open the link')).forEach(text => lines.push(centerPreviewLine(text)));
+        lines.push('');
+    }
+
+    const customerFooterLines = footerCustomer.length ? footerCustomer : footerDefault;
+    const closingLines = customerFooterLines.length ? [...customerFooterLines] : [tReceipt('closing_default', 'Thank you for your visit!')];
+    if (website && !closingLines.includes(website)) {
+        closingLines.push(website);
+    }
+    closingLines.forEach(line => wrapPreviewText(line).forEach(wrapped => lines.push(centerPreviewLine(wrapped))));
+
+    previewEl.textContent = lines.join('\n');
+}
+
+function centerPreviewLine(text) {
+    const value = (text || '').trim();
+    if (!value) return '';
+    if (value.length >= RECEIPT_PREVIEW_WIDTH) return value.slice(0, RECEIPT_PREVIEW_WIDTH);
+    const padding = Math.floor((RECEIPT_PREVIEW_WIDTH - value.length) / 2);
+    const remainder = RECEIPT_PREVIEW_WIDTH - value.length - padding;
+    return `${' '.repeat(padding)}${value}${' '.repeat(remainder)}`;
+}
+
+function wrapPreviewText(text) {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    const rows = [];
+    let current = '';
+    words.forEach(word => {
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length > RECEIPT_PREVIEW_WIDTH) {
+            if (current) rows.push(current);
+            if (word.length > RECEIPT_PREVIEW_WIDTH) {
+                let overflow = word;
+                while (overflow.length > RECEIPT_PREVIEW_WIDTH) {
+                    rows.push(overflow.slice(0, RECEIPT_PREVIEW_WIDTH));
+                    overflow = overflow.slice(RECEIPT_PREVIEW_WIDTH);
+                }
+                current = overflow;
+            } else {
+                current = word;
+            }
+        } else {
+            current = candidate;
+        }
+    });
+    if (current) rows.push(current);
+    return rows.length ? rows : [''];
+}
+
+function formatPreviewAmountLine(label, amount) {
+    const amountStr = formatPreviewCurrency(amount);
+    const safeLabel = label.length > RECEIPT_PREVIEW_WIDTH - amountStr.length - 1
+        ? label.slice(0, RECEIPT_PREVIEW_WIDTH - amountStr.length - 1)
+        : label;
+    const spaces = Math.max(1, RECEIPT_PREVIEW_WIDTH - safeLabel.length - amountStr.length);
+    return `${safeLabel}${' '.repeat(spaces)}${amountStr}`;
+}
+
+function formatPreviewCurrency(amount) {
+    const numeric = typeof amount === 'number' && !isNaN(amount) ? amount : parseFloat(amount) || 0;
+    return `€${numeric.toFixed(2)}`;
 }
 
 // --- Device Settings Functions (Phase 5: Multi-device printer redesign) ---
@@ -8450,21 +8689,63 @@ function saveDevicePrintBehavior() {
     }
 }
 
+async function saveDevicePrinters() {
+    const saveBtn = document.getElementById('devicePrintersSaveBtn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Saving...';
+    }
+    try {
+        const payload = {
+            device_id: DEVICE_ID,
+            device_name: DevicePreferences.getDeviceName(),
+            printers: {}
+        };
+        Object.keys(PRINTER_ROLE_LABELS).forEach(role => {
+            const select = document.getElementById(`device${getRoleDomSuffix(role)}PrinterSelect`);
+            if (!select) return;
+            payload.printers[role] = select.value || '';
+        });
+
+        const resp = await fetch('/api/device-profiles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await resp.json();
+        if (!resp.ok || result.success === false) {
+            throw new Error(result.message || 'Failed to save device printers');
+        }
+        showToast('Device printer routing saved', 'success');
+        await refreshPrinters();
+    } catch (error) {
+        console.error('Failed to save device printers:', error);
+        showToast(error.message || 'Failed to save device printers', 'error');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save mr-1"></i>Save Device Printers';
+        }
+    }
+}
+
 async function refreshPrinters() {
     try {
-        const resp = await fetch('/api/printers');
+        const resp = await fetch(`/api/printers?device_id=${encodeURIComponent(DEVICE_ID)}`);
         const data = await resp.json();
         const sel = document.getElementById('printerSelect');
-        if (!sel) return;
-        sel.innerHTML = '';
+        if (sel) {
+            sel.innerHTML = '';
+        }
 
-        // Handle both old format (array of strings) and new format (array of objects)
         const printers = data.printers || [];
         const isNewFormat = printers.length > 0 && typeof printers[0] === 'object';
+        const supportedPrinters = [];
 
         if (!isNewFormat) {
-            // Legacy fallback: simple string array
             printers.forEach(name => {
+                supportedPrinters.push({ name });
+                if (!sel) return;
                 const opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
@@ -8472,30 +8753,26 @@ async function refreshPrinters() {
                 sel.appendChild(opt);
             });
         } else {
-            // New format with printer classification
             let hasRecommended = false;
             let recommendedPrinter = null;
 
             printers.forEach(printer => {
-                const { name, type, is_supported, display_hint, recommended, explanation } = printer;
+                const { name, is_supported, display_hint, recommended } = printer;
 
-                // Skip unsupported printers (PDF/virtual) from dropdown
                 if (is_supported === false) {
-                    return; // Don't add to dropdown
+                    return;
+                }
+
+                supportedPrinters.push(printer);
+
+                if (!sel) {
+                    return;
                 }
 
                 const opt = document.createElement('option');
                 opt.value = name;
+                opt.textContent = display_hint ? `${display_hint} ${name}` : name;
 
-                // Build display text with visual indicators
-                let displayText = name;
-                if (display_hint) {
-                    displayText = `${display_hint} ${name}`;
-                }
-
-                opt.textContent = displayText;
-
-                // Mark thermal printers with special styling
                 if (recommended) {
                     opt.setAttribute('data-recommended', 'true');
                     if (!hasRecommended) {
@@ -8504,7 +8781,6 @@ async function refreshPrinters() {
                     }
                 }
 
-                // Select current printer, or auto-select first recommended if nothing selected
                 if (name === data.selected) {
                     opt.selected = true;
                 } else if (!data.selected && recommendedPrinter === name) {
@@ -8514,8 +8790,7 @@ async function refreshPrinters() {
                 sel.appendChild(opt);
             });
 
-            // Show helpful message if no thermal printer detected
-            if (!hasRecommended && printers.length > 0) {
+            if (sel && !hasRecommended && printers.length > 0) {
                 const helpOption = document.createElement('option');
                 helpOption.disabled = true;
                 helpOption.textContent = 'â”€â”€â”€â”€ No thermal printer detected â”€â”€â”€â”€';
@@ -8523,9 +8798,87 @@ async function refreshPrinters() {
             }
         }
 
+        cachedPrinterOptions = supportedPrinters.length ? supportedPrinters : [];
+        cachedRolePrinters = data.role_printers || {};
+        cachedDeviceProfile = data.device_profile || null;
+        cachedResolvedPrinters = data.resolved_printers || {};
+
+        updateGlobalRolePrinterSelects(cachedRolePrinters);
+        updateDevicePrinterSelects(cachedDeviceProfile, cachedResolvedPrinters, data.selected);
+
         updatePrinterStatusDot();
     } catch (e) {
         console.error('Failed to load printers:', e);
+    }
+}
+
+function populatePrinterOptions(selectEl, printers, opts = {}) {
+    if (!selectEl) return;
+    const { includeEmpty = false, emptyLabel = 'Select printer', emptyValue = '' } = opts;
+    selectEl.innerHTML = '';
+    if (includeEmpty) {
+        const placeholder = document.createElement('option');
+        placeholder.value = emptyValue;
+        placeholder.textContent = emptyLabel;
+        selectEl.appendChild(placeholder);
+    }
+    (printers || []).forEach(printer => {
+        const option = document.createElement('option');
+        const name = typeof printer === 'string' ? printer : printer?.name;
+        if (!name) return;
+        const displayHint = typeof printer === 'object' ? printer.display_hint : '';
+        option.value = name;
+        option.textContent = displayHint ? `${displayHint} ${name}` : name;
+        selectEl.appendChild(option);
+    });
+}
+
+function getRoleDomSuffix(role) {
+    if (!role) return '';
+    return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function getRoleFallbackPrinter(role, serverSelected) {
+    return cachedRolePrinters[role] || serverSelected || 'Server printer';
+}
+
+function updateGlobalRolePrinterSelects(rolePrinters = {}) {
+    Object.keys(PRINTER_ROLE_LABELS).forEach(role => {
+        const select = document.getElementById(`global${getRoleDomSuffix(role)}PrinterSelect`);
+        if (!select) return;
+        populatePrinterOptions(select, cachedPrinterOptions, { includeEmpty: true, emptyLabel: 'Select printer' });
+        const selectedValue = rolePrinters[role];
+        if (selectedValue) {
+            select.value = selectedValue;
+        }
+    });
+}
+
+function updateDevicePrinterSelects(profile, resolvedMap = {}, serverSelected = '') {
+    Object.keys(PRINTER_ROLE_LABELS).forEach(role => {
+        const select = document.getElementById(`device${getRoleDomSuffix(role)}PrinterSelect`);
+        const status = document.getElementById(`device${getRoleDomSuffix(role)}PrinterStatus`);
+        if (!select) return;
+        const fallbackLabel = getRoleFallbackPrinter(role, serverSelected);
+        populatePrinterOptions(select, cachedPrinterOptions, {
+            includeEmpty: true,
+            emptyLabel: `Use server default (${fallbackLabel})`
+        });
+        select.value = profile?.printers?.[role] || '';
+        if (status) {
+            const resolved = resolvedMap?.[role];
+            status.textContent = resolved
+                ? `Currently printing to ${resolved}`
+                : `Inheriting server default (${fallbackLabel})`;
+        }
+    });
+    const summaryEl = document.getElementById('devicePrintersSummary');
+    if (summaryEl) {
+        const summaryParts = Object.keys(PRINTER_ROLE_LABELS).map(role => {
+            const resolved = resolvedMap?.[role] || getRoleFallbackPrinter(role, serverSelected);
+            return `${formatPrinterRole(role)} → ${resolved}`;
+        });
+        summaryEl.textContent = summaryParts.join(' • ');
     }
 }
 
@@ -8583,20 +8936,30 @@ async function saveSelectedPrinter() {
     try {
         const sel = document.getElementById('printerSelect');
         if (!sel) return;
-        const resp = await fetch('/api/printer/select', {
+        const kitchenSelect = document.getElementById('globalKitchenPrinterSelect');
+        const customerSelect = document.getElementById('globalCustomerPrinterSelect');
+        const tableSelect = document.getElementById('globalTablePrinterSelect');
+        const payload = {
+            printer_name: sel.value,
+            printer_kitchen: kitchenSelect ? (kitchenSelect.value || sel.value) : sel.value,
+            printer_customer: customerSelect ? (customerSelect.value || sel.value) : sel.value,
+            printer_table: tableSelect ? (tableSelect.value || sel.value) : sel.value
+        };
+        const resp = await fetch('/api/settings/printing', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ printer_name: sel.value })
+            body: JSON.stringify(payload)
         });
         const res = await resp.json();
-        if (res.success) {
-            showToast('Default printer saved.', 'success');
-            updatePrinterStatusDot();
+        if (resp.ok && res.success) {
+            showToast('Global printer settings saved.', 'success');
+            await refreshPrinters();
         } else {
-            showToast(res.message || 'Failed to save printer.', 'error');
+            showToast(res.message || 'Failed to save printer settings.', 'error');
         }
     } catch (e) {
-        showToast('Error saving printer.', 'error');
+        console.error('Error saving printer settings:', e);
+        showToast('Error saving printer settings.', 'error');
     }
 }
 
@@ -8608,23 +8971,31 @@ async function testPrint() {
 
         // Send device name with test print request (Phase 3)
         const deviceName = DevicePreferences.getDeviceName();
+        const roleSelect = document.getElementById('testPrintRoleSelect');
+        const selectedRole = roleSelect?.value || 'kitchen';
         const resp = await fetch('/api/printer/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_name: deviceName })
+            body: JSON.stringify({
+                device_name: deviceName,
+                device_id: DEVICE_ID,
+                role: selectedRole
+            })
         });
         const res = await resp.json();
+        const roleLabel = formatPrinterRole(selectedRole);
+        const printerInfo = res.printer ? ` (${res.printer})` : '';
         if (res.success) {
             if (resultEl) {
-                resultEl.textContent = `Last test: Success (Printed) ${new Date().toLocaleTimeString()}`;
+                resultEl.textContent = `Last test: Success – ${roleLabel}${printerInfo} ${new Date().toLocaleTimeString()}`;
                 resultEl.className = 'text-xs text-green-600';
             }
-            showToast('Test print sent successfully!', 'success');
+            showToast(`Test print sent successfully for ${roleLabel}.`, 'success');
             // Refresh printer status to show current state
             updatePrinterStatusDot();
         } else {
             if (resultEl) {
-                resultEl.textContent = `Last test: Failed (${new Date().toLocaleTimeString()})`;
+                resultEl.textContent = `Last test: Failed – ${roleLabel}${printerInfo} (${new Date().toLocaleTimeString()})`;
                 resultEl.className = 'text-xs text-red-600';
             }
             showToast(res.message || 'Test print failed.', 'error');
@@ -8803,7 +9174,7 @@ async function wizardLoadPrinterStatus() {
     const verificationTextEl = document.getElementById('wizardVerificationText');
 
     try {
-        const resp = await fetch('/api/printer/health');
+        const resp = await fetch(`/api/printer/health?device_id=${encodeURIComponent(DEVICE_ID)}`);
         const health = await resp.json();
 
         wizardPrinterHealthState = {
@@ -8869,7 +9240,11 @@ async function wizardTestPrint() {
         const resp = await fetch('/api/printer/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device_name: deviceName })
+            body: JSON.stringify({
+                device_name: deviceName,
+                device_id: DEVICE_ID,
+                role: 'kitchen'
+            })
         });
 
         console.log('[Setup Wizard] Test print response status:', resp.status);
@@ -8907,7 +9282,7 @@ async function wizardLoadPrinters() {
         selectEl.disabled = true;
 
         // Fetch available printers
-        const resp = await fetch('/api/printers');
+        const resp = await fetch(`/api/printers?device_id=${encodeURIComponent(DEVICE_ID)}`);
         if (!resp.ok) throw new Error('Failed to fetch printers');
 
         const data = await resp.json();
@@ -9039,7 +9414,7 @@ function wizardPopulateSummary() {
     if (printBehaviorEl) printBehaviorEl.textContent = summary.behaviorLabel;
 
     // Get printer name from health check
-    fetch('/api/printer/health')
+    fetch(`/api/printer/health?device_id=${encodeURIComponent(DEVICE_ID)}`)
         .then(resp => resp.json())
         .then(health => {
             if (printerNameEl) {
@@ -9352,36 +9727,46 @@ document.addEventListener('change', async (e) => {
     const target = e.target;
     if (!(target instanceof HTMLElement)) return;
     const id = target.id;
-    if (id === 'cutAfterPrintToggle') {
+    const postSetting = async (payload, successMessage = '') => {
         try {
-            const payload = {};
-            payload.cut_after_print = target.checked;
             const resp = await fetch('/api/settings/printing', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             const res = await resp.json();
-            if (!res.success) showToast(res.message || 'Failed to save setting.', 'error');
+            if (!res.success) {
+                showToast(res.message || 'Failed to save setting.', 'error');
+                return;
+            }
+            if (successMessage) showToast(successMessage, 'success');
         } catch (err) {
             showToast('Error saving setting.', 'error');
         }
-    } else if (id === 'copiesPerOrderInput') {
-        try {
-            const n = parseInt(target.value);
-            const safe = isNaN(n) ? 2 : Math.max(1, Math.min(10, n));
-            target.value = safe;
-            const resp = await fetch('/api/settings/printing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ copies_per_order: safe })
-            });
-            const res = await resp.json();
-            if (!res.success) showToast(res.message || 'Failed to save copies per order.', 'error');
-            else showToast('Saved.', 'success');
-        } catch (err) {
-            showToast('Error saving copies per order.', 'error');
-        }
+    };
+    const clampCopies = (value, fallback = 1) => {
+        const n = parseInt(value);
+        return isNaN(n) ? fallback : Math.max(1, Math.min(10, n));
+    };
+
+    if (id === 'cutAfterKitchenToggle' || id === 'cutAfterPrintToggle') {
+        await postSetting({ cut_after_kitchen: target.checked });
+    } else if (id === 'cutAfterCustomerToggle') {
+        await postSetting({ cut_after_customer: target.checked });
+    } else if (id === 'cutAfterTableToggle') {
+        await postSetting({ cut_after_table: target.checked });
+    } else if (id === 'kitchenCopiesInput' || id === 'copiesPerOrderInput') {
+        const safe = clampCopies(target.value, 2);
+        target.value = safe;
+        await postSetting({ kitchen_copies: safe }, 'Saved.');
+    } else if (id === 'customerCopiesInput') {
+        const safe = clampCopies(target.value, 1);
+        target.value = safe;
+        await postSetting({ customer_copies: safe }, 'Saved.');
+    } else if (id === 'tableCopiesInput') {
+        const safe = clampCopies(target.value, 1);
+        target.value = safe;
+        await postSetting({ table_copies: safe }, 'Saved.');
     } else if (id === 'printerSelect') {
         updatePrinterStatusDot();
     }
@@ -10267,7 +10652,9 @@ async function reprintOrder(orderNumToReprint) {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                order_number: orderNumToReprint
+                order_number: orderNumToReprint,
+                deviceId: DEVICE_ID,
+                deviceName: DevicePreferences.getDeviceName()
             })
         });
         const result = await response.json();
@@ -16288,6 +16675,7 @@ async function toggleTableManagement(enabled) {
         } else {
             hideTableConfigSection();
         }
+        updateTableReceiptSettingsVisibility(enabled);
 
         // Show success message
         const message = enabled ?
@@ -16345,10 +16733,17 @@ async function initializeTableManagementToggle() {
             await loadTableConfigForManagement();
             showTableConfigSection();
         }
+        updateTableReceiptSettingsVisibility(tableManagementEnabled);
 
     } catch (error) {
         console.error('Error initializing table management toggle:', error);
     }
+}
+
+function updateTableReceiptSettingsVisibility(enabled) {
+    const sections = document.querySelectorAll('#tableReceiptSettings');
+    if (!sections.length) return;
+    sections.forEach(section => section.classList.toggle('hidden', !enabled));
 }
 
 // ==================================================================================
@@ -16810,6 +17205,16 @@ function formatOrderTime(timestamp) {
     return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatPaymentTimestamp(timestamp) {
+    if (!timestamp) return '';
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+    } catch (e) {
+        return String(timestamp);
+    }
+}
+
 // Open Tables Modal
 function openTablesModal() {
     const modal = document.getElementById('tablesModal');
@@ -17119,6 +17524,9 @@ function renderTableDetail() {
         if (ordersEmpty) ordersEmpty.classList.remove('hidden');
     }
 
+    const payments = currentTableData.session?.payments || [];
+    renderTablePayments(payments);
+
     // Update button states based on payment status
     const hasOrders = orders && orders.length > 0;
     const paymentStatus = currentTableData.session?.payment_status || 'unpaid';
@@ -17131,6 +17539,7 @@ function renderTableDetail() {
     const splitBillBtn = document.getElementById('splitBillBtn');
     const markPaidBtn = document.getElementById('markPaidBtn');
     const clearTableBtn = document.getElementById('clearTableBtn');
+    const printInterimBtn = document.getElementById('printInterimBillBtn');
 
     // Split Bill - disable if no orders or fully paid
     if (splitBillBtn) {
@@ -17168,6 +17577,13 @@ function renderTableDetail() {
         }
     }
 
+    if (printInterimBtn) {
+        const disableInterim = !hasOrders;
+        printInterimBtn.disabled = disableInterim;
+        printInterimBtn.classList.toggle('opacity-50', disableInterim);
+        printInterimBtn.classList.toggle('cursor-not-allowed', disableInterim);
+    }
+
     // Show payment status info if any payment made
     if (paymentStatus !== 'unpaid' && totalElement) {
         // Remove any existing payment info
@@ -17181,6 +17597,56 @@ function renderTableDetail() {
             ${isPartiallyPaid ? `<div class="text-orange-600 font-semibold">Remaining: \u20AC${remaining.toFixed(2)}</div>` : ''}
         `;
         totalElement.parentNode.appendChild(paymentInfo);
+    }
+}
+
+function renderTablePayments(payments) {
+    const paymentsList = document.getElementById('tablePaymentsList');
+    const paymentsEmpty = document.getElementById('tablePaymentsEmpty');
+    const printLatestBtn = document.getElementById('printLatestReceiptBtn');
+    const hasPayments = Array.isArray(payments) && payments.length > 0;
+
+    if (paymentsList) {
+        if (hasPayments) {
+            paymentsList.classList.remove('hidden');
+            if (paymentsEmpty) paymentsEmpty.classList.add('hidden');
+            paymentsList.innerHTML = payments.map(payment => {
+                const amountLabel = formatCurrency(payment.amount || 0);
+                const methodLabel = payment.method || 'Payment';
+                const timestampLabel = formatPaymentTimestamp(payment.timestamp);
+                const noteHtml = payment.note ? `<p class="text-xs text-gray-500 mt-1">${payment.note}</p>` : '';
+                const paymentId = payment.payment_id || '';
+                const disabledAttr = paymentId ? '' : 'disabled';
+                const disabledClasses = paymentId ? '' : ' opacity-50 cursor-not-allowed';
+                return `
+                    <div class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div>
+                            <p class="font-semibold text-gray-800">${methodLabel}</p>
+                            <p class="text-xs text-gray-500">${timestampLabel}</p>
+                            ${noteHtml}
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-lg font-bold text-gray-900">${amountLabel}</span>
+                            <button class="btn-secondary px-4 py-2 rounded-lg flex items-center gap-2${disabledClasses}"
+                                onclick="printTablePaymentReceipt('${paymentId}', this)" ${disabledAttr}>
+                                <i class="fas fa-receipt"></i>Print Receipt
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            paymentsList.classList.add('hidden');
+            if (paymentsEmpty) paymentsEmpty.classList.remove('hidden');
+            paymentsList.innerHTML = '';
+        }
+    }
+
+    if (printLatestBtn) {
+        printLatestBtn.disabled = !hasPayments;
+        printLatestBtn.classList.toggle('opacity-50', !hasPayments);
+        printLatestBtn.classList.toggle('cursor-not-allowed', !hasPayments);
+        printLatestBtn.title = hasPayments ? 'Print receipt for the most recent payment' : 'Record a payment to enable receipts';
     }
 }
 
@@ -17450,6 +17916,97 @@ function formatBillHTML(billData) {
 `;
 
     return html;
+}
+
+async function printTableBillTicket(buttonEl) {
+    if (!currentTableId) {
+        showToast('Select a table first.', 'warning');
+        return;
+    }
+    const btn = buttonEl || (typeof event !== 'undefined' ? event.target.closest('button') : null);
+    const originalLabel = btn ? btn.innerHTML : null;
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Printing...';
+        }
+        const response = await fetch(`/api/tables/${currentTableId}/print-bill`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                deviceId: DEVICE_ID,
+                deviceName: DevicePreferences.getDeviceName()
+            })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Failed to print bill');
+        }
+        showToast('Interim bill sent to printer.', 'success');
+    } catch (error) {
+        console.error('Error printing table bill:', error);
+        showToast(error.message || 'Failed to print bill', 'error');
+    } finally {
+        if (btn && originalLabel !== null) {
+            btn.disabled = false;
+            btn.innerHTML = originalLabel;
+        }
+    }
+}
+
+async function printLatestTableReceipt(buttonEl) {
+    if (!currentTableData) {
+        showToast('Select a table first.', 'warning');
+        return;
+    }
+    const payments = currentTableData.session?.payments || [];
+    if (!payments.length) {
+        showToast('No payments recorded yet for this table.', 'info');
+        return;
+    }
+    const latestPayment = payments[payments.length - 1];
+    if (!latestPayment.payment_id) {
+        showToast('Latest payment is missing a receipt identifier.', 'error');
+        return;
+    }
+    await printTablePaymentReceipt(latestPayment.payment_id, buttonEl);
+}
+
+async function printTablePaymentReceipt(paymentId, buttonEl) {
+    if (!currentTableId || !paymentId) {
+        showToast('Select a table and payment first.', 'warning');
+        return;
+    }
+    const btn = buttonEl || (typeof event !== 'undefined' ? event.target.closest('button') : null);
+    const originalLabel = btn ? btn.innerHTML : null;
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Printing...';
+        }
+        const response = await fetch(`/api/tables/${currentTableId}/print-customer-receipt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                payment_id: paymentId,
+                deviceId: DEVICE_ID,
+                deviceName: DevicePreferences.getDeviceName()
+            })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.status !== 'success') {
+            throw new Error(data.message || 'Failed to print receipt');
+        }
+        showToast('Customer receipt sent to printer.', 'success');
+    } catch (error) {
+        console.error('Error printing customer receipt:', error);
+        showToast(error.message || 'Failed to print receipt', 'error');
+    } finally {
+        if (btn && originalLabel !== null) {
+            btn.disabled = false;
+            btn.innerHTML = originalLabel;
+        }
+    }
 }
 
 // View table bill

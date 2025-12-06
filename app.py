@@ -6,12 +6,19 @@ from datetime import datetime, timedelta, date
 import csv
 import os
 from decimal import Decimal, ROUND_HALF_UP
+from functools import lru_cache
 from config import Config
 try:
     from embedded_credentials import EMBEDDED_CLOUDFLARE_TOKEN  # type: ignore
 except Exception:
     EMBEDDED_CLOUDFLARE_TOKEN = ''
 import win32print  # type: ignore
+import pywintypes  # type: ignore
+WIN32_TIMEZONE_AVAILABLE = True
+try:
+    import win32timezone  # type: ignore  # noqa: F401
+except ModuleNotFoundError:
+    WIN32_TIMEZONE_AVAILABLE = False
 import time
 import json
 import requests
@@ -33,6 +40,10 @@ import shutil
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+if not hasattr(win32print, "error"):
+    # Some pywin32 builds expose printer errors via pywintypes.error only.
+    win32print.error = pywintypes.error  # type: ignore[attr-defined]
 
 try:
     DEFAULT_SUBSCRIPTION_PRICE = float(os.environ.get('DEFAULT_SUBSCRIPTION_PRICE', '20.0'))
@@ -374,6 +385,7 @@ def find_data_directory():
     return canonical_path
 
 DATA_DIR = find_data_directory()
+LOCALES_DIR = os.path.join(BASE_DIR, 'locales')
 
 # Add file-based logging for built executables (no console available)
 # This allows debugging of PyInstaller builds by reading data/pospal_debug.log
@@ -715,7 +727,20 @@ ORDER_COUNTER_LOCK_FILE = os.path.join(DATA_DIR, 'order_counter.lock') # Lock fi
 CONFIG_FILE_OLD = os.path.join(BASE_DIR, 'config.json')
 CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
 BUSINESS_PROFILE_FILE = os.path.join(DATA_DIR, 'business_profile.json')
-BUSINESS_PROFILE_FIELDS = ('name', 'address', 'phone', 'email', 'website', 'tax_id', 'footer')
+BUSINESS_PROFILE_FIELDS = (
+    'name',
+    'address',
+    'phone',
+    'email',
+    'website',
+    'tax_id',
+    'footer',
+    'logo',
+    'qr_payload',
+    'footer_customer',
+    'footer_kitchen',
+    'footer_table'
+)
 BUSINESS_PROFILE_ENV_MAP = {
     'name': ['POSPAL_BUSINESS_NAME', 'BUSINESS_NAME'],
     'address': ['POSPAL_BUSINESS_ADDRESS', 'BUSINESS_ADDRESS'],
@@ -723,8 +748,188 @@ BUSINESS_PROFILE_ENV_MAP = {
     'email': ['POSPAL_BUSINESS_EMAIL', 'BUSINESS_EMAIL'],
     'website': ['POSPAL_BUSINESS_WEBSITE', 'BUSINESS_WEBSITE'],
     'tax_id': ['POSPAL_BUSINESS_TAX_ID', 'BUSINESS_TAX_ID', 'ABN', 'VAT_NUMBER'],
-    'footer': ['POSPAL_BUSINESS_FOOTER', 'BUSINESS_FOOTER']
+    'footer': ['POSPAL_BUSINESS_FOOTER', 'BUSINESS_FOOTER'],
+    'logo': ['POSPAL_BUSINESS_LOGO', 'BUSINESS_LOGO'],
+    'qr_payload': ['POSPAL_BUSINESS_QR', 'BUSINESS_QR', 'BUSINESS_QR_URL'],
+    'footer_customer': ['POSPAL_BUSINESS_FOOTER_CUSTOMER', 'BUSINESS_FOOTER_CUSTOMER'],
+    'footer_kitchen': ['POSPAL_BUSINESS_FOOTER_KITCHEN', 'BUSINESS_FOOTER_KITCHEN'],
+    'footer_table': ['POSPAL_BUSINESS_FOOTER_TABLE', 'BUSINESS_FOOTER_TABLE']
 }
+
+SUPPORTED_RECEIPT_LANGS = {'en', 'el'}
+DEFAULT_RECEIPT_LABELS = {
+    "title_customer": "Customer Receipt",
+    "title_kitchen": "Kitchen Ticket",
+    "title_table_bill": "Table Bill",
+    "section_order": "Order Info",
+    "section_items": "Items",
+    "section_totals": "Totals",
+    "section_payment_details": "Payment Details",
+    "section_payment_history": "Payment History",
+    "section_qr": "Scan & Pay",
+    "field_date": "Date",
+    "field_time": "Time",
+    "field_opened": "Opened",
+    "field_order_number": "Order #",
+    "field_orders": "Orders",
+    "field_receipt_id": "Receipt ID",
+    "field_table": "Table",
+    "field_guests": "Guests",
+    "field_dining": "Dining",
+    "field_channel": "Channel",
+    "field_label": "Label",
+    "field_payment_status": "Payment status",
+    "field_tax": "Tax / ABN / VAT",
+    "field_method": "Method",
+    "field_processed": "Processed",
+    "field_note": "Note",
+    "history_payment": "Payment",
+    "item_missing": "No item details available for this receipt.",
+    "amount_items_subtotal": "Items subtotal",
+    "amount_bill_total": "Bill total",
+    "amount_paid_before": "Paid before today",
+    "amount_payment_received": "Payment received",
+    "amount_total_paid": "Total paid",
+    "amount_change_due": "Change due",
+    "amount_balance_due": "Balance due",
+    "line_payment_x_of_y": "Payment {current} of {total}",
+    "line_payments_recorded": "Payments recorded: {total}",
+    "closing_default": "Thank you for your visit!",
+    "business_info_placeholder": "Add business info via Settings > Business Profile",
+    "contact_phone": "Phone",
+    "contact_email": "Email",
+    "contact_web": "Web",
+    "channel_table_service": "Table Service",
+    "channel_simple_sale": "Simple Sale",
+    "label_unknown": "Unknown",
+    "table_prefix": "Table",
+    "logo_placeholder": "Logo",
+    "qr_fallback_label": "Link",
+    "qr_hint": "Scan with your phone camera to open the link",
+    "copy_kitchen": "Kitchen Copy",
+    "order_label": "Order",
+    "order_label_with_number": "Order {number}",
+    "table_bill_total_orders": "Total Orders: {count}",
+    "table_bill_total_label": "TOTAL:",
+    "table_bill_payment_prefix": "Payment: {status}",
+    "table_bill_status_pending": "[  PENDING  ]",
+    "table_bill_status_partial": "[PARTIAL: {paid} paid, {remaining} remaining]",
+    "table_bill_status_paid": "[  PAID  ]",
+    "table_bill_note_prefix": "Note",
+    "table_bill_order_prefix": "ORDER #{number}",
+    "orders_more_suffix": "+{count} more"
+}
+
+_RECEIPT_LABEL_CACHE: dict[str, dict] = {}
+
+
+def get_receipt_labels(language: str | None = None) -> dict:
+    lang = (language or str(config.get('language', 'en'))).lower()
+    if lang not in SUPPORTED_RECEIPT_LANGS:
+        lang = 'en'
+    cached = _RECEIPT_LABEL_CACHE.get(lang)
+    if cached is not None:
+        return cached
+    labels = {}
+    locale_file = os.path.join(LOCALES_DIR, f'{lang}.json')
+    try:
+        with open(locale_file, 'r', encoding='utf-8') as locale_stream:
+            data = json.load(locale_stream)
+            if isinstance(data, dict):
+                receipt_block = data.get('receipt', {})
+                if isinstance(receipt_block, dict):
+                    labels = receipt_block
+    except FileNotFoundError:
+        app.logger.debug(f"Locale file missing for language '{lang}': {locale_file}")
+    except Exception as exc:
+        app.logger.warning(f"Failed to load locale '{lang}' from {locale_file}: {exc}")
+    _RECEIPT_LABEL_CACHE[lang] = labels
+    return labels
+
+
+def get_receipt_text(key: str, language: str | None = None, **format_kwargs) -> str:
+    labels = get_receipt_labels(language)
+    template = labels.get(key) or DEFAULT_RECEIPT_LABELS.get(key) or key
+    if format_kwargs:
+        try:
+            return template.format(**format_kwargs)
+        except Exception:
+            return template
+    return template
+
+
+def _split_lines(value: str | None) -> list[str]:
+    if not value or not isinstance(value, str):
+        return []
+    return [line.strip() for line in value.replace('\r', '').split('\n') if line.strip()]
+
+
+def prepare_business_profile_for_receipts(profile_override: dict | None = None) -> dict:
+    """Normalize business profile data for receipt rendering and previews."""
+    if isinstance(profile_override, dict):
+        source = dict(profile_override)
+    else:
+        source = get_business_identity()
+    normalized = {}
+    for key in BUSINESS_PROFILE_FIELDS:
+        value = source.get(key, '')
+        if isinstance(value, str):
+            normalized[key] = value.strip()
+        elif value is None:
+            normalized[key] = ''
+        else:
+            normalized[key] = str(value).strip()
+
+    def footer_lines(key: str) -> list[str]:
+        lines = _split_lines(normalized.get(key, ''))
+        return lines
+
+    default_footer = footer_lines('footer')
+    context = {
+        "profile": normalized,
+        "name": (normalized.get('name') or "POSPal").strip() or "POSPal",
+        "address_lines": _split_lines(normalized.get('address')),
+        "phone": normalized.get('phone', ''),
+        "email": normalized.get('email', ''),
+        "website": normalized.get('website', ''),
+        "tax_line": normalized.get('tax_id', ''),
+        "logo_lines": _split_lines(normalized.get('logo')),
+        "qr_payload": normalized.get('qr_payload', '').strip(),
+        "footers": {
+            "default": default_footer,
+            "customer": footer_lines('footer_customer') or default_footer,
+            "kitchen": footer_lines('footer_kitchen') or default_footer,
+            "table": footer_lines('footer_table') or default_footer
+        }
+    }
+    return context
+
+
+def render_receipt_qr(ticket_buffer: bytearray, data: str, module_size: int = 6) -> bool:
+    """Append a QR code ESC/POS block to the provided ticket buffer."""
+    payload = (data or "").strip()
+    if not payload:
+        return False
+    try:
+        qr_bytes = payload.encode('utf-8')
+    except UnicodeEncodeError:
+        qr_bytes = payload.encode('cp858', errors='ignore')
+    size = max(2, min(10, module_size))
+    try:
+        ticket_buffer.extend(AlignCenter)
+        ticket_buffer.extend(GS + b"(k" + bytes([4, 0, 49, 65, 50, 0]))  # Model 2
+        ticket_buffer.extend(GS + b"(k" + bytes([3, 0, 49, 67, size]))   # Module size
+        ticket_buffer.extend(GS + b"(k" + bytes([3, 0, 49, 69, 48]))     # Error correction level L
+        length = len(qr_bytes) + 3
+        ticket_buffer.extend(GS + b"(k" + bytes([length & 0xFF, (length >> 8) & 0xFF, 49, 80, 48]))
+        ticket_buffer.extend(qr_bytes)
+        ticket_buffer.extend(GS + b"(k" + bytes([3, 0, 49, 81, 48]))
+        ticket_buffer.extend(AlignLeft)
+        return True
+    except Exception as qr_exc:
+        app.logger.warning(f"Failed to render QR code on receipt: {qr_exc}")
+        ticket_buffer.extend(AlignLeft)
+        return False
 
 # --- NEW: Centralized State Management Files ---
 CURRENT_ORDER_FILE = os.path.join(DATA_DIR, 'current_order.json')
@@ -733,6 +938,8 @@ UNIVERSAL_COMMENT_FILE = os.path.join(DATA_DIR, 'universal_comment.json')
 SELECTED_TABLE_FILE = os.path.join(DATA_DIR, 'selected_table.json')
 DEVICE_SESSIONS_FILE = os.path.join(DATA_DIR, 'device_sessions.json')
 USAGE_ANALYTICS_FILE = os.path.join(DATA_DIR, 'usage_analytics.json')
+DEVICE_PROFILES_FILE = os.path.join(DATA_DIR, 'device_profiles.json')
+DEVICE_PROFILE_ROLES = ('kitchen', 'customer', 'table')
 
 # --- Cloudflare Worker API Integration ---
 CLOUDFLARE_WORKER_URL = "https://pospal-licensing-v2-production.bzoumboulis.workers.dev"
@@ -1874,6 +2081,7 @@ def register_device_session(device_id, device_info):
         'last_seen': datetime.now().isoformat(),
         'active': True
     }
+    update_device_profile_activity(device_id, context=device_info)
     return save_centralized_state('device_sessions', state['device_sessions'])
 
 def update_device_session(device_id):
@@ -1881,6 +2089,7 @@ def update_device_session(device_id):
     state = load_centralized_state()
     if device_id in state['device_sessions']:
         state['device_sessions'][device_id]['last_seen'] = datetime.now().isoformat()
+        update_device_profile_activity(device_id)
         return save_centralized_state('device_sessions', state['device_sessions'])
     return False
 
@@ -1904,6 +2113,114 @@ def cleanup_inactive_sessions():
         app.logger.info(f"Cleaned up {len(state['device_sessions']) - len(active_sessions)} inactive sessions")
     
     return active_sessions
+
+def load_device_profiles():
+    """Load registered device profiles from disk."""
+    if not os.path.exists(DEVICE_PROFILES_FILE):
+        return {}
+    try:
+        with open(DEVICE_PROFILES_FILE, 'r', encoding='utf-8') as fp:
+            data = json.load(fp)
+            return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        app.logger.warning(f"Failed to load device profiles: {exc}")
+        return {}
+
+def save_device_profiles(profiles: dict) -> bool:
+    """Persist device profile map to disk."""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(DEVICE_PROFILES_FILE, 'w', encoding='utf-8') as fp:
+            json.dump(profiles, fp, indent=2)
+        return True
+    except Exception as exc:
+        app.logger.error(f"Unable to save device profiles: {exc}")
+        return False
+
+def _sanitize_printer_name(name):
+    if not name:
+        return ""
+    if isinstance(name, str):
+        return name.strip()
+    return str(name).strip()
+
+def upsert_device_profile(device_id: str, updates: dict | None = None):
+    """Create or update a device profile."""
+    if not device_id:
+        return None
+
+    profiles = load_device_profiles()
+    profile = profiles.get(device_id, {
+        "device_id": device_id,
+        "created_at": datetime.now().isoformat(),
+        "printers": {}
+    })
+
+    updates = updates or {}
+    allowed_fields = {'device_name', 'print_behavior', 'role', 'first_seen_note'}
+    for field in allowed_fields:
+        if field in updates and updates[field] is not None:
+            profile[field] = str(updates[field]).strip()
+
+    if updates.get('printers'):
+        profile.setdefault('printers', {})
+        for role, printer in updates['printers'].items():
+            normalized_role = str(role or '').lower()
+            if normalized_role not in DEVICE_PROFILE_ROLES:
+                continue
+            sanitized_name = _sanitize_printer_name(printer)
+            if sanitized_name:
+                profile['printers'][normalized_role] = sanitized_name
+            elif normalized_role in profile['printers']:
+                # Allow clearing by sending empty value
+                profile['printers'].pop(normalized_role, None)
+
+    if 'last_context' in updates and isinstance(updates['last_context'], dict):
+        profile['last_context'] = updates['last_context']
+
+    profile['last_seen'] = updates.get('last_seen', datetime.now().isoformat())
+    profiles[device_id] = profile
+    if save_device_profiles(profiles):
+        return profile
+    return None
+
+def update_device_profile_activity(device_id: str, context: dict | None = None, extra_updates: dict | None = None):
+    """Record that a device checked in."""
+    if not device_id:
+        return None
+    payload = extra_updates.copy() if extra_updates else {}
+    payload['last_seen'] = datetime.now().isoformat()
+    if context:
+        payload['last_context'] = context
+    return upsert_device_profile(device_id, payload)
+
+def get_role_printer_map() -> dict:
+    """Return configured default printers per receipt role."""
+    return {
+        "kitchen": _sanitize_printer_name(PRINTER_KITCHEN) or PRINTER_NAME,
+        "customer": _sanitize_printer_name(PRINTER_CUSTOMER) or PRINTER_NAME,
+        "table": _sanitize_printer_name(PRINTER_TABLE) or PRINTER_NAME
+    }
+
+def resolve_printer_for_role(role: str, device_id: str | None = None) -> str:
+    """Determine which printer to use for a specific role/device combo."""
+    normalized_role = (role or 'kitchen').lower()
+    if normalized_role not in DEVICE_PROFILE_ROLES:
+        normalized_role = 'kitchen'
+
+    if device_id:
+        profile = load_device_profiles().get(device_id)
+        if profile:
+            printers = profile.get('printers') or {}
+            device_specific = _sanitize_printer_name(printers.get(normalized_role))
+            if device_specific:
+                return device_specific
+
+    role_printers = get_role_printer_map()
+    resolved = _sanitize_printer_name(role_printers.get(normalized_role))
+    if resolved:
+        return resolved
+    return PRINTER_NAME
 
 # --- Session cache helpers (used for license disconnect) ---
 def save_last_session(session_id: str, email: str | None = None, device_name: str | None = None) -> bool:
@@ -1981,7 +2298,13 @@ def load_config():
         "port": 5000,
         "management_password": "9999", # Default password
         "cut_after_print": True,
+        "cut_after_kitchen": True,
+        "cut_after_customer": True,
+        "cut_after_table": True,
         "copies_per_order": 2,
+        "kitchen_copies_per_order": 2,
+        "customer_receipt_copies": 1,
+        "table_receipt_copies": 1,
         # UI language for in-app interface (receipts remain English-only)
         "language": "en",
         # Network connectivity settings for problematic routers/firewalls
@@ -1998,7 +2321,11 @@ def load_config():
         "printer_last_test_status": None,
         "printer_verification_device": None,
         # Public viewer base, e.g., https://menus.example.com
-        "cloudflare_public_base": "https://menus-5ar.pages.dev/"
+        "cloudflare_public_base": "https://menus-5ar.pages.dev/",
+        # Role-based printer overrides (Phase 5)
+        "printer_kitchen": "",
+        "printer_customer": "",
+        "printer_table": ""
     }
     # Migrate legacy config.json (root) to data/config.json if needed
     try:
@@ -2024,8 +2351,18 @@ def load_config():
 config = load_config()
 PRINTER_NAME = config["printer_name"]
 MANAGEMENT_PASSWORD = str(config["management_password"]) # Ensure password is a string
-CUT_AFTER_PRINT = bool(config.get("cut_after_print", True))
-COPIES_PER_ORDER = int(config.get("copies_per_order", 2))
+KITCHEN_COPIES_PER_ORDER = int(config.get("kitchen_copies_per_order", config.get("copies_per_order", 2)))
+CUSTOMER_RECEIPT_COPIES = int(config.get("customer_receipt_copies", 1))
+TABLE_RECEIPT_COPIES = int(config.get("table_receipt_copies", 1))
+CUT_AFTER_KITCHEN = bool(config.get("cut_after_kitchen", config.get("cut_after_print", True)))
+CUT_AFTER_CUSTOMER = bool(config.get("cut_after_customer", CUT_AFTER_KITCHEN))
+CUT_AFTER_TABLE = bool(config.get("cut_after_table", CUT_AFTER_KITCHEN))
+# Backwards compatibility aliases
+CUT_AFTER_PRINT = CUT_AFTER_KITCHEN
+COPIES_PER_ORDER = KITCHEN_COPIES_PER_ORDER
+PRINTER_KITCHEN = str(config.get("printer_kitchen") or PRINTER_NAME)
+PRINTER_CUSTOMER = str(config.get("printer_customer") or PRINTER_NAME)
+PRINTER_TABLE = str(config.get("printer_table") or PRINTER_NAME)
 
 # Disable debug mode
 app.config['DEBUG'] = False
@@ -2194,6 +2531,9 @@ def transliterate_greek_enhanced(text):
 def save_config(updated_values: dict):
     """Merge-update CONFIG_FILE atomically and refresh globals."""
     global config, PRINTER_NAME, MANAGEMENT_PASSWORD, CUT_AFTER_PRINT, COPIES_PER_ORDER
+    global KITCHEN_COPIES_PER_ORDER, CUSTOMER_RECEIPT_COPIES, TABLE_RECEIPT_COPIES
+    global CUT_AFTER_KITCHEN, CUT_AFTER_CUSTOMER, CUT_AFTER_TABLE
+    global PRINTER_KITCHEN, PRINTER_CUSTOMER, PRINTER_TABLE
     try:
         # Load existing config from file
         existing = {}
@@ -2222,11 +2562,26 @@ def save_config(updated_values: dict):
         config = merged
         PRINTER_NAME = config.get("printer_name", PRINTER_NAME)
         MANAGEMENT_PASSWORD = str(config.get("management_password", MANAGEMENT_PASSWORD))
-        CUT_AFTER_PRINT = bool(config.get("cut_after_print", CUT_AFTER_PRINT))
+        CUT_AFTER_KITCHEN = bool(config.get("cut_after_kitchen", config.get("cut_after_print", CUT_AFTER_KITCHEN)))
+        CUT_AFTER_CUSTOMER = bool(config.get("cut_after_customer", CUT_AFTER_CUSTOMER))
+        CUT_AFTER_TABLE = bool(config.get("cut_after_table", CUT_AFTER_TABLE))
+        CUT_AFTER_PRINT = CUT_AFTER_KITCHEN
+        PRINTER_KITCHEN = str(config.get("printer_kitchen") or PRINTER_NAME)
+        PRINTER_CUSTOMER = str(config.get("printer_customer") or PRINTER_NAME)
+        PRINTER_TABLE = str(config.get("printer_table") or PRINTER_NAME)
         try:
-            COPIES_PER_ORDER = int(config.get("copies_per_order", COPIES_PER_ORDER))
+            KITCHEN_COPIES_PER_ORDER = int(config.get("kitchen_copies_per_order", config.get("copies_per_order", KITCHEN_COPIES_PER_ORDER)))
         except Exception:
-            COPIES_PER_ORDER = 2
+            KITCHEN_COPIES_PER_ORDER = 2
+        COPIES_PER_ORDER = KITCHEN_COPIES_PER_ORDER
+        try:
+            CUSTOMER_RECEIPT_COPIES = int(config.get("customer_receipt_copies", CUSTOMER_RECEIPT_COPIES))
+        except Exception:
+            CUSTOMER_RECEIPT_COPIES = 1
+        try:
+            TABLE_RECEIPT_COPIES = int(config.get("table_receipt_copies", TABLE_RECEIPT_COPIES))
+        except Exception:
+            TABLE_RECEIPT_COPIES = 1
         # No globals for Cloudflare; read from config directly where needed
         return True
     except Exception as e:
@@ -3569,6 +3924,8 @@ def get_printers():
     Returns printers with metadata about thermal/PDF type for better UX
     """
     printer_names = list_installed_printers()
+    device_id = request.args.get('device_id') or request.args.get('deviceId')
+    device_id = (device_id or '').strip() or None
 
     # Classify each printer
     printers_with_metadata = []
@@ -3583,10 +3940,22 @@ def get_printers():
     sort_order = {'thermal': 0, 'generic_text': 1, 'unknown': 2, 'pdf_virtual': 3}
     printers_with_metadata.sort(key=lambda p: sort_order.get(p['type'], 999))
 
+    resolved_printers = {
+        role: resolve_printer_for_role(role, device_id)
+        for role in DEVICE_PROFILE_ROLES
+    }
+    device_profile = None
+    if device_id:
+        device_profile = load_device_profiles().get(device_id)
+
     return jsonify({
         "printers": printers_with_metadata,
         "printer_names": printer_names,  # Legacy support
-        "selected": PRINTER_NAME
+        "selected": PRINTER_NAME,
+        "role_printers": get_role_printer_map(),
+        "resolved_printers": resolved_printers,
+        "device_profile": device_profile,
+        "device_id": device_id
     })
 
 
@@ -3613,8 +3982,19 @@ def printer_health():
     Phase 2: Multi-device printer redesign
     """
     try:
-        # Check if printer is configured
-        printer_configured = PRINTER_NAME and PRINTER_NAME != "Your_Printer_Name_Here" and PRINTER_NAME != "Microsoft Print to PDF"
+        device_id = request.args.get('device_id') or request.args.get('deviceId')
+        device_id = (device_id or '').strip() or None
+        resolved_printers = {
+            role: resolve_printer_for_role(role, device_id)
+            for role in DEVICE_PROFILE_ROLES
+        }
+        primary_printer = resolved_printers.get('kitchen') or PRINTER_NAME
+        placeholder_names = {"Your_Printer_Name_Here", "Microsoft Print to PDF", "", None}
+        printer_configured = primary_printer not in placeholder_names
+
+        device_profile = None
+        if device_id:
+            device_profile = load_device_profiles().get(device_id)
 
         if not printer_configured:
             return jsonify({
@@ -3623,14 +4003,18 @@ def printer_health():
                 "printer_online": False,
                 "printer_verified": False,
                 "needs_verification": True,
-                "status_message": "No printer configured"
+                "status_message": "No printer configured",
+                "resolved_printers": resolved_printers,
+                "role_printers": get_role_printer_map(),
+                "device_profile": device_profile,
+                "device_id": device_id
             })
 
         # Check if printer is accessible (online)
         printer_online = False
         status_code = None
         try:
-            h = win32print.OpenPrinter(PRINTER_NAME)
+            h = win32print.OpenPrinter(primary_printer)
             try:
                 info = win32print.GetPrinter(h, 2)
                 status_code = info.get('Status', 0)
@@ -3638,32 +4022,45 @@ def printer_health():
             finally:
                 win32print.ClosePrinter(h)
         except Exception as e:
-            app.logger.warning(f"Printer '{PRINTER_NAME}' not accessible: {e}")
+            app.logger.warning(f"Printer '{primary_printer}' not accessible: {e}")
             printer_online = False
 
         # Get verification info from config
         verified_at = config.get('printer_verified_at')
         verified_by = config.get('printer_verification_device')
         last_test_status = config.get('printer_last_test_status')
+        verified_role = config.get('printer_last_test_role')
+        verified_printer = config.get('printer_last_test_printer')
+        verified_device_id = config.get('printer_last_test_device_id')
 
         printer_verified = last_test_status == 'success' and verified_at is not None
 
         # Determine if verification is needed
         needs_verification = not printer_verified or not printer_online
 
+        last_failure = get_last_printer_failure()
+
         return jsonify({
             "printer_configured": True,
-            "printer_name": PRINTER_NAME,
+            "printer_name": primary_printer,
             "printer_online": printer_online,
             "printer_verified": printer_verified,
             "verified_at": verified_at,
             "verified_by": verified_by,
+            "verified_role": verified_role,
+            "verified_printer": verified_printer,
+            "verified_device_id": verified_device_id,
             "last_test_status": last_test_status,
             "status_code": status_code,
             "needs_verification": needs_verification,
             "status_message": "Printer ready" if (printer_online and printer_verified) else
                              "Printer offline" if not printer_online else
-                             "Printer not verified"
+                             "Printer not verified",
+            "resolved_printers": resolved_printers,
+            "role_printers": get_role_printer_map(),
+            "device_profile": device_profile,
+            "device_id": device_id,
+            "last_failure": last_failure
         })
     except Exception as e:
         app.logger.error(f"Error in printer_health: {e}")
@@ -3685,18 +4082,72 @@ def select_printer():
     return jsonify({"success": False, "message": "Failed to save."}), 500
 
 
+_printer_failure_state: dict[str, str | int | None] = {
+    "message": None,
+    "status_code": None,
+    "job_status": None,
+    "printer_status": None,
+    "timestamp": None
+}
+_win32timezone_warning_logged = False
+
+
+def record_printer_failure(message: str | None, status_code: int | str | None = None,
+                           job_status: str | None = None, printer_status: str | None = None):
+    """Capture printer failure context for later reporting."""
+    global _printer_failure_state
+    if not message:
+        _printer_failure_state = {
+            "message": None,
+            "status_code": None,
+            "job_status": None,
+            "printer_status": None,
+            "timestamp": None
+        }
+        return
+    _printer_failure_state = {
+        "message": message,
+        "status_code": status_code,
+        "job_status": job_status,
+        "printer_status": printer_status,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+def get_last_printer_failure() -> dict[str, str | int | None] | None:
+    """Return the most recent printer failure (if any)."""
+    if _printer_failure_state.get("message"):
+        return _printer_failure_state.copy()
+    return None
+
+
+def _warn_missing_win32timezone():
+    global _win32timezone_warning_logged
+    if WIN32_TIMEZONE_AVAILABLE or _win32timezone_warning_logged:
+        return
+    app.logger.warning(
+        "win32timezone module is not available. Skipping spooler job monitoring. "
+        "Install/repair pywin32 to restore detailed printer diagnostics."
+    )
+    _win32timezone_warning_logged = True
+
+
 @app.route('/api/printer/test', methods=['POST'])
 def test_print():
     """
     Test print endpoint with verification tracking
     Phase 2: Multi-device printer redesign
-    Accepts device_name parameter and updates config with verification status
+    Accepts device context and updates config with verification status
     """
-    try:
-        # Get device name from request (optional)
-        data = request.get_json() or {}
-        device_name = data.get('device_name', 'Unknown Device')
+    data = request.get_json() or {}
+    device_name = data.get('device_name') or data.get('deviceName') or 'Unknown Device'
+    device_id = (data.get('device_id') or data.get('deviceId') or '').strip() or None
+    requested_role = str(data.get('role') or data.get('receipt_role') or 'kitchen').lower()
+    if requested_role not in DEVICE_PROFILE_ROLES:
+        requested_role = 'kitchen'
 
+    try:
+        record_printer_failure(None)
         # Check license status - allow both active subscriptions and active trials
         license_status = check_trial_status()
 
@@ -3713,12 +4164,27 @@ def test_print():
 
         app.logger.info(f"[TEST_PRINT] has_active_license={has_active_license}")
 
+        context_payload = {
+            "user_agent": request.headers.get('User-Agent', 'Unknown'),
+            "ip": get_remote_address(),
+            "source": "test_print",
+            "role": requested_role
+        }
+        if device_id:
+            update_device_profile_activity(device_id, context=context_payload, extra_updates={
+                "device_name": device_name,
+                "role": requested_role
+            })
+
         if not has_active_license:
             # Update config with failed verification
             save_config({
                 'printer_last_test_status': 'failed',
                 'printer_verified_at': datetime.now().isoformat(),
-                'printer_verification_device': device_name
+                'printer_verification_device': device_name,
+                'printer_last_test_role': requested_role,
+                'printer_last_test_device_id': device_id,
+                'printer_last_test_printer': resolve_printer_for_role(requested_role, device_id)
             })
             return jsonify({
                 "success": False,
@@ -3727,68 +4193,107 @@ def test_print():
             }), 200
 
         test_order = {
-            'number': 'TEST',
-            'tableNumber': 'N/A',
+            'number': 9999,
+            'tableNumber': 'TEST',
             'items': [
-                {"name": "POSPal Test", "quantity": 1, "itemPriceWithModifiers": 0.00}
+                {'name': 'Test Item 1', 'quantity': 1, 'itemPriceWithModifiers': 4.50},
+                {'name': 'Test Item 2', 'quantity': 2, 'itemPriceWithModifiers': 3.00}
             ],
-            'universalComment': ''
+            'universalComment': 'Verification test ticket',
+            'paymentMethod': 'Test'
         }
-        # Reset fallback flag and attempt
+        test_order_total = sum(item['quantity'] * item['itemPriceWithModifiers'] for item in test_order['items'])
         global last_print_used_fallback
         last_print_used_fallback = False
-        # Check if selected printer is PDF/virtual BEFORE attempting print
-        printer_classification = classify_printer_type(PRINTER_NAME)
-        if not printer_classification.get('is_supported', True):
-            # Update config with failed verification
-            save_config({
-                'printer_last_test_status': 'failed',
-                'printer_verified_at': datetime.now().isoformat(),
-                'printer_verification_device': device_name
-            })
-            return jsonify({
-                "success": False,
-                "message": f"❌ Cannot use this printer for thermal receipts. {printer_classification.get('explanation', 'Please select a thermal receipt printer.')}"
-            }), 200
 
-        ok = print_kitchen_ticket(test_order, copy_info="")
+        target_printer = resolve_printer_for_role(requested_role, device_id)
+        app.logger.info(f"[TEST_PRINT] Sending role '{requested_role}' test to printer '{target_printer}' (device {device_id or 'n/a'})")
+
+        ok = False
+        if requested_role == 'customer':
+            receipt_payload = build_simple_customer_receipt_payload(test_order, order_total=test_order_total)
+            ok = print_customer_receipt_ticket(receipt_payload, device_id=device_id, printer_role=requested_role)
+        elif requested_role == 'table':
+            now = datetime.now()
+            bill_total = test_order_total
+            bill_data = {
+                "table_id": "TEST-01",
+                "table_name": "Test Table",
+                "orders": [{
+                    "order_number": test_order['number'],
+                    "time": now.strftime("%H:%M"),
+                    "items": [
+                        {
+                            "name": item['name'],
+                            "quantity": item['quantity'],
+                            "itemPriceWithModifiers": item['itemPriceWithModifiers']
+                        } for item in test_order['items']
+                    ]
+                }],
+                "payment_status": "unpaid",
+                "amount_paid": 0.0,
+                "amount_remaining": bill_total,
+                "grand_total": bill_total
+            }
+            ok = print_table_bill_ticket(bill_data, device_id=device_id)
+        else:
+            ok = print_kitchen_ticket(test_order, copy_info="", device_id=device_id, printer_role=requested_role)
+
+        status_payload = {
+            'printer_last_test_status': 'success' if ok else 'failed',
+            'printer_verified_at': datetime.now().isoformat(),
+            'printer_verification_device': device_name,
+            'printer_last_test_role': requested_role,
+            'printer_last_test_device_id': device_id,
+            'printer_last_test_printer': target_printer
+        }
+        save_config(status_payload)
+
         if ok:
-            # Update config with successful verification
-            save_config({
-                'printer_last_test_status': 'success',
-                'printer_verified_at': datetime.now().isoformat(),
-                'printer_verification_device': device_name
+            app.logger.info(f"[TEST_PRINT] Printer verified successfully by device: {device_name} (role {requested_role})")
+            return jsonify({
+                "success": True,
+                "message": "✓ Test print sent successfully!",
+                "role": requested_role,
+                "printer": target_printer
             })
-            app.logger.info(f"[TEST_PRINT] Printer verified successfully by device: {device_name}")
-            return jsonify({"success": True, "message": "✓ Test print sent successfully!"})
 
-        # If failed and looks like a PDF-type printer, clarify unsupported
-        name_lower = str(PRINTER_NAME).lower()
+        name_lower = str(target_printer or '').lower()
         error_message = "Test print failed. Check printer connection and try again."
         if 'pdf' in name_lower or 'xps' in name_lower or 'onenote' in name_lower:
             error_message = "❌ PDF/Virtual printer detected. Please select your thermal receipt printer from the dropdown."
 
-        # Update config with failed verification
-        save_config({
-            'printer_last_test_status': 'failed',
-            'printer_verified_at': datetime.now().isoformat(),
-            'printer_verification_device': device_name
-        })
+        failure_details = get_last_printer_failure()
+        if failure_details:
+            friendly_text = failure_details.get("message")
+            if friendly_text:
+                error_message = friendly_text
+            else:
+                details_text = failure_details.get("printer_status") or failure_details.get("job_status")
+                if details_text:
+                    error_message = f"{error_message} (Spooler: {details_text})"
 
-        return jsonify({"success": False, "message": error_message}), 200
+        return jsonify({
+            "success": False,
+            "message": error_message,
+            "role": requested_role,
+            "printer": target_printer,
+            "printer_failure": failure_details
+        }), 200
     except Exception as e:
-        # Update config with failed verification
+        app.logger.error(f"Error during test print: {e}", exc_info=True)
         try:
-            data = request.get_json() or {}
-            device_name = data.get('device_name', 'Unknown Device')
             save_config({
                 'printer_last_test_status': 'failed',
                 'printer_verified_at': datetime.now().isoformat(),
-                'printer_verification_device': device_name
+                'printer_verification_device': device_name,
+                'printer_last_test_role': requested_role,
+                'printer_last_test_device_id': device_id,
+                'printer_last_test_printer': resolve_printer_for_role(requested_role, device_id)
             })
-        except:
+        except Exception:
             pass
-        return jsonify({"success": False, "message": str(e)}), 200
+        return jsonify({"success": False, "message": str(e), "role": requested_role}), 200
 
 
 
@@ -3797,19 +4302,105 @@ def printing_settings():
     if request.method == 'GET':
         return jsonify({
             "printer_name": PRINTER_NAME,
-            "cut_after_print": CUT_AFTER_PRINT,
-            "copies_per_order": COPIES_PER_ORDER
+            "cut_after_print": CUT_AFTER_KITCHEN,
+            "copies_per_order": KITCHEN_COPIES_PER_ORDER,
+            "cut_after_kitchen": CUT_AFTER_KITCHEN,
+            "cut_after_customer": CUT_AFTER_CUSTOMER,
+            "cut_after_table": CUT_AFTER_TABLE,
+            "kitchen_copies": KITCHEN_COPIES_PER_ORDER,
+            "customer_copies": CUSTOMER_RECEIPT_COPIES,
+            "table_copies": TABLE_RECEIPT_COPIES,
+            "role_printers": get_role_printer_map()
         })
     data = request.get_json() or {}
     values = {}
-    for key in ["printer_name", "cut_after_print", "copies_per_order"]:
+    alias_map = {
+        "printer_name": "printer_name",
+        "cut_after_print": "cut_after_kitchen",
+        "copies_per_order": "kitchen_copies_per_order",
+        "cut_after_kitchen": "cut_after_kitchen",
+        "cut_after_customer": "cut_after_customer",
+        "cut_after_table": "cut_after_table",
+        "kitchen_copies": "kitchen_copies_per_order",
+        "customer_copies": "customer_receipt_copies",
+        "table_copies": "table_receipt_copies",
+        "printer_kitchen": "printer_kitchen",
+        "printer_customer": "printer_customer",
+        "printer_table": "printer_table"
+    }
+    for key, target in alias_map.items():
         if key in data:
-            values[key] = data[key]
+            values[target] = data[key]
     if not values:
         return jsonify({"success": False, "message": "No settings provided."}), 400
     if save_config(values):
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Failed to save settings."}), 500
+
+
+@app.route('/api/device-profiles', methods=['GET', 'POST'])
+def device_profiles_api():
+    if request.method == 'GET':
+        profiles = load_device_profiles()
+        device_id = request.args.get('device_id') or request.args.get('deviceId')
+        device_id = (device_id or '').strip() or None
+        selected_profile = profiles.get(device_id) if device_id else None
+        return jsonify({
+            "success": True,
+            "devices": list(profiles.values()),
+            "role_printers": get_role_printer_map(),
+            "device_profile": selected_profile,
+            "device_id": device_id,
+            "resolved_printers": {
+                role: resolve_printer_for_role(role, device_id)
+                for role in DEVICE_PROFILE_ROLES
+            }
+        })
+
+    data = request.get_json() or {}
+    device_id = str(data.get('device_id') or data.get('id') or '').strip()
+    if not device_id:
+        return jsonify({"success": False, "message": "device_id is required."}), 400
+
+    updates: dict = {}
+    if 'device_name' in data:
+        updates['device_name'] = data.get('device_name', '')
+    if 'print_behavior' in data:
+        updates['print_behavior'] = data.get('print_behavior')
+    if 'role' in data:
+        updates['role'] = data.get('role')
+
+    printers_payload = data.get('printers')
+    if isinstance(printers_payload, dict):
+        sanitized = {}
+        for role, printer_name in printers_payload.items():
+            normalized_role = str(role or '').lower()
+            if normalized_role not in DEVICE_PROFILE_ROLES:
+                continue
+            sanitized[normalized_role] = _sanitize_printer_name(printer_name)
+        updates['printers'] = sanitized
+
+    context_notes = {}
+    if data.get('user_agent'):
+        context_notes['user_agent'] = data.get('user_agent')
+    if data.get('ip'):
+        context_notes['ip'] = data.get('ip')
+    context_notes.setdefault('user_agent', request.headers.get('User-Agent', 'Unknown'))
+    context_notes.setdefault('ip', get_remote_address())
+    if context_notes:
+        updates['last_context'] = context_notes
+
+    profile = upsert_device_profile(device_id, updates)
+    if not profile:
+        return jsonify({"success": False, "message": "Unable to update device profile."}), 500
+    return jsonify({
+        "success": True,
+        "profile": profile,
+        "resolved_printers": {
+            role: resolve_printer_for_role(role, device_id)
+            for role in DEVICE_PROFILE_ROLES
+        }
+    })
 
 
 @app.route('/api/business-profile', methods=['GET', 'POST'])
@@ -4365,6 +4956,23 @@ def print_table_bill(table_id):
         return jsonify({"status": "error", "message": "Table management feature not enabled"}), 404
 
     try:
+        payload = request.get_json(silent=True) or {}
+        device_id = str(payload.get('deviceId') or payload.get('device_id') or '').strip() or None
+        device_name = payload.get('deviceName') or payload.get('device_name') or 'Unknown Device'
+        if device_id:
+            update_device_profile_activity(
+                device_id,
+                context={
+                    "user_agent": request.headers.get('User-Agent', 'Unknown'),
+                    "ip": get_remote_address(),
+                    "source": "table_bill_print"
+                },
+                extra_updates={
+                    "device_name": device_name,
+                    "role": "table"
+                }
+            )
+
         # Get bill data
         bill_data = get_table_bill_data(table_id)
         if bill_data is None:
@@ -4374,7 +4982,7 @@ def print_table_bill(table_id):
             return jsonify({"status": "error", "message": "No orders found for this table"}), 400
 
         # Print bill using existing printing infrastructure
-        print_success = print_table_bill_ticket(bill_data)
+        print_success = print_table_bill_ticket(bill_data, device_id=device_id)
 
         if print_success:
             app.logger.info(f"Table {table_id} bill printed successfully")
@@ -4389,7 +4997,7 @@ def print_table_bill(table_id):
                 "status": "success",
                 "message": "Bill printed successfully",
                 "table_id": table_id,
-                "print_jobs": COPIES_PER_ORDER,
+                "print_jobs": TABLE_RECEIPT_COPIES,
                 "timestamp": datetime.now().isoformat()
             })
         else:
@@ -4803,6 +5411,21 @@ def print_customer_receipt(table_id):
     try:
         data = request.get_json() or {}
         payment_id = data.get('payment_id')
+        device_id = str(data.get('deviceId') or data.get('device_id') or '').strip() or None
+        device_name = data.get('deviceName') or data.get('device_name') or 'Unknown Device'
+        if device_id:
+            update_device_profile_activity(
+                device_id,
+                context={
+                    "user_agent": request.headers.get('User-Agent', 'Unknown'),
+                    "ip": get_remote_address(),
+                    "source": "customer_receipt_print"
+                },
+                extra_updates={
+                    "device_name": device_name,
+                    "role": "customer"
+                }
+            )
 
         if not payment_id:
             return jsonify({"status": "error", "message": "Payment ID is required"}), 400
@@ -4831,9 +5454,10 @@ def print_customer_receipt(table_id):
             return jsonify({"status": "error", "message": "Table data not found"}), 404
 
         # Prepare customer receipt data
+        language_code = str(config.get('language', 'en')).lower()
         receipt_data = {
             "table_id": table_id,
-            "table_name": bill_data.get("table_name", f"Table {table_id}"),
+            "table_name": bill_data.get("table_name") or f"{get_receipt_text('table_prefix', language_code)} {table_id}",
             "payment": payment,
             "total_payments": len(payments),
             "bill_total": bill_data.get("grand_total", 0.0),
@@ -4847,11 +5471,13 @@ def print_customer_receipt(table_id):
             "bill_time": bill_data.get("bill_time"),
             "timestamp": datetime.now().isoformat(),
             "mode": "table",
-            "channel_label": "Table Service"
+            "channel_label": get_receipt_text('channel_table_service', language_code)
         }
+        receipt_data["language"] = language_code
+        receipt_data["receipt_kind"] = 'customer'
 
         # Print customer receipt
-        print_success = print_customer_receipt_ticket(receipt_data)
+        print_success = print_customer_receipt_ticket(receipt_data, device_id=device_id)
 
         if print_success:
             app.logger.info(f"Customer receipt printed for table {table_id}, payment {payment_id}")
@@ -4869,7 +5495,7 @@ def print_customer_receipt(table_id):
                 "message": "Customer receipt printed successfully",
                 "table_id": table_id,
                 "payment_id": payment_id,
-                "print_jobs": COPIES_PER_ORDER,
+                "print_jobs": CUSTOMER_RECEIPT_COPIES,
                 "timestamp": receipt_data["timestamp"]
             })
         else:
@@ -6069,8 +6695,228 @@ def save_menu():
         return jsonify({"status": "error", "message": f"Failed to save menu: {str(e)}"}), 500
 
 
-# --- REFACTORED to prevent resource leaks and improve clarity ---
-def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
+JOB_STATUS_FLAGS = {
+    0x00000001: "PAUSED",
+    0x00000002: "ERROR",
+    0x00000004: "DELETING",
+    0x00000008: "SPOOLING",
+    0x00000010: "PRINTING",
+    0x00000020: "OFFLINE",
+    0x00000040: "OUT_OF_PAPER",
+    0x00000080: "PRINTED",
+    0x00000100: "DELETED",
+    0x00000200: "BLOCKED_DEVQ",
+    0x00000400: "USER_INTERVENTION",
+    0x00000800: "RESTARTING",
+    0x00001000: "COMPLETE",
+    0x00002000: "RETAINED",
+    0x00004000: "RENDERING_LOCALLY"
+}
+JOB_STATUS_FATAL_FLAGS = (
+    0x00000002  # ERROR
+    | 0x00000020  # OFFLINE
+    | 0x00000040  # OUT_OF_PAPER
+    | 0x00000400  # USER INTERVENTION
+)
+JOB_STATUS_TRANSIENT_FLAGS = (
+    0x00000200  # BLOCKED DEVICE QUEUE
+)
+PRINTER_FATAL_STATUS_THRESHOLD = 3
+JOB_TRANSIENT_FAILURE_THRESHOLD = 5
+
+PRINTER_STATUS_PAUSED = 0x00000001
+PRINTER_STATUS_ERROR = 0x00000002
+PRINTER_STATUS_PAPER_JAM = 0x00000008
+PRINTER_STATUS_PAPER_OUT = 0x00000010
+PRINTER_STATUS_MANUAL_FEED = 0x00000020
+PRINTER_STATUS_PAPER_PROBLEM = 0x00000040
+PRINTER_STATUS_OFFLINE = 0x00000080
+PRINTER_STATUS_USER_INTERVENTION = 0x00000200
+PRINTER_STATUS_DOOR_OPEN = 0x00000400
+PRINTER_STATUS_NOT_AVAILABLE = 0x00001000
+PRINTER_STATUS_NO_TONER = 0x00040000
+
+PRINTER_STATUS_FLAGS = {
+    PRINTER_STATUS_PAUSED: "Paused",
+    PRINTER_STATUS_ERROR: "Error",
+    PRINTER_STATUS_PAPER_JAM: "Paper jam",
+    PRINTER_STATUS_PAPER_OUT: "Paper out",
+    PRINTER_STATUS_MANUAL_FEED: "Manual feed required",
+    PRINTER_STATUS_PAPER_PROBLEM: "Paper problem",
+    PRINTER_STATUS_OFFLINE: "Offline/Disconnected",
+    PRINTER_STATUS_USER_INTERVENTION: "User intervention required",
+    PRINTER_STATUS_DOOR_OPEN: "Cover open",
+    PRINTER_STATUS_NOT_AVAILABLE: "Not available",
+    PRINTER_STATUS_NO_TONER: "No toner/ink"
+}
+
+PRINTER_STATUS_FATAL_FLAGS = (
+    PRINTER_STATUS_ERROR
+    | PRINTER_STATUS_OFFLINE
+    | PRINTER_STATUS_PAPER_OUT
+    | PRINTER_STATUS_PAPER_JAM
+    | PRINTER_STATUS_USER_INTERVENTION
+    | PRINTER_STATUS_DOOR_OPEN
+    | PRINTER_STATUS_NOT_AVAILABLE
+)
+
+
+def describe_job_status(status_code: int) -> str:
+    if not status_code:
+        return "OK"
+    flags = [label for bit, label in JOB_STATUS_FLAGS.items() if status_code & bit]
+    return ", ".join(flags) if flags else f"0x{status_code:04x}"
+
+
+def describe_printer_status(status_code: int) -> str:
+    if not status_code:
+        return "Ready"
+    flags = [label for bit, label in PRINTER_STATUS_FLAGS.items() if status_code & bit]
+    return ", ".join(flags) if flags else f"0x{status_code:04x}"
+
+
+def _get_printer_status_bits(hprinter, printer_name: str) -> int:
+    try:
+        info = win32print.GetPrinter(hprinter, 2)
+        return int(info.get('Status', 0) or 0)
+    except ModuleNotFoundError as exc:
+        if exc.name == "win32timezone":
+            _warn_missing_win32timezone()
+            return 0
+        raise
+    except win32print.error as exc:
+        app.logger.warning(f"[PRINTER_MONITOR] Unable to read printer '{printer_name}' status: {exc}")
+        return 0
+
+
+def _format_status_codes(job_status_bits: int | None, printer_status_bits: int | None) -> str | None:
+    if job_status_bits is None and printer_status_bits is None:
+        return None
+    job_part = f"job=0x{(job_status_bits or 0) & 0xffff:04x}"
+    printer_part = f"printer=0x{(printer_status_bits or 0) & 0xffff:04x}"
+    return f"{job_part},{printer_part}"
+
+
+def _build_printer_failure_message(job_status_bits: int, printer_status_bits: int,
+                                   fallback_message: str | None = None) -> tuple[str, str | None, str | None]:
+    job_desc = describe_job_status(job_status_bits) if job_status_bits else None
+    printer_desc = describe_printer_status(printer_status_bits) if printer_status_bits else None
+
+    if printer_status_bits & PRINTER_STATUS_PAPER_OUT:
+        base = "Test print failed: printer reports PAPER OUT. Please load paper."
+    elif printer_status_bits & (PRINTER_STATUS_OFFLINE | PRINTER_STATUS_NOT_AVAILABLE):
+        base = "Test print failed: printer appears offline or disconnected. Check power/USB."
+    elif printer_status_bits & PRINTER_STATUS_USER_INTERVENTION:
+        base = "Test print failed: printer requires user intervention (cover open or error)."
+    elif printer_status_bits & PRINTER_STATUS_PAPER_JAM:
+        base = "Test print failed: printer reports a PAPER JAM."
+    elif job_desc:
+        base = f"Test print failed: {job_desc}"
+    else:
+        base = fallback_message or "Test print failed. Check printer connection."
+
+    details = ", ".join([desc for desc in (printer_desc, job_desc) if desc])
+    if details:
+        base = f"{base} (Spooler: {details})"
+    return base, job_desc, printer_desc
+
+
+def wait_for_printer_job_completion(hprinter, job_id, printer_name, timeout_seconds: float = 15.0, poll_interval: float = 0.5):
+    """
+    Poll the Windows print spooler until the specified job completes or fails.
+    Returns (success: bool, failure_reason: Optional[str]).
+    """
+    if not job_id:
+        app.logger.warning("[PRINTER_MONITOR] Missing job id while monitoring printer job completion. Assuming success.")
+        return True, None
+
+    def _finalize_failure(job_status_bits: int | None, printer_status_bits: int | None, reason: str | None):
+        friendly_msg, job_desc, printer_desc = _build_printer_failure_message(job_status_bits or 0, printer_status_bits or 0, reason)
+        app.logger.error(f"[PRINTER_MONITOR] Printer '{printer_name}' job {job_id} failed: {friendly_msg}")
+        record_printer_failure(
+            friendly_msg,
+            status_code=_format_status_codes(job_status_bits, printer_status_bits),
+            job_status=job_desc,
+            printer_status=printer_desc
+        )
+        return False, friendly_msg
+
+    deadline = time.time() + timeout_seconds
+    job_fatal_count = 0
+    printer_fatal_count = 0
+    blocked_count = 0
+
+    while time.time() < deadline:
+        try:
+            jobs = win32print.EnumJobs(hprinter, 0, -1, 1)
+        except ModuleNotFoundError as exc:
+            if exc.name == "win32timezone":
+                _warn_missing_win32timezone()
+                record_printer_failure(None)
+                return True, None
+            raise
+        except win32print.error as exc:
+            app.logger.warning(f"[PRINTER_MONITOR] Unable to enumerate jobs for '{printer_name}': {exc}. Assuming success.")
+            return True, None
+
+        job_info = next((job for job in jobs if job.get('JobId') == job_id), None)
+        if not job_info:
+            app.logger.info(f"[PRINTER_MONITOR] Job {job_id} for '{printer_name}' no longer in queue; assuming success.")
+            record_printer_failure(None)
+            return True, None
+
+        status = int(job_info.get('Status', 0) or 0)
+        printer_status_bits = _get_printer_status_bits(hprinter, printer_name)
+
+        if status == 0 or status & 0x00000080 or status & 0x00001000:
+            app.logger.info(f"[PRINTER_MONITOR] Job {job_id} for '{printer_name}' completed with status {describe_job_status(status)}.")
+            record_printer_failure(None)
+            return True, None
+
+        if status & JOB_STATUS_FATAL_FLAGS:
+            job_fatal_count += 1
+        else:
+            job_fatal_count = 0
+
+        if printer_status_bits & PRINTER_STATUS_FATAL_FLAGS:
+            printer_fatal_count += 1
+        else:
+            printer_fatal_count = 0
+
+        if status & JOB_STATUS_TRANSIENT_FLAGS:
+            blocked_count += 1
+            if blocked_count == 1:
+                app.logger.info(
+                    f"[PRINTER_MONITOR] Job {job_id} for '{printer_name}' reported transient status "
+                    f"{describe_job_status(status)}; continuing to monitor."
+                )
+        else:
+            blocked_count = 0
+
+        if job_fatal_count >= PRINTER_FATAL_STATUS_THRESHOLD:
+            return _finalize_failure(status, printer_status_bits, "Printer job reported a fatal status.")
+
+        if printer_fatal_count >= PRINTER_FATAL_STATUS_THRESHOLD:
+            return _finalize_failure(status, printer_status_bits, "Printer hardware reported an error.")
+
+        if blocked_count >= JOB_TRANSIENT_FAILURE_THRESHOLD:
+            return _finalize_failure(status, printer_status_bits, "Printer queue appears to be blocked.")
+
+        time.sleep(poll_interval)
+
+    timeout_msg = f"Timed out waiting for printer '{printer_name}' job {job_id} to finish."
+    app.logger.error(f"[PRINTER_MONITOR] {timeout_msg}")
+    friendly_msg, job_desc, printer_desc = _build_printer_failure_message(0, _get_printer_status_bits(hprinter, printer_name), timeout_msg)
+    record_printer_failure(
+        friendly_msg,
+        status_code='timeout',
+        job_status=job_desc,
+        printer_status=printer_desc
+    )
+    return False, friendly_msg
+
+
+def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None, device_id=None, printer_role='kitchen'):
     """
     Builds and prints a kitchen ticket. This function is refactored to ensure
     all printer resources are properly closed in all scenarios.
@@ -6083,13 +6929,17 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         app.logger.warning("Printing blocked - trial expired")
         return False
 
-    if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
-        app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print order #{order_data.get('number', 'N/A')}.")
+    target_printer = resolve_printer_for_role(printer_role, device_id) or PRINTER_NAME
+    target_printer = (target_printer or "").strip()
+
+    if not target_printer or target_printer == "Your_Printer_Name_Here":
+        app.logger.error(f"CRITICAL: No printer configured. Cannot print order #{order_data.get('number', 'N/A')}.")
         return False
 
     # PDF printers are not supported for ticket printing anymore
-    if 'pdf' in str(PRINTER_NAME).lower():
-        app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for ticket printing.")
+    lowered_name = target_printer.lower()
+    if 'pdf' in lowered_name or 'xps' in lowered_name or 'onenote' in lowered_name:
+        app.logger.error(f"Selected printer '{target_printer}' appears to be a PDF/virtual device, which is not supported for ticket printing.")
         return False
 
     # 2. Build the ticket content (can fail without opening resources)
@@ -6111,8 +6961,11 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             receipt_payload['table_id'] = table_number
             receipt_payload['table_name'] = table_number
 
-        receipt_payload['header_title'] = "Kitchen Ticket"
-        receipt_payload['copy_label'] = copy_info or "Kitchen Copy"
+        language_code = str(config.get('language', 'en')).lower()
+        receipt_payload['language'] = language_code
+        receipt_payload['receipt_kind'] = 'kitchen'
+        receipt_payload['header_title'] = receipt_payload.get('header_title') or get_receipt_text('title_kitchen', language_code)
+        receipt_payload['copy_label'] = copy_info or receipt_payload.get('copy_label') or get_receipt_text('copy_kitchen', language_code)
         receipt_payload['include_payment_details'] = False
         receipt_payload['payment_status'] = "unpaid"
         receipt_payload['amount_paid_total'] = 0.0
@@ -6136,7 +6989,7 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
         if channel_override:
             receipt_payload['channel_label'] = channel_override
 
-        ticket_content = build_customer_receipt_content(receipt_payload)
+        ticket_content = build_customer_receipt_content(receipt_payload, cut_after=CUT_AFTER_KITCHEN)
 
     except Exception as e_build:
         app.logger.error(f"Error building ticket content for order #{order_data.get('number', 'N/A')}: {str(e_build)}")
@@ -6146,31 +6999,20 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
     hprinter = None
     doc_started = False
     try:
-        app.logger.info(f"Attempting to open printer: '{PRINTER_NAME}' for order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}")
-        hprinter = win32print.OpenPrinter(PRINTER_NAME)
+        app.logger.info(
+            f"Attempting to open printer '{target_printer}' "
+            f"for order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''} "
+            f"[role={printer_role}, device={device_id or 'n/a'}]"
+        )
+        hprinter = win32print.OpenPrinter(target_printer)
 
         # Check printer status
-        printer_info = win32print.GetPrinter(hprinter, 2)
-        current_status = printer_info['Status']
-        app.logger.info(f"Printer '{PRINTER_NAME}' current status code: {hex(current_status)}")
+        current_status = _get_printer_status_bits(hprinter, target_printer)
+        app.logger.info(f"Printer '{target_printer}' current status code: {hex(current_status)}")
 
-        PRINTER_STATUS_OFFLINE = 0x00000080; PRINTER_STATUS_ERROR = 0x00000002
-        PRINTER_STATUS_NOT_AVAILABLE = 0x00001000; PRINTER_STATUS_PAPER_OUT = 0x00000010
-        PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
-        PRINTER_STATUS_DOOR_OPEN = 0x00000400; PRINTER_STATUS_NO_TONER = 0x00040000
-        PRINTER_STATUS_PAUSED = 0x00000001
-        problem_flags_map = {
-            PRINTER_STATUS_OFFLINE: "Offline", PRINTER_STATUS_ERROR: "Error",
-            PRINTER_STATUS_NOT_AVAILABLE: "Not Available/Disconnected", PRINTER_STATUS_PAPER_OUT: "Paper Out",
-            PRINTER_STATUS_USER_INTERVENTION: "User Intervention Required", PRINTER_STATUS_PAPER_JAM: "Paper Jam",
-            PRINTER_STATUS_DOOR_OPEN: "Door/Cover Open", PRINTER_STATUS_NO_TONER: "No Toner/Ink",
-            PRINTER_STATUS_PAUSED: "Print Queue Paused"
-        }
-        active_problems = [desc for flag, desc in problem_flags_map.items() if current_status & flag]
-
-        if active_problems:
-            problems_string = ", ".join(active_problems)
-            app.logger.error(f"Printer '{PRINTER_NAME}' reported problem(s): {problems_string}. Order will not be printed.")
+        if current_status & PRINTER_STATUS_FATAL_FLAGS:
+            problems_string = describe_printer_status(current_status)
+            app.logger.error(f"Printer '{target_printer}' reported problem(s): {problems_string}. Order will not be printed.")
             # Attempt PDF fallback if enabled
             if PDF_FALLBACK_ENABLED:
                 if generate_pdf_ticket(order_data, copy_info, original_timestamp_str):
@@ -6179,23 +7021,31 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
                     return True
             return False # Finally will close the handle
 
-        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with print.")
+        app.logger.info(f"Printer '{target_printer}' status appears operational. Proceeding with print.")
         
         # Perform the print job
         doc_name = f"Order_{order_data.get('number', 'N/A')}_Ticket{f'_{copy_info}'.replace(' ','_') if copy_info else ''}_ESCPOST"
-        win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
+        job_id = win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
         doc_started = True
-        
+
         win32print.StartPagePrinter(hprinter)
         win32print.WritePrinter(hprinter, bytes(ticket_content))
         win32print.EndPagePrinter(hprinter)
-        
-        app.logger.info(f"Order #{order_data.get('number', 'N/A')} data sent to printer spooler for '{PRINTER_NAME}'.")
+        win32print.EndDocPrinter(hprinter)
+        doc_started = False
+
+        job_completed, failure_reason = wait_for_printer_job_completion(hprinter, job_id, target_printer)
+        if not job_completed:
+            if failure_reason:
+                app.logger.error(f"[PRINTER_MONITOR] Kitchen ticket job did not complete: {failure_reason}")
+            return False
+
+        app.logger.info(f"Order #{order_data.get('number', 'N/A')} data printed successfully on '{target_printer}'.")
         return True # Success
 
     except (win32print.error, Exception) as e:
         order_id_str = f"order #{order_data.get('number', 'N/A')}{f' ({copy_info})' if copy_info else ''}"
-        app.logger.error(f"A printing error occurred for {order_id_str} with printer '{PRINTER_NAME}'. Error: {str(e)}")
+        app.logger.error(f"A printing error occurred for {order_id_str} with printer '{target_printer}'. Error: {str(e)}")
         # Attempt PDF fallback if enabled
         if PDF_FALLBACK_ENABLED:
             if generate_pdf_ticket(order_data, copy_info, original_timestamp_str):
@@ -6210,15 +7060,15 @@ def print_kitchen_ticket(order_data, copy_info="", original_timestamp_str=None):
             try:
                 win32print.EndDocPrinter(hprinter)
             except Exception as e_doc:
-                 app.logger.error(f"Error ending document on printer '{PRINTER_NAME}': {str(e_doc)}")
+                 app.logger.error(f"Error ending document on printer '{target_printer}': {str(e_doc)}")
         if hprinter:
             try:
                 win32print.ClosePrinter(hprinter)
-            except Exception as e_close: 
-                app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
+            except Exception as e_close:
+                app.logger.error(f"Error closing printer handle for '{target_printer}': {str(e_close)}")
 
 
-def print_table_bill_ticket(bill_data):
+def print_table_bill_ticket(bill_data, device_id=None):
     """
     Print a formatted table bill using POSPal's existing printing infrastructure.
     Follows the same patterns as print_kitchen_ticket for Windows compatibility.
@@ -6231,129 +7081,194 @@ def print_table_bill_ticket(bill_data):
         app.logger.warning("Printing blocked - trial expired")
         return False
 
-    if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
-        app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print table bill.")
+    target_printer = resolve_printer_for_role('table', device_id) or PRINTER_NAME
+    target_printer = (target_printer or "").strip()
+
+    if not target_printer or target_printer == "Your_Printer_Name_Here":
+        app.logger.error(f"CRITICAL: No printer configured. Cannot print table bill.")
         return False
 
     # PDF printers are not supported
-    if 'pdf' in str(PRINTER_NAME).lower():
-        app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for bill printing.")
+    lowered_name = target_printer.lower()
+    if 'pdf' in lowered_name or 'xps' in lowered_name or 'onenote' in lowered_name:
+        app.logger.error(f"Selected printer '{target_printer}' appears to be a PDF device, which is not supported for bill printing.")
         return False
 
     # Build the bill ticket content
     try:
         ticket_content = bytearray()
         ticket_content += InitializePrinter
+        ticket_content += ESC + b't\x13'
 
         NORMAL_FONT_LINE_WIDTH = 42
+        SMALL_FONT_LINE_WIDTH = 56
 
-        # Header - Restaurant name and title
+        language_code = str(config.get('language', 'en')).lower()
+
+        def L(key: str, **fmt):
+            return get_receipt_text(key, language_code, **fmt)
+
+        profile_context = prepare_business_profile_for_receipts(bill_data.get('business_profile'))
+        restaurant_name = profile_context["name"]
+        address_lines = profile_context["address_lines"]
+        phone_value = profile_context["phone"]
+        email_value = profile_context["email"]
+        website_value = profile_context["website"]
+        tax_id_line = profile_context["tax_line"]
+        logo_lines = profile_context.get("logo_lines", [])
+        qr_payload = profile_context.get("qr_payload", "")
+        footers = profile_context.get("footers", {})
+        footer_lines = footers.get("table") or footers.get("default", [])
+
+        contact_lines = []
+        if phone_value:
+            contact_lines.append(f"{L('contact_phone')}: {phone_value}")
+        if email_value:
+            contact_lines.append(f"{L('contact_email')}: {email_value}")
+        if website_value:
+            contact_lines.append(f"{L('contact_web')}: {website_value}")
+
+        if logo_lines:
+            ticket_content += AlignCenter + SelectFontB + NormalText
+            for raw_logo in logo_lines:
+                for wrapped_logo in word_wrap_text(raw_logo, SMALL_FONT_LINE_WIDTH):
+                    ticket_content.extend(to_bytes(wrapped_logo + "\n"))
+            ticket_content += AlignLeft + SelectFontA + NormalText
+
         ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-        restaurant_name = "POSPal"
         ticket_content += to_bytes(restaurant_name + "\n")
         ticket_content += BoldOff
 
-        # Bill title with table info
-        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
-        table_name = bill_data.get('table_name', f"Table {bill_data.get('table_id', 'Unknown')}")
-        seats = bill_data.get('seats', '')
-        seats_text = f" ({seats} seats)" if seats else ""
-        bill_title = f"TABLE BILL - {table_name}{seats_text}"
-        ticket_content += to_bytes(bill_title + "\n")
-        ticket_content += BoldOff
-
-        # Date and time
+        details_printed = False
+        if address_lines:
+            ticket_content += AlignCenter + SelectFontB + NormalText
+            for line in address_lines:
+                for wrapped in word_wrap_text(line, SMALL_FONT_LINE_WIDTH):
+                    ticket_content.extend(to_bytes(wrapped + "\n"))
+            details_printed = True
+        if contact_lines:
+            ticket_content += AlignCenter + SelectFontB + NormalText
+            for line in contact_lines:
+                for wrapped in word_wrap_text(line, SMALL_FONT_LINE_WIDTH):
+                    ticket_content.extend(to_bytes(wrapped + "\n"))
+            details_printed = True
+        if tax_id_line:
+            ticket_content += AlignCenter + SelectFontB + NormalText
+            for wrapped in word_wrap_text(f"{L('field_tax')}: {tax_id_line}", SMALL_FONT_LINE_WIDTH):
+                ticket_content.extend(to_bytes(wrapped + "\n"))
+            details_printed = True
+        if not details_printed:
+            ticket_content += AlignCenter + SelectFontB + NormalText
+            ticket_content += to_bytes(f"{L('business_info_placeholder')}\n")
         ticket_content += AlignLeft + SelectFontA + NormalText
-        current_time = datetime.now()
-        ticket_content += to_bytes(f"Date: {current_time.strftime('%d/%m/%Y')}  Time: {current_time.strftime('%H:%M')}\n")
 
-        # Separator
+        table_label = bill_data.get('table_name') or f"{L('table_prefix')} {bill_data.get('table_id', L('label_unknown'))}"
+        seats = bill_data.get('seats')
+        seats_text = f" ({L('field_guests')}: {seats})" if seats else ""
+
+        ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
+        ticket_content += to_bytes(f"{L('title_table_bill')} - {table_label}{seats_text}\n")
+        ticket_content += BoldOff
+        ticket_content += AlignLeft + SelectFontA + NormalText
+
+        current_time = datetime.now()
+        ticket_content += to_bytes(f"{L('field_date')}: {current_time.strftime('%d/%m/%Y')}  {L('field_time')}: {current_time.strftime('%H:%M')}\n")
         ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
 
-        # Orders section
         grand_total = 0.0
         order_count = 0
-
         for order in bill_data.get('orders', []):
             order_count += 1
             order_number = order.get('order_number', 'N/A')
             order_time = order.get('time', 'N/A')
-
-            # Order header
             ticket_content += SelectFontA + BoldOn
-            ticket_content += to_bytes(f"ORDER #{order_number} - {order_time}\n")
+            ticket_content += to_bytes(f"{L('table_bill_order_prefix', number=order_number)} - {order_time}\n")
             ticket_content += BoldOff
 
-            # Order items
             for item in order.get('items', []):
-                item_name = item.get('name', 'Unknown Item')
+                item_name = item.get('name', 'Item')
                 item_quantity = item.get('quantity', 1)
                 item_price = float(item.get('itemPriceWithModifiers', item.get('basePrice', 0.0)))
                 line_total = item_quantity * item_price
                 grand_total += line_total
 
-                # Format item line: "- Item Name          €Price"
                 left_side = f"- {item_quantity}x {item_name}"
-                right_side = f"€{line_total:.2f}"
-
-                # Calculate padding to right-align price
+                right_side = format_currency(line_total)
                 available_space = NORMAL_FONT_LINE_WIDTH - len(left_side) - len(right_side)
                 padding = " " * max(1, available_space)
-
                 ticket_content += to_bytes(f"{left_side}{padding}{right_side}\n")
 
-                # Add item options/modifiers if any
                 general_options = item.get('generalSelectedOptions', [])
                 if general_options:
                     for opt in general_options:
                         opt_name = opt.get('name', 'N/A')
                         opt_price_change = float(opt.get('priceChange', 0.0))
-                        price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})" if opt_price_change != 0 else ""
-                        option_line = f"    + {opt_name}{price_change_str}"
-                        ticket_content += to_bytes(option_line + "\n")
+                        price_change_str = ""
+                        if opt_price_change != 0:
+                            price_change_str = f" ({'+' if opt_price_change > 0 else ''}{opt_price_change:.2f})"
+                        ticket_content += to_bytes(f"    + {opt_name}{price_change_str}\n")
 
-                # Add item comments if any
-                item_comments = item.get('comments', '').strip()
+                item_comments = (item.get('comments') or '').strip()
                 if item_comments:
                     for comment_line in item_comments.split('\n'):
                         if comment_line.strip():
-                            ticket_content += to_bytes(f"    Note: {comment_line.strip()}\n")
+                            ticket_content += to_bytes(f"    {L('table_bill_note_prefix')}: {comment_line.strip()}\n")
 
-            ticket_content += to_bytes("\n")  # Space between orders
+            ticket_content += to_bytes("\n")
 
-        # Summary section
         ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
         ticket_content += SelectFontA + BoldOn
-        ticket_content += to_bytes(f"Total Orders: {order_count}\n")
-
-        # Grand total
-        total_left = "TOTAL:"
-        total_right = f"€{grand_total:.2f}"
-        total_padding = " " * (NORMAL_FONT_LINE_WIDTH - len(total_left) - len(total_right))
+        ticket_content += to_bytes(L('table_bill_total_orders', count=order_count) + "\n")
+        total_left = L('table_bill_total_label')
+        total_right = format_currency(grand_total)
+        total_padding = " " * max(1, NORMAL_FONT_LINE_WIDTH - len(total_left) - len(total_right))
         ticket_content += to_bytes(f"{total_left}{total_padding}{total_right}\n")
         ticket_content += BoldOff
 
-        # Payment status
         ticket_content += to_bytes("\n")
-        payment_status = bill_data.get('payment_status', 'unpaid').upper()
-        if payment_status == 'UNPAID':
-            status_display = "[  PENDING  ]"
-        elif payment_status == 'PARTIAL':
-            amount_paid = bill_data.get('amount_paid', 0.0)
-            amount_remaining = bill_data.get('amount_remaining', grand_total)
-            status_display = f"[PARTIAL: €{amount_paid:.2f} paid, €{amount_remaining:.2f} remaining]"
-        else:  # PAID
-            status_display = "[  PAID  ]"
+        payment_status = (bill_data.get('payment_status') or 'unpaid').lower()
+        amount_paid = bill_data.get('amount_paid', 0.0)
+        amount_remaining = bill_data.get('amount_remaining', grand_total)
+        if payment_status == 'paid':
+            status_display = L('table_bill_status_paid')
+        elif payment_status == 'partial':
+            status_display = L('table_bill_status_partial', paid=format_currency(amount_paid), remaining=format_currency(amount_remaining))
+        else:
+            status_display = L('table_bill_status_pending')
 
         ticket_content += AlignCenter
-        ticket_content += to_bytes(f"Payment: {status_display}\n")
+        ticket_content += to_bytes(L('table_bill_payment_prefix', status=status_display) + "\n")
         ticket_content += AlignLeft
-
-        # Footer
         ticket_content += to_bytes("=" * NORMAL_FONT_LINE_WIDTH + "\n")
 
-        # Cut paper if configured
-        if CUT_AFTER_PRINT:
+        if qr_payload:
+            ticket_content += AlignCenter + SelectFontA + BoldOn
+            ticket_content += to_bytes(L('section_qr') + "\n")
+            ticket_content += BoldOff
+            qr_ok = render_receipt_qr(ticket_content, qr_payload)
+            ticket_content += AlignCenter + SelectFontB + NormalText
+            if qr_ok:
+                for hint_line in word_wrap_text(L('qr_hint'), SMALL_FONT_LINE_WIDTH):
+                    ticket_content.extend(to_bytes(hint_line + "\n"))
+            else:
+                fallback = f"{L('qr_fallback_label')}: {qr_payload}"
+                for fallback_line in word_wrap_text(fallback, SMALL_FONT_LINE_WIDTH):
+                    ticket_content.extend(to_bytes(fallback_line + "\n"))
+            ticket_content += AlignLeft + SelectFontA + NormalText
+
+        closing_lines = footer_lines[:] if footer_lines else []
+        if not closing_lines:
+            closing_lines = [L('closing_default')]
+        if website_value and website_value not in closing_lines:
+            closing_lines.append(website_value)
+
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        for line in closing_lines:
+            for wrapped in word_wrap_text(line, SMALL_FONT_LINE_WIDTH):
+                ticket_content.extend(to_bytes(wrapped + "\n"))
+        ticket_content += AlignLeft + SelectFontA + NormalText
+
+        if CUT_AFTER_TABLE:
             ticket_content += PartialCut
 
     except Exception as e:
@@ -6362,14 +7277,14 @@ def print_table_bill_ticket(bill_data):
 
     # Print the bill (same pattern as print_kitchen_ticket)
     print_attempts = 0
-    max_attempts = COPIES_PER_ORDER
+    max_attempts = max(1, int(TABLE_RECEIPT_COPIES))
     printed_any = False
 
     for attempt in range(max_attempts):
         print_attempts += 1
         copy_info = f"Copy {print_attempts}" if max_attempts > 1 else ""
 
-        if print_table_bill_raw(ticket_content, bill_data, copy_info):
+        if print_table_bill_raw(ticket_content, bill_data, copy_info, printer_name=target_printer, device_id=device_id):
             printed_any = True
         else:
             app.logger.warning(f"Table bill print attempt {print_attempts} failed")
@@ -6377,60 +7292,56 @@ def print_table_bill_ticket(bill_data):
     return printed_any
 
 
-def print_table_bill_raw(ticket_content, bill_data, copy_info=""):
+def print_table_bill_raw(ticket_content, bill_data, copy_info="", printer_name=None, device_id=None):
     """
     Raw printing function for table bills, following print_kitchen_ticket patterns.
     """
+    target_printer = printer_name or resolve_printer_for_role('table', device_id) or PRINTER_NAME
+    target_printer = (target_printer or "").strip()
     hprinter = None
     doc_started = False
     try:
         table_id = bill_data.get('table_id', 'Unknown')
-        app.logger.info(f"Attempting to open printer: '{PRINTER_NAME}' for table {table_id} bill{f' ({copy_info})' if copy_info else ''}")
-        hprinter = win32print.OpenPrinter(PRINTER_NAME)
+        app.logger.info(
+            f"Attempting to open printer: '{target_printer}' for table {table_id} bill"
+            f"{f' ({copy_info})' if copy_info else ''} [device={device_id or 'n/a'}]"
+        )
+        hprinter = win32print.OpenPrinter(target_printer)
 
         # Check printer status (same as print_kitchen_ticket)
-        printer_info = win32print.GetPrinter(hprinter, 2)
-        current_status = printer_info['Status']
-        app.logger.info(f"Printer '{PRINTER_NAME}' current status code: {hex(current_status)}")
+        current_status = _get_printer_status_bits(hprinter, target_printer)
+        app.logger.info(f"Printer '{target_printer}' current status code: {hex(current_status)}")
 
-        PRINTER_STATUS_OFFLINE = 0x00000080; PRINTER_STATUS_ERROR = 0x00000002
-        PRINTER_STATUS_NOT_AVAILABLE = 0x00001000; PRINTER_STATUS_PAPER_OUT = 0x00000010
-        PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
-
-        problematic_statuses = [
-            PRINTER_STATUS_OFFLINE, PRINTER_STATUS_ERROR, PRINTER_STATUS_NOT_AVAILABLE,
-            PRINTER_STATUS_PAPER_OUT, PRINTER_STATUS_USER_INTERVENTION, PRINTER_STATUS_PAPER_JAM
-        ]
-
-        if any(current_status & status for status in problematic_statuses):
-            status_messages = []
-            if current_status & PRINTER_STATUS_OFFLINE: status_messages.append("OFFLINE")
-            if current_status & PRINTER_STATUS_ERROR: status_messages.append("ERROR")
-            if current_status & PRINTER_STATUS_NOT_AVAILABLE: status_messages.append("NOT_AVAILABLE")
-            if current_status & PRINTER_STATUS_PAPER_OUT: status_messages.append("PAPER_OUT")
-            if current_status & PRINTER_STATUS_USER_INTERVENTION: status_messages.append("USER_INTERVENTION")
-            if current_status & PRINTER_STATUS_PAPER_JAM: status_messages.append("PAPER_JAM")
-
-            app.logger.warning(f"Printer '{PRINTER_NAME}' has problematic status: {', '.join(status_messages)}")
+        if current_status & PRINTER_STATUS_FATAL_FLAGS:
+            status_messages = describe_printer_status(current_status)
+            app.logger.warning(f"Printer '{target_printer}' has problematic status: {status_messages}")
             return False
 
-        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with table bill print.")
+        app.logger.info(f"Printer '{target_printer}' status appears operational. Proceeding with table bill print.")
 
         # Print the document
         doc_name = f"POSPal Table {table_id} Bill"
-        win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
+        job_id = win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
         doc_started = True
 
         win32print.StartPagePrinter(hprinter)
         win32print.WritePrinter(hprinter, bytes(ticket_content))
         win32print.EndPagePrinter(hprinter)
+        win32print.EndDocPrinter(hprinter)
+        doc_started = False
 
-        app.logger.info(f"Table {table_id} bill data sent to printer spooler for '{PRINTER_NAME}'.")
+        job_completed, failure_reason = wait_for_printer_job_completion(hprinter, job_id, target_printer)
+        if not job_completed:
+            if failure_reason:
+                app.logger.error(f"[PRINTER_MONITOR] Table bill job did not complete: {failure_reason}")
+            return False
+
+        app.logger.info(f"Table {table_id} bill printed successfully on '{target_printer}'.")
         return True
 
     except (win32print.error, Exception) as e:
         table_id = bill_data.get('table_id', 'Unknown')
-        app.logger.error(f"A printing error occurred for table {table_id} bill{f' ({copy_info})' if copy_info else ''} with printer '{PRINTER_NAME}'. Error: {str(e)}")
+        app.logger.error(f"A printing error occurred for table {table_id} bill{f' ({copy_info})' if copy_info else ''} with printer '{target_printer}'. Error: {str(e)}")
         return False
 
     finally:
@@ -6439,15 +7350,15 @@ def print_table_bill_raw(ticket_content, bill_data, copy_info=""):
             try:
                 win32print.EndDocPrinter(hprinter)
             except Exception as e_doc:
-                app.logger.error(f"Error ending document on printer '{PRINTER_NAME}': {str(e_doc)}")
+                app.logger.error(f"Error ending document on printer '{target_printer}': {str(e_doc)}")
         if hprinter:
             try:
                 win32print.ClosePrinter(hprinter)
             except Exception as e_close:
-                app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
+                app.logger.error(f"Error closing printer handle for '{target_printer}': {str(e_close)}")
 
 
-def build_customer_receipt_content(receipt_data):
+def build_customer_receipt_content(receipt_data, cut_after=None):
     """Generate ESC/POS byte content for a customer receipt."""
     app.logger.info(
         f"[RECEIPT] Building enhanced customer receipt for table {receipt_data.get('table_id')} "
@@ -6460,41 +7371,37 @@ def build_customer_receipt_content(receipt_data):
     NORMAL_FONT_LINE_WIDTH = 42
     SMALL_FONT_LINE_WIDTH = 56
 
-    business_profile = receipt_data.get('business_profile') or get_business_identity()
-    restaurant_name = (business_profile.get('name') or "POSPal").strip() or "POSPal"
+    receipt_language = (receipt_data.get('language') or str(config.get('language', 'en'))).lower()
 
-    address_lines = []
-    address_value = business_profile.get('address')
-    if isinstance(address_value, str):
-        for raw_line in address_value.replace('\r', '').split('\n'):
-            if raw_line.strip():
-                address_lines.append(raw_line.strip())
+    def L(key: str, **fmt):
+        return get_receipt_text(key, receipt_language, **fmt)
 
-    phone_value = business_profile.get('phone')
-    email_value = business_profile.get('email')
-    website_value = business_profile.get('website')
+    profile_context = prepare_business_profile_for_receipts(receipt_data.get('business_profile'))
+    business_profile = profile_context["profile"]
+    restaurant_name = profile_context["name"]
+
+    address_lines = profile_context["address_lines"]
+    phone_value = profile_context["phone"]
+    email_value = profile_context["email"]
+    website_value = profile_context["website"]
+    tax_id_line = profile_context["tax_line"]
 
     contact_lines = []
-    if isinstance(phone_value, str) and phone_value.strip():
-        contact_lines.append(f"Phone: {phone_value.strip()}")
-    if isinstance(email_value, str) and email_value.strip():
-        contact_lines.append(f"Email: {email_value.strip()}")
-    if isinstance(website_value, str) and website_value.strip():
-        website_value = website_value.strip()
-        contact_lines.append(f"Web: {website_value}")
-    else:
-        website_value = ""
+    if phone_value:
+        contact_lines.append(f"{L('contact_phone')}: {phone_value}")
+    if email_value:
+        contact_lines.append(f"{L('contact_email')}: {email_value}")
+    if website_value:
+        contact_lines.append(f"{L('contact_web')}: {website_value}")
 
-    tax_id_line = business_profile.get('tax_id')
-    if isinstance(tax_id_line, str):
-        tax_id_line = tax_id_line.strip()
-    else:
-        tax_id_line = ""
+    footers = profile_context.get("footers", {})
+    footer_default_lines = footers.get("default", [])
+    footer_customer_lines = footers.get("customer", footer_default_lines)
+    footer_kitchen_lines = footers.get("kitchen", footer_default_lines)
+    footer_table_lines = footers.get("table", footer_default_lines)
 
-    footer_message = business_profile.get('footer')
-    footer_lines = []
-    if isinstance(footer_message, str):
-        footer_lines = [line.strip() for line in footer_message.replace('\r', '').split('\n') if line.strip()]
+    logo_lines = profile_context.get("logo_lines", [])
+    qr_payload = profile_context.get("qr_payload", "")
 
     def append_centered_lines(lines):
         filtered = [line.strip() for line in lines if isinstance(line, str) and line.strip()]
@@ -6512,7 +7419,7 @@ def build_customer_receipt_content(receipt_data):
             return
         ticket_content.extend(to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n"))
         ticket_content.extend(SelectFontA + BoldOn)
-        ticket_content.extend(to_bytes(f"{title.upper()}\n"))
+        ticket_content.extend(to_bytes(f"{title}\n"))
         ticket_content.extend(BoldOff)
         ticket_content.extend(AlignLeft + SelectFontA + NormalText)
 
@@ -6573,10 +7480,14 @@ def build_customer_receipt_content(receipt_data):
     date_display = printed_at.strftime('%d/%m/%Y')
     time_display = printed_at.strftime('%H:%M')
 
-    table_name = receipt_data.get('table_name') or f"Table {receipt_data.get('table_id', 'Unknown')}"
+    table_id_value = receipt_data.get('table_id')
+    if table_id_value is None or (isinstance(table_id_value, str) and not table_id_value.strip()):
+        table_id_value = L('label_unknown')
+    table_label_base = f"{L('table_prefix')} {table_id_value}"
+    table_name = receipt_data.get('table_name') or table_label_base
     if not isinstance(table_name, str):
         table_name = str(table_name)
-    table_name = table_name.strip() or f"Table {receipt_data.get('table_id', 'Unknown')}"
+    table_name = table_name.strip() or table_label_base
 
     seats = receipt_data.get('seats')
     payment = receipt_data.get('payment', {}) or {}
@@ -6604,10 +7515,17 @@ def build_customer_receipt_content(receipt_data):
     if isinstance(channel_label, str) and channel_label.strip():
         channel_label = channel_label.strip()
     else:
-        channel_label = "Table Service" if is_table_mode else "Simple Sale"
+        channel_label = L('channel_table_service') if is_table_mode else L('channel_simple_sale')
 
-    header_title = (receipt_data.get('header_title') or "Customer Receipt").strip() or "Customer Receipt"
+    receipt_kind = (receipt_data.get('receipt_kind') or '').strip().lower()
+    if receipt_kind not in ('customer', 'kitchen', 'table'):
+        receipt_kind = 'customer'
+
+    default_header = L('title_kitchen') if receipt_kind == 'kitchen' else L('title_customer')
+    header_title = (receipt_data.get('header_title') or default_header).strip() or default_header
     copy_label = (receipt_data.get('copy_label') or "").strip()
+    if not copy_label and receipt_kind == 'kitchen':
+        copy_label = L('copy_kitchen')
     include_payment_details = bool(receipt_data.get('include_payment_details', True))
 
     order_numbers = []
@@ -6620,6 +7538,13 @@ def build_customer_receipt_content(receipt_data):
             if candidate_str and candidate_str not in order_numbers:
                 order_numbers.append(candidate_str)
                 break
+
+    if logo_lines:
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        for raw_logo in logo_lines:
+            for wrapped_logo in word_wrap_text(raw_logo, SMALL_FONT_LINE_WIDTH):
+                ticket_content.extend(to_bytes(wrapped_logo + "\n"))
+        ticket_content += AlignLeft + SelectFontA + NormalText
 
     ticket_content += AlignCenter + SelectFontA + DoubleHeightWidth + BoldOn
     ticket_content += to_bytes(restaurant_name + "\n")
@@ -6635,7 +7560,7 @@ def build_customer_receipt_content(receipt_data):
             details_printed = True
     if not details_printed:
         ticket_content += AlignCenter + SelectFontB + NormalText
-        ticket_content += to_bytes("Add business info via Settings > Business Profile\n")
+        ticket_content += to_bytes(f"{L('business_info_placeholder')}\n")
         ticket_content += AlignLeft + SelectFontA + NormalText
 
     ticket_content += AlignCenter + SelectFontA + DoubleWidth + BoldOn
@@ -6647,42 +7572,42 @@ def build_customer_receipt_content(receipt_data):
         ticket_content += to_bytes(copy_label.upper() + "\n")
         ticket_content += AlignLeft + SelectFontA + NormalText
 
-    append_section_heading("Order Info")
-    append_wrapped(f"Date: {date_display}    Time: {time_display}")
+    append_section_heading(L('section_order'))
+    append_wrapped(f"{L('field_date')}: {date_display}    {L('field_time')}: {time_display}")
     if isinstance(bill_date, str) and bill_date.strip():
-        opened_line = f"Opened: {bill_date.strip()}"
+        opened_line = f"{L('field_opened')}: {bill_date.strip()}"
         if isinstance(bill_time, str) and bill_time.strip():
             opened_line += f" {bill_time.strip()}"
         append_wrapped(opened_line)
     if order_numbers:
         if len(order_numbers) == 1:
-            append_wrapped(f"Order #: {order_numbers[0]}")
+            append_wrapped(f"{L('field_order_number')}: {order_numbers[0]}")
         else:
             display_numbers = ", ".join(order_numbers[:3])
             if len(order_numbers) > 3:
-                display_numbers += f", +{len(order_numbers) - 3} more"
-            append_wrapped(f"Orders: {display_numbers}")
+                display_numbers += f", {L('orders_more_suffix', count=len(order_numbers) - 3)}"
+            append_wrapped(f"{L('field_orders')}: {display_numbers}")
     if payment_id:
-        append_wrapped(f"Receipt ID: {payment_id[:8].upper()}")
+        append_wrapped(f"{L('field_receipt_id')}: {payment_id[:8].upper()}")
     if payment_index and total_payments:
-        append_wrapped(f"Payment {payment_index} of {total_payments}")
+        append_wrapped(L('line_payment_x_of_y', current=payment_index, total=total_payments))
     elif total_payments > 1:
-        append_wrapped(f"Payments recorded: {total_payments}")
+        append_wrapped(L('line_payments_recorded', total=total_payments))
 
     if is_table_mode:
-        dining_parts = [f"Table: {table_name}"]
+        dining_parts = [f"{L('field_table')}: {table_name}"]
         if seats:
-            dining_parts.append(f"Guests: {seats}")
+            dining_parts.append(f"{L('field_guests')}: {seats}")
         append_wrapped("    ".join(dining_parts))
         if channel_label:
-            append_wrapped(f"Dining: {channel_label}")
+            append_wrapped(f"{L('field_dining')}: {channel_label}")
     else:
-        append_wrapped(f"Channel: {channel_label}")
+        append_wrapped(f"{L('field_channel')}: {channel_label}")
         label_candidate = table_name.lower()
         if label_candidate not in ("takeaway", "counter", "pickup"):
-            append_wrapped(f"Label: {table_name}")
+            append_wrapped(f"{L('field_label')}: {table_name}")
 
-    append_section_heading("Items")
+    append_section_heading(L('section_items'))
 
     items_subtotal = Decimal('0')
     item_lines_printed = False
@@ -6701,7 +7626,10 @@ def build_customer_receipt_content(receipt_data):
                 except Exception:
                     order_time_display = order_timestamp
         if multiple_orders:
-            order_header = f"Order {order_number}" if order_number else "Order"
+            order_header = (
+                L('order_label_with_number', number=order_number)
+                if order_number else L('order_label')
+            )
             if order_time_display:
                 order_header += f" - {order_time_display}"
             ticket_content += SelectFontA + BoldOn
@@ -6736,16 +7664,16 @@ def build_customer_receipt_content(receipt_data):
             item_comment = (item.get('comment') or item.get('comments') or '').strip()
             if item_comment:
                 ticket_content += AlignLeft + SelectFontB + NormalText
-                append_wrapped(f"Note: {item_comment}", indent=4, width=SMALL_FONT_LINE_WIDTH)
+                append_wrapped(f"{L('field_note')}: {item_comment}", indent=4, width=SMALL_FONT_LINE_WIDTH)
                 ticket_content += AlignLeft + SelectFontA + NormalText
             item_lines_printed = True
         if multiple_orders:
             ticket_content += to_bytes("\n")
 
     if not item_lines_printed:
-        append_wrapped("No item details available for this receipt.")
+        append_wrapped(L('item_missing'))
 
-    append_section_heading("Totals")
+    append_section_heading(L('section_totals'))
 
     bill_total = to_decimal(receipt_data.get('bill_total', 0.0))
     total_paid = to_decimal(receipt_data.get('amount_paid_total', 0.0))
@@ -6761,28 +7689,28 @@ def build_customer_receipt_content(receipt_data):
         balance_after = Decimal('0')
 
     if item_lines_printed and abs(items_subtotal - bill_total) > Decimal('0.01'):
-        append_amount_line("Items subtotal", items_subtotal)
-    append_amount_line("Bill total", bill_total)
+        append_amount_line(L('amount_items_subtotal'), items_subtotal)
+    append_amount_line(L('amount_bill_total'), bill_total)
     if previous_paid > Decimal('0') and include_payment_details:
-        append_amount_line("Paid before today", previous_paid)
+        append_amount_line(L('amount_paid_before'), previous_paid)
     if include_payment_details:
-        append_amount_line("Payment received", payment_amount)
-        append_amount_line("Total paid", total_paid)
+        append_amount_line(L('amount_payment_received'), payment_amount)
+        append_amount_line(L('amount_total_paid'), total_paid)
 
     if change_due > Decimal('0'):
-        append_amount_line("Change due", change_due)
+        append_amount_line(L('amount_change_due'), change_due)
     else:
-        append_amount_line("Balance due", balance_after)
+        append_amount_line(L('amount_balance_due'), balance_after)
 
     payment_status = (receipt_data.get('payment_status') or 'unpaid').replace('_', ' ').title()
     if include_payment_details:
-        append_label_value("Payment status", payment_status)
+        append_label_value(L('field_payment_status'), payment_status)
     if tax_id_line:
-        append_label_value("Tax / ABN / VAT", tax_id_line)
+        append_label_value(L('field_tax'), tax_id_line)
 
     if include_payment_details:
-        append_section_heading("Payment Details")
-        append_label_value("Method", payment_method)
+        append_section_heading(L('section_payment_details'))
+        append_label_value(L('field_method'), payment_method)
         payment_timestamp = payment.get('timestamp')
         if isinstance(payment_timestamp, str):
             payment_time = None
@@ -6794,12 +7722,12 @@ def build_customer_receipt_content(receipt_data):
                 except Exception:
                     payment_time = None
             if payment_time:
-                append_label_value("Processed", payment_time.strftime('%d/%m/%Y %H:%M'))
+                append_label_value(L('field_processed'), payment_time.strftime('%d/%m/%Y %H:%M'))
         if payment_note:
-            append_wrapped(f"Note: {payment_note}", indent=2)
+            append_wrapped(f"{L('field_note')}: {payment_note}", indent=2)
 
     if include_payment_details and len(payments_history) > 1:
-        append_section_heading("Payment History")
+        append_section_heading(L('section_payment_history'))
         for entry in payments_history:
             entry_time = entry.get('timestamp')
             entry_dt = None
@@ -6814,23 +7742,44 @@ def build_customer_receipt_content(receipt_data):
             entry_label_time = entry_dt.strftime('%d/%m %H:%M') if entry_dt else ''
             entry_method = (entry.get('method') or 'Unknown').replace('_', ' ').title()
             history_label = f"{entry_label_time} {entry_method}".strip()
-            append_amount_line(history_label or "Payment", entry.get('amount', 0.0))
+            append_amount_line(history_label or L('history_payment'), entry.get('amount', 0.0))
+
+    if qr_payload:
+        append_section_heading(L('section_qr'))
+        qr_ok = render_receipt_qr(ticket_content, qr_payload)
+        ticket_content += AlignCenter + SelectFontB + NormalText
+        if qr_ok:
+            for qr_hint_line in word_wrap_text(L('qr_hint'), SMALL_FONT_LINE_WIDTH):
+                ticket_content.extend(to_bytes(qr_hint_line + "\n"))
+        else:
+            fallback_line = f"{L('qr_fallback_label')}: {qr_payload}"
+            for wrapped_fallback in word_wrap_text(fallback_line, SMALL_FONT_LINE_WIDTH):
+                ticket_content.extend(to_bytes(wrapped_fallback + "\n"))
+        ticket_content += AlignLeft + SelectFontA + NormalText
 
     ticket_content += to_bytes("\n")
-    closing_lines = footer_lines[:] if footer_lines else ["Thank you for your visit!"]
+    if receipt_kind == 'kitchen':
+        closing_lines = footer_kitchen_lines[:] if footer_kitchen_lines else footer_default_lines[:]
+    elif receipt_kind == 'table':
+        closing_lines = footer_table_lines[:] if footer_table_lines else footer_default_lines[:]
+    else:
+        closing_lines = footer_customer_lines[:] if footer_customer_lines else footer_default_lines[:]
+    if not closing_lines:
+        closing_lines = [L('closing_default')]
     if website_value and website_value not in closing_lines:
         closing_lines.append(website_value)
     append_centered_lines(closing_lines)
 
     ticket_content += to_bytes("-" * NORMAL_FONT_LINE_WIDTH + "\n")
     ticket_content += to_bytes("\n\n")
-    if CUT_AFTER_PRINT:
+    should_cut = CUT_AFTER_CUSTOMER if cut_after is None else bool(cut_after)
+    if should_cut:
         ticket_content += PartialCut
 
     return ticket_content
 
 
-def print_customer_receipt_ticket(receipt_data):
+def print_customer_receipt_ticket(receipt_data, device_id=None, printer_role='customer'):
     """
     Print a customer receipt for a specific payment.
     """
@@ -6841,29 +7790,33 @@ def print_customer_receipt_ticket(receipt_data):
         app.logger.warning("Printing blocked - trial expired")
         return False
 
-    if not PRINTER_NAME or PRINTER_NAME == "Your_Printer_Name_Here":
-        app.logger.error(f"CRITICAL: PRINTER_NAME is not configured. Cannot print customer receipt.")
+    target_printer = resolve_printer_for_role(printer_role, device_id) or PRINTER_NAME
+    target_printer = (target_printer or "").strip()
+
+    if not target_printer or target_printer == "Your_Printer_Name_Here":
+        app.logger.error(f"CRITICAL: No printer configured. Cannot print customer receipt.")
         return False
 
-    if 'pdf' in str(PRINTER_NAME).lower():
-        app.logger.error(f"Selected printer '{PRINTER_NAME}' appears to be a PDF device, which is not supported for receipt printing.")
+    lowered_name = target_printer.lower()
+    if 'pdf' in lowered_name or 'xps' in lowered_name or 'onenote' in lowered_name:
+        app.logger.error(f"Selected printer '{target_printer}' appears to be a PDF device, which is not supported for receipt printing.")
         return False
 
     try:
-        ticket_content = build_customer_receipt_content(receipt_data)
+        ticket_content = build_customer_receipt_content(receipt_data, cut_after=CUT_AFTER_CUSTOMER)
     except Exception as e:
         app.logger.error(f"Failed to build customer receipt content: {e}")
         return False
 
     print_attempts = 0
-    max_attempts = COPIES_PER_ORDER
+    max_attempts = max(1, int(CUSTOMER_RECEIPT_COPIES))
     printed_any = False
 
     for attempt in range(max_attempts):
         print_attempts += 1
         copy_info = f"Copy {print_attempts}" if max_attempts > 1 else ""
 
-        if print_customer_receipt_raw(ticket_content, receipt_data, copy_info):
+        if print_customer_receipt_raw(ticket_content, receipt_data, copy_info, printer_name=target_printer, device_id=device_id):
             printed_any = True
         else:
             app.logger.warning(f"Customer receipt print attempt {print_attempts} failed")
@@ -6871,61 +7824,57 @@ def print_customer_receipt_ticket(receipt_data):
     return printed_any
 
 
-def print_customer_receipt_raw(ticket_content, receipt_data, copy_info=""):
+def print_customer_receipt_raw(ticket_content, receipt_data, copy_info="", printer_name=None, device_id=None):
     """
     Raw printing function for customer receipts.
     """
+    target_printer = printer_name or resolve_printer_for_role('customer', device_id) or PRINTER_NAME
+    target_printer = (target_printer or "").strip()
     hprinter = None
     doc_started = False
     try:
         table_id = receipt_data.get('table_id', 'Unknown')
         payment_id = receipt_data.get('payment', {}).get('payment_id', 'Unknown')
-        app.logger.info(f"Attempting to open printer: '{PRINTER_NAME}' for table {table_id} customer receipt{f' ({copy_info})' if copy_info else ''}")
-        hprinter = win32print.OpenPrinter(PRINTER_NAME)
+        app.logger.info(
+            f"Attempting to open printer: '{target_printer}' for table {table_id} customer receipt"
+            f"{f' ({copy_info})' if copy_info else ''} [device={device_id or 'n/a'}]"
+        )
+        hprinter = win32print.OpenPrinter(target_printer)
 
         # Check printer status (same as other print functions)
-        printer_info = win32print.GetPrinter(hprinter, 2)
-        current_status = printer_info['Status']
-        app.logger.info(f"Printer '{PRINTER_NAME}' current status code: {hex(current_status)}")
+        current_status = _get_printer_status_bits(hprinter, target_printer)
+        app.logger.info(f"Printer '{target_printer}' current status code: {hex(current_status)}")
 
-        PRINTER_STATUS_OFFLINE = 0x00000080; PRINTER_STATUS_ERROR = 0x00000002
-        PRINTER_STATUS_NOT_AVAILABLE = 0x00001000; PRINTER_STATUS_PAPER_OUT = 0x00000010
-        PRINTER_STATUS_USER_INTERVENTION = 0x00000200; PRINTER_STATUS_PAPER_JAM = 0x00000008
-
-        problematic_statuses = [
-            PRINTER_STATUS_OFFLINE, PRINTER_STATUS_ERROR, PRINTER_STATUS_NOT_AVAILABLE,
-            PRINTER_STATUS_PAPER_OUT, PRINTER_STATUS_USER_INTERVENTION, PRINTER_STATUS_PAPER_JAM
-        ]
-
-        if any(current_status & status for status in problematic_statuses):
-            status_messages = []
-            if current_status & PRINTER_STATUS_OFFLINE: status_messages.append("OFFLINE")
-            if current_status & PRINTER_STATUS_ERROR: status_messages.append("ERROR")
-            if current_status & PRINTER_STATUS_NOT_AVAILABLE: status_messages.append("NOT_AVAILABLE")
-            if current_status & PRINTER_STATUS_PAPER_OUT: status_messages.append("PAPER_OUT")
-            if current_status & PRINTER_STATUS_USER_INTERVENTION: status_messages.append("USER_INTERVENTION")
-            if current_status & PRINTER_STATUS_PAPER_JAM: status_messages.append("PAPER_JAM")
-
-            app.logger.warning(f"Printer '{PRINTER_NAME}' has problematic status: {', '.join(status_messages)}")
+        if current_status & PRINTER_STATUS_FATAL_FLAGS:
+            status_messages = describe_printer_status(current_status)
+            app.logger.warning(f"Printer '{target_printer}' has problematic status: {status_messages}")
             return False
 
-        app.logger.info(f"Printer '{PRINTER_NAME}' status appears operational. Proceeding with customer receipt print.")
+        app.logger.info(f"Printer '{target_printer}' status appears operational. Proceeding with customer receipt print.")
 
         # Print the document
         doc_name = f"POSPal Table {table_id} Customer Receipt"
-        win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
+        job_id = win32print.StartDocPrinter(hprinter, 1, (doc_name, None, "RAW"))
         doc_started = True
 
         win32print.StartPagePrinter(hprinter)
         win32print.WritePrinter(hprinter, bytes(ticket_content))
         win32print.EndPagePrinter(hprinter)
+        win32print.EndDocPrinter(hprinter)
+        doc_started = False
 
-        app.logger.info(f"Table {table_id} customer receipt data sent to printer spooler for '{PRINTER_NAME}'.")
+        job_completed, failure_reason = wait_for_printer_job_completion(hprinter, job_id, target_printer)
+        if not job_completed:
+            if failure_reason:
+                app.logger.error(f"[PRINTER_MONITOR] Customer receipt job did not complete: {failure_reason}")
+            return False
+
+        app.logger.info(f"Table {table_id} customer receipt printed successfully on '{target_printer}'.")
         return True
 
     except (win32print.error, Exception) as e:
         table_id = receipt_data.get('table_id', 'Unknown')
-        app.logger.error(f"A printing error occurred for table {table_id} customer receipt{f' ({copy_info})' if copy_info else ''} with printer '{PRINTER_NAME}'. Error: {str(e)}")
+        app.logger.error(f"A printing error occurred for table {table_id} customer receipt{f' ({copy_info})' if copy_info else ''} with printer '{target_printer}'. Error: {str(e)}")
         return False
 
     finally:
@@ -6934,12 +7883,12 @@ def print_customer_receipt_raw(ticket_content, receipt_data, copy_info=""):
             try:
                 win32print.EndDocPrinter(hprinter)
             except Exception as e_doc:
-                app.logger.error(f"Error ending document on printer '{PRINTER_NAME}': {str(e_doc)}")
+                app.logger.error(f"Error ending document on printer '{target_printer}': {str(e_doc)}")
         if hprinter:
             try:
                 win32print.ClosePrinter(hprinter)
             except Exception as e_close:
-                app.logger.error(f"Error closing printer handle for '{PRINTER_NAME}': {str(e_close)}")
+                app.logger.error(f"Error closing printer handle for '{target_printer}': {str(e_close)}")
 
 
 def build_simple_customer_receipt_payload(order_data_internal, order_total):
@@ -6985,7 +7934,9 @@ def build_simple_customer_receipt_payload(order_data_internal, order_total):
         "bill_time": now.strftime("%H:%M"),
         "seats": None,
         "mode": "simple",
-        "channel_label": channel_label
+        "channel_label": channel_label,
+        "language": str(config.get('language', 'en')).lower(),
+        "receipt_kind": "customer"
     }
 
 
@@ -7129,7 +8080,25 @@ def handle_order():
     # Phase 6: Check device print behavior
     device_print_behavior = order_data_from_client.get('devicePrintBehavior', 'auto')
     device_name = order_data_from_client.get('deviceName', 'Unknown Device')
-    app.logger.info(f"Order #{authoritative_order_number} from device '{device_name}' with print behavior: {device_print_behavior}")
+    device_id = str(order_data_from_client.get('deviceId') or order_data_from_client.get('device_id') or '').strip() or None
+    if device_id:
+        update_device_profile_activity(
+            device_id,
+            context={
+                "user_agent": request.headers.get('User-Agent', 'Unknown'),
+                "ip": get_remote_address(),
+                "source": "order_submit"
+            },
+            extra_updates={
+                "device_name": device_name,
+                "print_behavior": device_print_behavior,
+                "role": 'kitchen'
+            }
+        )
+    app.logger.info(
+        f"Order #{authoritative_order_number} from device '{device_name}' "
+        f"(id={device_id or 'n/a'}) with print behavior: {device_print_behavior}"
+    )
 
     print_status_summary = "Not Printed"
     printed_all = True
@@ -7141,7 +8110,7 @@ def handle_order():
         print_status_summary = "Print Disabled by Device"
     else:
         # Proceed with normal printing
-        copies_to_print = max(1, int(config.get('copies_per_order', COPIES_PER_ORDER)))
+        copies_to_print = max(1, int(config.get('kitchen_copies_per_order', KITCHEN_COPIES_PER_ORDER)))
 
         # Calculate dynamic delay based on order complexity
         total_items = sum(int(item.get('quantity', 1)) for item in order_data_internal.get('items', []))
@@ -7161,12 +8130,12 @@ def handle_order():
                 time.sleep(dynamic_delay)
             app.logger.info(f"Attempting to print copy {i} for order #{authoritative_order_number}")
             try:
-                ok = print_kitchen_ticket(order_data_internal, copy_info="")
+                ok = print_kitchen_ticket(order_data_internal, copy_info="", device_id=device_id)
                 if not ok:
                     app.logger.warning(f"Print failed, waiting {retry_delay:.1f}s before retry for copy {i} (order #{authoritative_order_number})")
                     time.sleep(retry_delay)
                     app.logger.warning(f"Retrying print for copy {i} (order #{authoritative_order_number})")
-                    ok = print_kitchen_ticket(order_data_internal, copy_info="")
+                    ok = print_kitchen_ticket(order_data_internal, copy_info="", device_id=device_id)
             except Exception as e_print:
                 app.logger.critical(f"CRITICAL PRINT EXCEPTION for order #{authoritative_order_number} (copy {i}): {str(e_print)}")
                 ok = False
@@ -7240,7 +8209,7 @@ def handle_order():
     if should_print_customer_receipt:
         try:
             receipt_payload = build_simple_customer_receipt_payload(order_data_internal, order_total)
-            customer_receipt_printed = print_customer_receipt_ticket(receipt_payload)
+            customer_receipt_printed = print_customer_receipt_ticket(receipt_payload, device_id=device_id)
             if not customer_receipt_printed:
                 app.logger.warning(f"Customer receipt print failed for order #{authoritative_order_number}")
         except Exception as receipt_error:
@@ -10297,18 +11266,30 @@ def _normalize_subscription_price_value(value):
         return None
 
 
-def _currency_symbol_for(currency_code: str | None) -> str:
-    if not currency_code:
-        return '€'
-    mapping = {
-        'EUR': '€',
-        'USD': '$',
-        'GBP': '£',
-        'CAD': '$',
-        'AUD': '$'
-    }
-    return mapping.get(currency_code.upper(), currency_code.upper())
-
+def _currency_symbol_for(currency_code: str | None) -> str:
+
+    if not currency_code:
+
+        return '€'
+
+    mapping = {
+
+        'EUR': '€',
+
+        'USD': '$',
+
+        'GBP': '£',
+
+        'CAD': '$',
+
+        'AUD': '$'
+
+    }
+
+    return mapping.get(currency_code.upper(), currency_code.upper())
+
+
+
 def _format_price_value(amount: float, symbol: str, include_decimals: bool = True) -> str:
     decimals = 2 if include_decimals else 0
     formatted_amount = f"{amount:,.{decimals}f}"
@@ -11291,6 +12272,7 @@ def get_todays_orders_for_reprint():
 def reprint_order_endpoint():
     data = request.json
     order_number_to_reprint = data.get('order_number')
+    device_id = str(data.get('deviceId') or data.get('device_id') or '').strip() or None
 
     if not order_number_to_reprint:
         return jsonify({"status": "error", "message": "Order number is required for reprint."}), 400
@@ -11337,9 +12319,12 @@ def reprint_order_endpoint():
 
         app.logger.info(f"Attempting to reprint order #{order_number_to_reprint} (Original Timestamp: {original_timestamp})")
 
-        reprint_copy1_success = print_kitchen_ticket(reprint_order_data, 
-                                                     copy_info="", 
-                                                     original_timestamp_str=original_timestamp)
+        reprint_copy1_success = print_kitchen_ticket(
+            reprint_order_data,
+            copy_info="",
+            original_timestamp_str=original_timestamp,
+            device_id=device_id
+        )
         
         if not reprint_copy1_success:
             app.logger.warning(f"Reprint (Kitchen Copy) FAILED for order #{order_number_to_reprint}.")

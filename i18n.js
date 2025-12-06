@@ -1,4 +1,4 @@
-// Simple i18n helper for in-app UI (receipts remain English-only)
+// Simple i18n helper for in-app UI and receipt preview text
 const I18N_STORAGE_KEY = 'pospal_language_cache';
 let I18N = { lang: 'en', dict: {} };
 

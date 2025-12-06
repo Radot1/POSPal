@@ -235,12 +235,49 @@ export function getManagementComponentHTML() {
                                     </div>
                                 </div>
                                 <div class="my-2 border-t border-gray-200"></div>
-                                <div class="flex items-center gap-4 flex-wrap">
-                                    <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" id="cutAfterPrintToggle" class="h-4 w-4"> <span>Cut after print</span></label>
-                                    <label class="inline-flex items-center gap-2 text-sm">
-                                        <span>Copies per order</span>
-                                        <input type="number" id="copiesPerOrderInput" min="1" max="10" step="1" class="px-2 py-1 border border-gray-300 rounded w-20" />
-                                    </label>
+                                <div class="space-y-3">
+                                    <div class="grid gap-3 md:grid-cols-2">
+                                        <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                            <p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Kitchen Tickets</p>
+                                            <div class="flex items-center gap-2 mt-2">
+                                                <span class="text-sm">Copies per order</span>
+                                                <input type="number" id="kitchenCopiesInput" min="1" max="10" step="1" class="px-2 py-1 border border-gray-300 rounded w-20 text-sm" />
+                                            </div>
+                                            <label class="inline-flex items-center gap-2 text-sm mt-2">
+                                                <input type="checkbox" id="cutAfterKitchenToggle" class="h-4 w-4">
+                                                <span>Cut after kitchen tickets</span>
+                                            </label>
+                                        </div>
+                                        <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                            <p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Customer Receipts</p>
+                                            <div class="flex items-center gap-2 mt-2">
+                                                <span class="text-sm">Copies per receipt</span>
+                                                <input type="number" id="customerCopiesInput" min="1" max="10" step="1" class="px-2 py-1 border border-gray-300 rounded w-20 text-sm" />
+                                            </div>
+                                            <label class="inline-flex items-center gap-2 text-sm mt-2">
+                                                <input type="checkbox" id="cutAfterCustomerToggle" class="h-4 w-4">
+                                                <span>Cut after customer receipts</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div id="tableReceiptSettings" class="bg-gray-50 rounded-lg p-3 border border-gray-200 hidden">
+                                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                            <div>
+                                                <p class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Table Receipts</p>
+                                                <p class="text-xs text-gray-500">Visible when Table Management is enabled</p>
+                                            </div>
+                                            <div class="flex flex-wrap gap-3 items-center">
+                                                <label class="inline-flex items-center gap-2 text-sm">
+                                                    <span>Copies</span>
+                                                    <input type="number" id="tableCopiesInput" min="1" max="10" step="1" class="px-2 py-1 border border-gray-300 rounded w-20 text-sm" />
+                                                </label>
+                                                <label class="inline-flex items-center gap-2 text-sm">
+                                                    <input type="checkbox" id="cutAfterTableToggle" class="h-4 w-4">
+                                                    <span>Cut after table receipts</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
