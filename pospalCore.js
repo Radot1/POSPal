@@ -7540,6 +7540,12 @@ function openDeviceSettingsQuickModal() {
         console.error('Failed to load device settings for quick modal:', error);
     }
 
+    if (typeof refreshPrinters === 'function') {
+        refreshPrinters().catch(error => {
+            console.error('Failed to refresh printers for quick modal:', error);
+        });
+    }
+
     closeLoginModal();
 
     elements.deviceSettingsModal.classList.remove('hidden');
@@ -8308,7 +8314,7 @@ async function initializeHardwarePrintingUI() {
             const val = parseInt(settings.table_copies);
             tableCopiesInput.value = isNaN(val) ? 1 : Math.max(1, Math.min(10, val));
         }
-        updateTableReceiptSettingsVisibility(tableManagementEnabled);
+        updateTableBillSettingsVisibility(tableManagementEnabled);
         await refreshPrinters();
 
         // Load device settings (Phase 5)
@@ -16839,7 +16845,7 @@ async function toggleTableManagement(enabled) {
         } else {
             hideTableConfigSection();
         }
-        updateTableReceiptSettingsVisibility(enabled);
+        updateTableBillSettingsVisibility(enabled);
 
         // Show success message
         const message = enabled ?
@@ -16897,17 +16903,60 @@ async function initializeTableManagementToggle() {
             await loadTableConfigForManagement();
             showTableConfigSection();
         }
-        updateTableReceiptSettingsVisibility(tableManagementEnabled);
+        updateTableBillSettingsVisibility(tableManagementEnabled);
 
     } catch (error) {
         console.error('Error initializing table management toggle:', error);
     }
 }
 
-function updateTableReceiptSettingsVisibility(enabled) {
+function updateTableBillSettingsVisibility(enabled) {
     const sections = document.querySelectorAll('#tableReceiptSettings');
-    if (!sections.length) return;
-    sections.forEach(section => section.classList.toggle('hidden', !enabled));
+    sections.forEach(section => {
+        section.classList.toggle('opacity-60', !enabled);
+        const helper = section.querySelector('[data-table-bill-helper]');
+        if (helper) {
+            helper.textContent = enabled
+                ? 'Table bills are active for Table Management mode.'
+                : 'Only used with Table Management (advanced table mode). Enable it to configure.';
+        }
+        const controls = section.querySelectorAll('input, select, button');
+        controls.forEach(ctrl => {
+            ctrl.disabled = !enabled;
+            ctrl.classList.toggle('cursor-not-allowed', !enabled);
+        });
+    });
+
+    const tableRoleSelect = document.getElementById('globalTablePrinterSelect');
+    if (tableRoleSelect) {
+        tableRoleSelect.disabled = !enabled;
+        tableRoleSelect.classList.toggle('opacity-60', !enabled);
+        tableRoleSelect.classList.toggle('cursor-not-allowed', !enabled);
+    }
+    const tableRoleHelper = document.getElementById('globalTablePrinterHelper');
+    if (tableRoleHelper) {
+        tableRoleHelper.textContent = enabled
+            ? 'Used for interim table bills.'
+            : 'Only used with Table Management mode (advanced).';
+    }
+
+    const deviceTableSelect = document.getElementById('deviceTablePrinterSelect');
+    if (deviceTableSelect) {
+        deviceTableSelect.disabled = !enabled;
+        deviceTableSelect.classList.toggle('opacity-60', !enabled);
+        deviceTableSelect.classList.toggle('cursor-not-allowed', !enabled);
+    }
+    const deviceTableHelper = document.getElementById('deviceTablePrinterHelper');
+    if (deviceTableHelper) {
+        deviceTableHelper.textContent = enabled
+            ? 'Override this device when printing Table Bills.'
+            : 'Only used with Table Management mode (advanced).';
+    }
+
+    const tableRoleOption = document.querySelector('#testPrintRoleSelect option[value=\"table\"]');
+    if (tableRoleOption) {
+        tableRoleOption.disabled = !enabled;
+    }
 }
 
 // ==================================================================================
